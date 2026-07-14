@@ -2,7 +2,37 @@
 
 > 结论口径：本文描述的是确定性内存模拟协议，不是 LAN-SYNC 或安全验收报告。
 
-## 1. 输入与真相
+## 1. 语言与生产实现边界
+
+Python 实现是 test-only executable specification / deterministic simulator。它的职责是把已接受的 contracts 与同步不变量变成可复跑状态机和 golden vectors；它不打包进移动端，不实现生产网络、密码学、持久化或后台运行时。
+
+生产实现分别为 iOS Swift/Network.framework 与 Android Kotlin/NSD。两端必须读取同一 `packages/contracts/` 和 `tests/fixtures/sync/canonical-conformance-vectors.json`，用各自原生实现重放步骤并比较完整投影、canonical digest、result class、evidence code 和 reason。生产 App 不启动 Python，也不把 Python 模拟器作为 fallback。
+
+当前不采用共享 TypeScript/JavaScript、Rust 或 KMP runtime，因为尚无跨端重复缺陷、算法性能/电量瓶颈或维护成本证据足以抵消 JS 引擎/生命周期、Rust FFI/异步/构建、KMP 平台桥接/架构迁移成本。重新评估需要同时具备：重复缺陷统计、真机 profiling、团队维护证据，以及候选 FFI/包体/崩溃/调试/升级成本实测；结论仍需新的架构和安全 Review。
+
+## 2. Canonical conformance vectors
+
+canonical 文件当前包含 12 条合成向量。每条向量固定：
+
+1. 完整 contract-shaped input envelopes；
+2. 2–3 个 peer 的空投影、支持 schema 和授权到期初态；
+3. 确定性 deliver/offline/replay 步骤；
+4. 完整期望 projection 与 `sha256(ameme-canonical-json-v1)` digest；
+5. `convergence / partial / conflict / proof_incomplete` result class；
+6. 关键 evidence code、partial reason、event state 和 deletion proof。
+
+生成与校验：
+
+```powershell
+python scripts/dev/sync/generate_conformance_vectors.py --write
+python scripts/dev/sync/generate_conformance_vectors.py --check
+```
+
+`--write` 只用于获批的协议语义变更；正常回归使用 `--check`。这些向量证明的是模型一致性，不是真机或生产安全证据。
+
+`ameme-canonical-json-v1` 固定为：UTF-8 无 BOM、对象 key 按 Unicode code point 字典序递归排序、数组保持声明顺序、无额外空白、非 ASCII 字符按 UTF-8 JSON string 输出、v1 projection vector 只使用十进制整数而不使用浮点数，最后输出小写十六进制 SHA-256。完整待摘要 projection 同时保存在每条向量的 `expected.peer_projections`，Swift/Kotlin 不能只复用预计算 digest 而跳过投影比较。
+
+## 3. 输入与真相
 
 每个 envelope 包含契约已有字段：`schema_version`、`space_id`、`device_id`、`device_sequence`、`operation`、`object_type/object_id`、`base_revision`、`payload`、`idempotency_key` 和 `created_at`。构造后 dataclass 与 payload 都不可变，证据 hash 取稳定 canonical JSON 的 SHA-256。
 
@@ -13,7 +43,7 @@
 3. Event Revision 的 `base_revision`；
 4. tombstone/revocation 控制面优先级。
 
-## 2. 接收状态机
+## 4. 接收状态机
 
 ```text
 receive
@@ -30,7 +60,7 @@ receive
 
 不支持的 schema major 隔离并阻止该 origin 完成 cursor，结果只能是 `partial`。接收端不猜字段、不丢 envelope 后假装完整。
 
-## 3. Revision 投影
+## 5. Revision 投影
 
 同一 Event 的 envelope 按 `base_revision` 分代。每一代内：
 
@@ -42,7 +72,7 @@ receive
 
 该算法刻意不实现“最新时间获胜”。
 
-## 4. 删除与证明
+## 6. 删除与证明
 
 tombstone payload 的 `required_peer_ids` 是本次合成测试的证明范围。模拟器记录每个 peer 实际应用 tombstone 的 content-free receipt：
 
@@ -52,7 +82,7 @@ tombstone payload 的 `required_peer_ids` 是本次合成测试的证明范围�
 
 这只证明模拟收件与投影语义，不证明物理存储、索引、备份、Raw Vault 已清除。
 
-## 5. 结果判定
+## 7. 结果判定
 
 结果优先级固定，避免把风险降级成普通成功：
 
@@ -65,6 +95,6 @@ otherwise equal state digests -> convergence
 
 `conflict` 可以同时 `converged=true`：含义是所有 peer 对“存在未决冲突”达成一致，而不是冲突已解决。
 
-## 6. 非目标
+## 8. 非目标
 
 本模拟器不实现：Bonjour/NSD、真实 Socket、热点/AP isolation、账户登录、设备密钥、签名、TLS、加密 Raw、Keychain/Keystore、真机后台、吞吐/电量。上述内容仍分别受 LAN-SYNC-01、SEC-01、DEL-01 和真机 Gate 约束。

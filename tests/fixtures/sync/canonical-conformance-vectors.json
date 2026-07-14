@@ -1,0 +1,2078 @@
+{
+  "canonical_consumer_contract": "packages/contracts/schemas/ameme-domain.schema.json#/$defs/SyncEnvelope",
+  "canonicalization": {
+    "arrays": "preserve declared order",
+    "digest_output": "lowercase hexadecimal SHA-256",
+    "encoding": "UTF-8 without BOM",
+    "name": "ameme-canonical-json-v1",
+    "non_ascii": "literal UTF-8 JSON strings",
+    "numbers": "base-10 integers only in v1 projection vectors",
+    "object_keys": "lexicographic Unicode code point order",
+    "whitespace": "none"
+  },
+  "digest_algorithm": "sha256(ameme-canonical-json-v1)",
+  "fixture_version": 1,
+  "non_claims": [
+    "no real LAN discovery or socket validation",
+    "no production cryptography validation",
+    "no mobile background or persistence validation"
+  ],
+  "protocol_scope": "SYNC-01 deterministic executable specification only",
+  "required_future_consumers": [
+    "iOS Swift Network.framework conformance tests",
+    "Android Kotlin NSD conformance tests"
+  ],
+  "vector_count": 12,
+  "vectors": [
+    {
+      "description": "An identical envelope delivered twice returns the stable duplicate result without a second revision.",
+      "envelopes": [
+        {
+          "ref": "duplicate_initial",
+          "value": {
+            "base_revision": 0,
+            "created_at": "2026-01-01T00:00:01Z",
+            "device_id": "peer_alpha",
+            "device_sequence": 1,
+            "idempotency_key": "idem_duplicate_initial_00000001",
+            "object_id": "rev_duplicate_initial",
+            "object_type": "event_revision",
+            "operation": "append_revision",
+            "payload": {
+              "changes": {
+                "title": "One"
+              },
+              "event_id": "event_duplicate"
+            },
+            "schema_version": 1,
+            "space_id": "space_sync_synthetic",
+            "sync_envelope_id": "syn_duplicate_initial"
+          }
+        }
+      ],
+      "expected": {
+        "converged": true,
+        "deletion_proofs": [],
+        "event_states": {
+          "peer_alpha": {
+            "event_duplicate": "active"
+          },
+          "peer_beta": {
+            "event_duplicate": "active"
+          }
+        },
+        "key_evidence_codes": [
+          "DUPLICATE_ENVELOPE"
+        ],
+        "partial_reasons": {},
+        "peer_projection_digests": {
+          "peer_alpha": "9ec7b61d711a9786c1bd6be2a10f507ba7edc27ac5ef0b2cead99e63a777cdc7",
+          "peer_beta": "9ec7b61d711a9786c1bd6be2a10f507ba7edc27ac5ef0b2cead99e63a777cdc7"
+        },
+        "peer_projections": {
+          "peer_alpha": {
+            "events": {
+              "event_duplicate": {
+                "ancestry_gaps": [],
+                "conflicts": {},
+                "event_id": "event_duplicate",
+                "fields": {
+                  "title": "One"
+                },
+                "revision": 1,
+                "revision_ids": [
+                  "rev_duplicate_initial"
+                ],
+                "state": "active",
+                "tombstone_count": 0
+              }
+            },
+            "revoked_devices": [],
+            "space_id": "space_sync_synthetic"
+          },
+          "peer_beta": {
+            "events": {
+              "event_duplicate": {
+                "ancestry_gaps": [],
+                "conflicts": {},
+                "event_id": "event_duplicate",
+                "fields": {
+                  "title": "One"
+                },
+                "revision": 1,
+                "revision_ids": [
+                  "rev_duplicate_initial"
+                ],
+                "state": "active",
+                "tombstone_count": 0
+              }
+            },
+            "revoked_devices": [],
+            "space_id": "space_sync_synthetic"
+          }
+        },
+        "result_class": "convergence"
+      },
+      "id": "duplicate_idempotent_convergence",
+      "peer_ids": [
+        "peer_alpha",
+        "peer_beta"
+      ],
+      "peer_initial_state": {
+        "peer_alpha": {
+          "authorization_expiry_by_device": {},
+          "projection": "empty",
+          "supported_schema_versions": [
+            1
+          ]
+        },
+        "peer_beta": {
+          "authorization_expiry_by_device": {},
+          "projection": "empty",
+          "supported_schema_versions": [
+            1
+          ]
+        }
+      },
+      "seed": 20260714,
+      "steps": [
+        {
+          "action": "deliver",
+          "envelope_ref": "duplicate_initial",
+          "target_peer_id": "peer_alpha"
+        },
+        {
+          "action": "deliver",
+          "envelope_ref": "duplicate_initial",
+          "target_peer_id": "peer_beta"
+        },
+        {
+          "action": "deliver",
+          "envelope_ref": "duplicate_initial",
+          "target_peer_id": "peer_beta"
+        }
+      ]
+    },
+    {
+      "description": "A later sequence is held until the missing envelope arrives, then the cursor drains deterministically.",
+      "envelopes": [
+        {
+          "ref": "gap_initial",
+          "value": {
+            "base_revision": 0,
+            "created_at": "2026-01-01T00:00:01Z",
+            "device_id": "peer_alpha",
+            "device_sequence": 1,
+            "idempotency_key": "idem_gap_initial_00000001",
+            "object_id": "rev_gap_initial",
+            "object_type": "event_revision",
+            "operation": "append_revision",
+            "payload": {
+              "changes": {
+                "title": "One"
+              },
+              "event_id": "event_gap"
+            },
+            "schema_version": 1,
+            "space_id": "space_sync_synthetic",
+            "sync_envelope_id": "syn_gap_initial"
+          }
+        },
+        {
+          "ref": "gap_second",
+          "value": {
+            "base_revision": 1,
+            "created_at": "2026-01-01T00:00:02Z",
+            "device_id": "peer_alpha",
+            "device_sequence": 2,
+            "idempotency_key": "idem_gap_second_00000001",
+            "object_id": "rev_gap_second",
+            "object_type": "event_revision",
+            "operation": "append_revision",
+            "payload": {
+              "changes": {
+                "status": "Two"
+              },
+              "event_id": "event_gap"
+            },
+            "schema_version": 1,
+            "space_id": "space_sync_synthetic",
+            "sync_envelope_id": "syn_gap_second"
+          }
+        }
+      ],
+      "expected": {
+        "converged": true,
+        "deletion_proofs": [],
+        "event_states": {
+          "peer_alpha": {
+            "event_gap": "active"
+          },
+          "peer_beta": {
+            "event_gap": "active"
+          }
+        },
+        "key_evidence_codes": [
+          "SYNC_SEQUENCE_GAP"
+        ],
+        "partial_reasons": {},
+        "peer_projection_digests": {
+          "peer_alpha": "6f9bf6ba3347a95a75ed9c6083f32b327184d4378e65c31c61a02a3c68772e97",
+          "peer_beta": "6f9bf6ba3347a95a75ed9c6083f32b327184d4378e65c31c61a02a3c68772e97"
+        },
+        "peer_projections": {
+          "peer_alpha": {
+            "events": {
+              "event_gap": {
+                "ancestry_gaps": [],
+                "conflicts": {},
+                "event_id": "event_gap",
+                "fields": {
+                  "status": "Two",
+                  "title": "One"
+                },
+                "revision": 2,
+                "revision_ids": [
+                  "rev_gap_initial",
+                  "rev_gap_second"
+                ],
+                "state": "active",
+                "tombstone_count": 0
+              }
+            },
+            "revoked_devices": [],
+            "space_id": "space_sync_synthetic"
+          },
+          "peer_beta": {
+            "events": {
+              "event_gap": {
+                "ancestry_gaps": [],
+                "conflicts": {},
+                "event_id": "event_gap",
+                "fields": {
+                  "status": "Two",
+                  "title": "One"
+                },
+                "revision": 2,
+                "revision_ids": [
+                  "rev_gap_initial",
+                  "rev_gap_second"
+                ],
+                "state": "active",
+                "tombstone_count": 0
+              }
+            },
+            "revoked_devices": [],
+            "space_id": "space_sync_synthetic"
+          }
+        },
+        "result_class": "convergence"
+      },
+      "id": "out_of_order_gap_then_convergence",
+      "peer_ids": [
+        "peer_alpha",
+        "peer_beta"
+      ],
+      "peer_initial_state": {
+        "peer_alpha": {
+          "authorization_expiry_by_device": {},
+          "projection": "empty",
+          "supported_schema_versions": [
+            1
+          ]
+        },
+        "peer_beta": {
+          "authorization_expiry_by_device": {},
+          "projection": "empty",
+          "supported_schema_versions": [
+            1
+          ]
+        }
+      },
+      "seed": 20260714,
+      "steps": [
+        {
+          "action": "deliver",
+          "envelope_ref": "gap_initial",
+          "target_peer_id": "peer_alpha"
+        },
+        {
+          "action": "deliver",
+          "envelope_ref": "gap_second",
+          "target_peer_id": "peer_alpha"
+        },
+        {
+          "action": "deliver",
+          "envelope_ref": "gap_second",
+          "target_peer_id": "peer_beta"
+        },
+        {
+          "action": "deliver",
+          "envelope_ref": "gap_initial",
+          "target_peer_id": "peer_beta"
+        }
+      ]
+    },
+    {
+      "description": "An offline peer queues an envelope and converges after deterministic replay.",
+      "envelopes": [
+        {
+          "ref": "offline_initial",
+          "value": {
+            "base_revision": 0,
+            "created_at": "2026-01-01T00:00:01Z",
+            "device_id": "peer_alpha",
+            "device_sequence": 1,
+            "idempotency_key": "idem_offline_initial_00000001",
+            "object_id": "rev_offline_initial",
+            "object_type": "event_revision",
+            "operation": "append_revision",
+            "payload": {
+              "changes": {
+                "title": "Queued"
+              },
+              "event_id": "event_offline"
+            },
+            "schema_version": 1,
+            "space_id": "space_sync_synthetic",
+            "sync_envelope_id": "syn_offline_initial"
+          }
+        }
+      ],
+      "expected": {
+        "converged": true,
+        "deletion_proofs": [],
+        "event_states": {
+          "peer_alpha": {
+            "event_offline": "active"
+          },
+          "peer_beta": {
+            "event_offline": "active"
+          }
+        },
+        "key_evidence_codes": [
+          "PEER_OFFLINE"
+        ],
+        "partial_reasons": {},
+        "peer_projection_digests": {
+          "peer_alpha": "02873152c3cefdd5210289610c6eb130caa01644f0cd3db2c4d1384d477f8f7b",
+          "peer_beta": "02873152c3cefdd5210289610c6eb130caa01644f0cd3db2c4d1384d477f8f7b"
+        },
+        "peer_projections": {
+          "peer_alpha": {
+            "events": {
+              "event_offline": {
+                "ancestry_gaps": [],
+                "conflicts": {},
+                "event_id": "event_offline",
+                "fields": {
+                  "title": "Queued"
+                },
+                "revision": 1,
+                "revision_ids": [
+                  "rev_offline_initial"
+                ],
+                "state": "active",
+                "tombstone_count": 0
+              }
+            },
+            "revoked_devices": [],
+            "space_id": "space_sync_synthetic"
+          },
+          "peer_beta": {
+            "events": {
+              "event_offline": {
+                "ancestry_gaps": [],
+                "conflicts": {},
+                "event_id": "event_offline",
+                "fields": {
+                  "title": "Queued"
+                },
+                "revision": 1,
+                "revision_ids": [
+                  "rev_offline_initial"
+                ],
+                "state": "active",
+                "tombstone_count": 0
+              }
+            },
+            "revoked_devices": [],
+            "space_id": "space_sync_synthetic"
+          }
+        },
+        "result_class": "convergence"
+      },
+      "id": "offline_replay_convergence",
+      "peer_ids": [
+        "peer_alpha",
+        "peer_beta"
+      ],
+      "peer_initial_state": {
+        "peer_alpha": {
+          "authorization_expiry_by_device": {},
+          "projection": "empty",
+          "supported_schema_versions": [
+            1
+          ]
+        },
+        "peer_beta": {
+          "authorization_expiry_by_device": {},
+          "projection": "empty",
+          "supported_schema_versions": [
+            1
+          ]
+        }
+      },
+      "seed": 20260714,
+      "steps": [
+        {
+          "action": "deliver",
+          "envelope_ref": "offline_initial",
+          "target_peer_id": "peer_alpha"
+        },
+        {
+          "action": "set_online",
+          "online": false,
+          "peer_id": "peer_beta"
+        },
+        {
+          "action": "deliver",
+          "envelope_ref": "offline_initial",
+          "target_peer_id": "peer_beta"
+        },
+        {
+          "action": "set_online",
+          "online": true,
+          "peer_id": "peer_beta"
+        },
+        {
+          "action": "replay_offline",
+          "peer_id": "peer_beta",
+          "reverse": false
+        }
+      ]
+    },
+    {
+      "description": "An unsupported old major is quarantined and does not advance the completion cursor.",
+      "envelopes": [
+        {
+          "ref": "old_schema",
+          "value": {
+            "base_revision": 0,
+            "created_at": "2026-01-01T00:00:01Z",
+            "device_id": "peer_alpha",
+            "device_sequence": 1,
+            "idempotency_key": "idem_old_schema_00000001",
+            "object_id": "rev_old_schema",
+            "object_type": "event_revision",
+            "operation": "append_revision",
+            "payload": {
+              "changes": {
+                "title": "Old"
+              },
+              "event_id": "event_old_schema"
+            },
+            "schema_version": 0,
+            "space_id": "space_sync_synthetic",
+            "sync_envelope_id": "syn_old_schema"
+          }
+        }
+      ],
+      "expected": {
+        "converged": true,
+        "deletion_proofs": [],
+        "event_states": {
+          "peer_alpha": {},
+          "peer_beta": {}
+        },
+        "key_evidence_codes": [
+          "SCHEMA_UNSUPPORTED"
+        ],
+        "partial_reasons": {
+          "peer_beta": [
+            "schema_unsupported:peer_alpha:1"
+          ]
+        },
+        "peer_projection_digests": {
+          "peer_alpha": "c2b43a60c198083a8145360aee2b313c2988df1ee7e7bf39be78bea76867c362",
+          "peer_beta": "c2b43a60c198083a8145360aee2b313c2988df1ee7e7bf39be78bea76867c362"
+        },
+        "peer_projections": {
+          "peer_alpha": {
+            "events": {},
+            "revoked_devices": [],
+            "space_id": "space_sync_synthetic"
+          },
+          "peer_beta": {
+            "events": {},
+            "revoked_devices": [],
+            "space_id": "space_sync_synthetic"
+          }
+        },
+        "result_class": "partial"
+      },
+      "id": "old_schema_quarantine_partial",
+      "peer_ids": [
+        "peer_alpha",
+        "peer_beta"
+      ],
+      "peer_initial_state": {
+        "peer_alpha": {
+          "authorization_expiry_by_device": {},
+          "projection": "empty",
+          "supported_schema_versions": [
+            1
+          ]
+        },
+        "peer_beta": {
+          "authorization_expiry_by_device": {},
+          "projection": "empty",
+          "supported_schema_versions": [
+            1
+          ]
+        }
+      },
+      "seed": 20260714,
+      "steps": [
+        {
+          "action": "deliver",
+          "envelope_ref": "old_schema",
+          "target_peer_id": "peer_beta"
+        }
+      ]
+    },
+    {
+      "description": "Concurrent revisions from the same base merge when their changed fields are disjoint.",
+      "envelopes": [
+        {
+          "ref": "merge_initial",
+          "value": {
+            "base_revision": 0,
+            "created_at": "2026-01-01T00:00:01Z",
+            "device_id": "peer_alpha",
+            "device_sequence": 1,
+            "idempotency_key": "idem_merge_initial_00000001",
+            "object_id": "rev_merge_initial",
+            "object_type": "event_revision",
+            "operation": "append_revision",
+            "payload": {
+              "changes": {
+                "title": "Initial"
+              },
+              "event_id": "event_merge"
+            },
+            "schema_version": 1,
+            "space_id": "space_sync_synthetic",
+            "sync_envelope_id": "syn_merge_initial"
+          }
+        },
+        {
+          "ref": "merge_beta",
+          "value": {
+            "base_revision": 1,
+            "created_at": "2026-01-01T00:00:01Z",
+            "device_id": "peer_beta",
+            "device_sequence": 1,
+            "idempotency_key": "idem_merge_beta_00000001",
+            "object_id": "rev_merge_beta",
+            "object_type": "event_revision",
+            "operation": "append_revision",
+            "payload": {
+              "changes": {
+                "status": "reviewed"
+              },
+              "event_id": "event_merge"
+            },
+            "schema_version": 1,
+            "space_id": "space_sync_synthetic",
+            "sync_envelope_id": "syn_merge_beta"
+          }
+        },
+        {
+          "ref": "merge_gamma",
+          "value": {
+            "base_revision": 1,
+            "created_at": "2026-01-01T00:00:01Z",
+            "device_id": "peer_gamma",
+            "device_sequence": 1,
+            "idempotency_key": "idem_merge_gamma_00000001",
+            "object_id": "rev_merge_gamma",
+            "object_type": "event_revision",
+            "operation": "append_revision",
+            "payload": {
+              "changes": {
+                "category": "demo"
+              },
+              "event_id": "event_merge"
+            },
+            "schema_version": 1,
+            "space_id": "space_sync_synthetic",
+            "sync_envelope_id": "syn_merge_gamma"
+          }
+        }
+      ],
+      "expected": {
+        "converged": true,
+        "deletion_proofs": [],
+        "event_states": {
+          "peer_alpha": {
+            "event_merge": "active"
+          },
+          "peer_beta": {
+            "event_merge": "active"
+          },
+          "peer_gamma": {
+            "event_merge": "active"
+          }
+        },
+        "key_evidence_codes": [
+          "REVISION_APPLIED"
+        ],
+        "partial_reasons": {},
+        "peer_projection_digests": {
+          "peer_alpha": "a5a28fa32100716e561a12da690c24704bdddc985fb3bd4c98700eb16811f5f1",
+          "peer_beta": "a5a28fa32100716e561a12da690c24704bdddc985fb3bd4c98700eb16811f5f1",
+          "peer_gamma": "a5a28fa32100716e561a12da690c24704bdddc985fb3bd4c98700eb16811f5f1"
+        },
+        "peer_projections": {
+          "peer_alpha": {
+            "events": {
+              "event_merge": {
+                "ancestry_gaps": [],
+                "conflicts": {},
+                "event_id": "event_merge",
+                "fields": {
+                  "category": "demo",
+                  "status": "reviewed",
+                  "title": "Initial"
+                },
+                "revision": 2,
+                "revision_ids": [
+                  "rev_merge_beta",
+                  "rev_merge_gamma",
+                  "rev_merge_initial"
+                ],
+                "state": "active",
+                "tombstone_count": 0
+              }
+            },
+            "revoked_devices": [],
+            "space_id": "space_sync_synthetic"
+          },
+          "peer_beta": {
+            "events": {
+              "event_merge": {
+                "ancestry_gaps": [],
+                "conflicts": {},
+                "event_id": "event_merge",
+                "fields": {
+                  "category": "demo",
+                  "status": "reviewed",
+                  "title": "Initial"
+                },
+                "revision": 2,
+                "revision_ids": [
+                  "rev_merge_beta",
+                  "rev_merge_gamma",
+                  "rev_merge_initial"
+                ],
+                "state": "active",
+                "tombstone_count": 0
+              }
+            },
+            "revoked_devices": [],
+            "space_id": "space_sync_synthetic"
+          },
+          "peer_gamma": {
+            "events": {
+              "event_merge": {
+                "ancestry_gaps": [],
+                "conflicts": {},
+                "event_id": "event_merge",
+                "fields": {
+                  "category": "demo",
+                  "status": "reviewed",
+                  "title": "Initial"
+                },
+                "revision": 2,
+                "revision_ids": [
+                  "rev_merge_beta",
+                  "rev_merge_gamma",
+                  "rev_merge_initial"
+                ],
+                "state": "active",
+                "tombstone_count": 0
+              }
+            },
+            "revoked_devices": [],
+            "space_id": "space_sync_synthetic"
+          }
+        },
+        "result_class": "convergence"
+      },
+      "id": "disjoint_revision_convergence",
+      "peer_ids": [
+        "peer_alpha",
+        "peer_beta",
+        "peer_gamma"
+      ],
+      "peer_initial_state": {
+        "peer_alpha": {
+          "authorization_expiry_by_device": {},
+          "projection": "empty",
+          "supported_schema_versions": [
+            1
+          ]
+        },
+        "peer_beta": {
+          "authorization_expiry_by_device": {},
+          "projection": "empty",
+          "supported_schema_versions": [
+            1
+          ]
+        },
+        "peer_gamma": {
+          "authorization_expiry_by_device": {},
+          "projection": "empty",
+          "supported_schema_versions": [
+            1
+          ]
+        }
+      },
+      "seed": 20260714,
+      "steps": [
+        {
+          "action": "deliver",
+          "envelope_ref": "merge_initial",
+          "target_peer_id": "peer_alpha"
+        },
+        {
+          "action": "deliver",
+          "envelope_ref": "merge_initial",
+          "target_peer_id": "peer_beta"
+        },
+        {
+          "action": "deliver",
+          "envelope_ref": "merge_initial",
+          "target_peer_id": "peer_gamma"
+        },
+        {
+          "action": "deliver",
+          "envelope_ref": "merge_beta",
+          "target_peer_id": "peer_beta"
+        },
+        {
+          "action": "deliver",
+          "envelope_ref": "merge_beta",
+          "target_peer_id": "peer_alpha"
+        },
+        {
+          "action": "deliver",
+          "envelope_ref": "merge_beta",
+          "target_peer_id": "peer_gamma"
+        },
+        {
+          "action": "deliver",
+          "envelope_ref": "merge_gamma",
+          "target_peer_id": "peer_gamma"
+        },
+        {
+          "action": "deliver",
+          "envelope_ref": "merge_gamma",
+          "target_peer_id": "peer_beta"
+        },
+        {
+          "action": "deliver",
+          "envelope_ref": "merge_gamma",
+          "target_peer_id": "peer_alpha"
+        }
+      ]
+    },
+    {
+      "description": "Concurrent user-visible changes to the same field preserve deterministic alternatives instead of LWW.",
+      "envelopes": [
+        {
+          "ref": "conflict_initial",
+          "value": {
+            "base_revision": 0,
+            "created_at": "2026-01-01T00:00:01Z",
+            "device_id": "peer_alpha",
+            "device_sequence": 1,
+            "idempotency_key": "idem_conflict_initial_00000001",
+            "object_id": "rev_conflict_initial",
+            "object_type": "event_revision",
+            "operation": "append_revision",
+            "payload": {
+              "changes": {
+                "title": "Initial"
+              },
+              "event_id": "event_conflict"
+            },
+            "schema_version": 1,
+            "space_id": "space_sync_synthetic",
+            "sync_envelope_id": "syn_conflict_initial"
+          }
+        },
+        {
+          "ref": "conflict_beta",
+          "value": {
+            "base_revision": 1,
+            "created_at": "2026-01-01T00:00:01Z",
+            "device_id": "peer_beta",
+            "device_sequence": 1,
+            "idempotency_key": "idem_conflict_beta_00000001",
+            "object_id": "rev_conflict_beta",
+            "object_type": "event_revision",
+            "operation": "append_revision",
+            "payload": {
+              "changes": {
+                "title": "Beta"
+              },
+              "event_id": "event_conflict"
+            },
+            "schema_version": 1,
+            "space_id": "space_sync_synthetic",
+            "sync_envelope_id": "syn_conflict_beta"
+          }
+        },
+        {
+          "ref": "conflict_gamma",
+          "value": {
+            "base_revision": 1,
+            "created_at": "2026-01-01T00:00:01Z",
+            "device_id": "peer_gamma",
+            "device_sequence": 1,
+            "idempotency_key": "idem_conflict_gamma_00000001",
+            "object_id": "rev_conflict_gamma",
+            "object_type": "event_revision",
+            "operation": "append_revision",
+            "payload": {
+              "changes": {
+                "title": "Gamma"
+              },
+              "event_id": "event_conflict"
+            },
+            "schema_version": 1,
+            "space_id": "space_sync_synthetic",
+            "sync_envelope_id": "syn_conflict_gamma"
+          }
+        }
+      ],
+      "expected": {
+        "converged": true,
+        "deletion_proofs": [],
+        "event_states": {
+          "peer_alpha": {
+            "event_conflict": "conflict"
+          },
+          "peer_beta": {
+            "event_conflict": "conflict"
+          },
+          "peer_gamma": {
+            "event_conflict": "conflict"
+          }
+        },
+        "key_evidence_codes": [
+          "REVISION_APPLIED"
+        ],
+        "partial_reasons": {},
+        "peer_projection_digests": {
+          "peer_alpha": "5a9238e62c2be0d306df5d0ab5ab667f9a0740c9702893e345456b4b1dab5a57",
+          "peer_beta": "5a9238e62c2be0d306df5d0ab5ab667f9a0740c9702893e345456b4b1dab5a57",
+          "peer_gamma": "5a9238e62c2be0d306df5d0ab5ab667f9a0740c9702893e345456b4b1dab5a57"
+        },
+        "peer_projections": {
+          "peer_alpha": {
+            "events": {
+              "event_conflict": {
+                "ancestry_gaps": [],
+                "conflicts": {
+                  "title": [
+                    {
+                      "revision_ids": [
+                        "rev_conflict_beta"
+                      ],
+                      "value": "Beta"
+                    },
+                    {
+                      "revision_ids": [
+                        "rev_conflict_gamma"
+                      ],
+                      "value": "Gamma"
+                    }
+                  ]
+                },
+                "event_id": "event_conflict",
+                "fields": {
+                  "title": "Initial"
+                },
+                "revision": 2,
+                "revision_ids": [
+                  "rev_conflict_beta",
+                  "rev_conflict_gamma",
+                  "rev_conflict_initial"
+                ],
+                "state": "conflict",
+                "tombstone_count": 0
+              }
+            },
+            "revoked_devices": [],
+            "space_id": "space_sync_synthetic"
+          },
+          "peer_beta": {
+            "events": {
+              "event_conflict": {
+                "ancestry_gaps": [],
+                "conflicts": {
+                  "title": [
+                    {
+                      "revision_ids": [
+                        "rev_conflict_beta"
+                      ],
+                      "value": "Beta"
+                    },
+                    {
+                      "revision_ids": [
+                        "rev_conflict_gamma"
+                      ],
+                      "value": "Gamma"
+                    }
+                  ]
+                },
+                "event_id": "event_conflict",
+                "fields": {
+                  "title": "Initial"
+                },
+                "revision": 2,
+                "revision_ids": [
+                  "rev_conflict_beta",
+                  "rev_conflict_gamma",
+                  "rev_conflict_initial"
+                ],
+                "state": "conflict",
+                "tombstone_count": 0
+              }
+            },
+            "revoked_devices": [],
+            "space_id": "space_sync_synthetic"
+          },
+          "peer_gamma": {
+            "events": {
+              "event_conflict": {
+                "ancestry_gaps": [],
+                "conflicts": {
+                  "title": [
+                    {
+                      "revision_ids": [
+                        "rev_conflict_beta"
+                      ],
+                      "value": "Beta"
+                    },
+                    {
+                      "revision_ids": [
+                        "rev_conflict_gamma"
+                      ],
+                      "value": "Gamma"
+                    }
+                  ]
+                },
+                "event_id": "event_conflict",
+                "fields": {
+                  "title": "Initial"
+                },
+                "revision": 2,
+                "revision_ids": [
+                  "rev_conflict_beta",
+                  "rev_conflict_gamma",
+                  "rev_conflict_initial"
+                ],
+                "state": "conflict",
+                "tombstone_count": 0
+              }
+            },
+            "revoked_devices": [],
+            "space_id": "space_sync_synthetic"
+          }
+        },
+        "result_class": "conflict"
+      },
+      "id": "same_field_revision_conflict",
+      "peer_ids": [
+        "peer_alpha",
+        "peer_beta",
+        "peer_gamma"
+      ],
+      "peer_initial_state": {
+        "peer_alpha": {
+          "authorization_expiry_by_device": {},
+          "projection": "empty",
+          "supported_schema_versions": [
+            1
+          ]
+        },
+        "peer_beta": {
+          "authorization_expiry_by_device": {},
+          "projection": "empty",
+          "supported_schema_versions": [
+            1
+          ]
+        },
+        "peer_gamma": {
+          "authorization_expiry_by_device": {},
+          "projection": "empty",
+          "supported_schema_versions": [
+            1
+          ]
+        }
+      },
+      "seed": 20260714,
+      "steps": [
+        {
+          "action": "deliver",
+          "envelope_ref": "conflict_initial",
+          "target_peer_id": "peer_alpha"
+        },
+        {
+          "action": "deliver",
+          "envelope_ref": "conflict_initial",
+          "target_peer_id": "peer_beta"
+        },
+        {
+          "action": "deliver",
+          "envelope_ref": "conflict_initial",
+          "target_peer_id": "peer_gamma"
+        },
+        {
+          "action": "deliver",
+          "envelope_ref": "conflict_beta",
+          "target_peer_id": "peer_beta"
+        },
+        {
+          "action": "deliver",
+          "envelope_ref": "conflict_beta",
+          "target_peer_id": "peer_alpha"
+        },
+        {
+          "action": "deliver",
+          "envelope_ref": "conflict_beta",
+          "target_peer_id": "peer_gamma"
+        },
+        {
+          "action": "deliver",
+          "envelope_ref": "conflict_gamma",
+          "target_peer_id": "peer_gamma"
+        },
+        {
+          "action": "deliver",
+          "envelope_ref": "conflict_gamma",
+          "target_peer_id": "peer_beta"
+        },
+        {
+          "action": "deliver",
+          "envelope_ref": "conflict_gamma",
+          "target_peer_id": "peer_alpha"
+        }
+      ]
+    },
+    {
+      "description": "A tombstone preapplies across a sequence gap and prevents older revisions from resurrecting the event.",
+      "envelopes": [
+        {
+          "ref": "tomb_initial",
+          "value": {
+            "base_revision": 0,
+            "created_at": "2026-01-01T00:00:01Z",
+            "device_id": "peer_alpha",
+            "device_sequence": 1,
+            "idempotency_key": "idem_tomb_initial_00000001",
+            "object_id": "rev_tomb_initial",
+            "object_type": "event_revision",
+            "operation": "append_revision",
+            "payload": {
+              "changes": {
+                "title": "Initial"
+              },
+              "event_id": "event_tombstone"
+            },
+            "schema_version": 1,
+            "space_id": "space_sync_synthetic",
+            "sync_envelope_id": "syn_tomb_initial"
+          }
+        },
+        {
+          "ref": "tomb_stale",
+          "value": {
+            "base_revision": 1,
+            "created_at": "2026-01-01T00:00:02Z",
+            "device_id": "peer_alpha",
+            "device_sequence": 2,
+            "idempotency_key": "idem_tomb_stale_00000001",
+            "object_id": "rev_tomb_stale",
+            "object_type": "event_revision",
+            "operation": "append_revision",
+            "payload": {
+              "changes": {
+                "title": "Stale"
+              },
+              "event_id": "event_tombstone"
+            },
+            "schema_version": 1,
+            "space_id": "space_sync_synthetic",
+            "sync_envelope_id": "syn_tomb_stale"
+          }
+        },
+        {
+          "ref": "tombstone_priority",
+          "value": {
+            "created_at": "2026-01-01T00:00:03Z",
+            "device_id": "peer_alpha",
+            "device_sequence": 3,
+            "idempotency_key": "idem_tombstone_priority_00000001",
+            "object_id": "event_tombstone",
+            "object_type": "event",
+            "operation": "tombstone",
+            "payload": {
+              "required_peer_ids": [
+                "peer_alpha",
+                "peer_beta"
+              ]
+            },
+            "schema_version": 1,
+            "space_id": "space_sync_synthetic",
+            "sync_envelope_id": "syn_tombstone_priority"
+          }
+        }
+      ],
+      "expected": {
+        "converged": true,
+        "deletion_proofs": [
+          {
+            "acknowledged_peer_ids": [
+              "peer_alpha",
+              "peer_beta"
+            ],
+            "pending_peer_ids": [],
+            "required_peer_ids": [
+              "peer_alpha",
+              "peer_beta"
+            ],
+            "status": "complete",
+            "target_id": "event_tombstone"
+          }
+        ],
+        "event_states": {
+          "peer_alpha": {
+            "event_tombstone": "deleted"
+          },
+          "peer_beta": {
+            "event_tombstone": "deleted"
+          }
+        },
+        "key_evidence_codes": [
+          "SYNC_SEQUENCE_GAP",
+          "TOMBSTONE_APPLIED",
+          "TOMBSTONE_PRECEDENCE"
+        ],
+        "partial_reasons": {},
+        "peer_projection_digests": {
+          "peer_alpha": "7baf7b772ed9e3867a5a4f72bf53633d18cf58ba38b85e3448282139286805d5",
+          "peer_beta": "7baf7b772ed9e3867a5a4f72bf53633d18cf58ba38b85e3448282139286805d5"
+        },
+        "peer_projections": {
+          "peer_alpha": {
+            "events": {
+              "event_tombstone": {
+                "conflicts": {},
+                "event_id": "event_tombstone",
+                "fields": {},
+                "revision": 0,
+                "revision_ids": [],
+                "state": "deleted",
+                "tombstone_count": 1
+              }
+            },
+            "revoked_devices": [],
+            "space_id": "space_sync_synthetic"
+          },
+          "peer_beta": {
+            "events": {
+              "event_tombstone": {
+                "conflicts": {},
+                "event_id": "event_tombstone",
+                "fields": {},
+                "revision": 0,
+                "revision_ids": [],
+                "state": "deleted",
+                "tombstone_count": 1
+              }
+            },
+            "revoked_devices": [],
+            "space_id": "space_sync_synthetic"
+          }
+        },
+        "result_class": "convergence"
+      },
+      "id": "tombstone_priority_no_resurrection",
+      "peer_ids": [
+        "peer_alpha",
+        "peer_beta"
+      ],
+      "peer_initial_state": {
+        "peer_alpha": {
+          "authorization_expiry_by_device": {},
+          "projection": "empty",
+          "supported_schema_versions": [
+            1
+          ]
+        },
+        "peer_beta": {
+          "authorization_expiry_by_device": {},
+          "projection": "empty",
+          "supported_schema_versions": [
+            1
+          ]
+        }
+      },
+      "seed": 20260714,
+      "steps": [
+        {
+          "action": "deliver",
+          "envelope_ref": "tomb_initial",
+          "target_peer_id": "peer_alpha"
+        },
+        {
+          "action": "deliver",
+          "envelope_ref": "tomb_stale",
+          "target_peer_id": "peer_alpha"
+        },
+        {
+          "action": "deliver",
+          "envelope_ref": "tombstone_priority",
+          "target_peer_id": "peer_alpha"
+        },
+        {
+          "action": "deliver",
+          "envelope_ref": "tombstone_priority",
+          "target_peer_id": "peer_beta"
+        },
+        {
+          "action": "deliver",
+          "envelope_ref": "tomb_stale",
+          "target_peer_id": "peer_beta"
+        },
+        {
+          "action": "deliver",
+          "envelope_ref": "tomb_initial",
+          "target_peer_id": "peer_beta"
+        }
+      ]
+    },
+    {
+      "description": "Deletion stays proof_incomplete while one required peer is offline and has not applied the tombstone.",
+      "envelopes": [
+        {
+          "ref": "proof_initial",
+          "value": {
+            "base_revision": 0,
+            "created_at": "2026-01-01T00:00:01Z",
+            "device_id": "peer_alpha",
+            "device_sequence": 1,
+            "idempotency_key": "idem_proof_initial_00000001",
+            "object_id": "rev_proof_initial",
+            "object_type": "event_revision",
+            "operation": "append_revision",
+            "payload": {
+              "changes": {
+                "title": "Delete"
+              },
+              "event_id": "event_proof"
+            },
+            "schema_version": 1,
+            "space_id": "space_sync_synthetic",
+            "sync_envelope_id": "syn_proof_initial"
+          }
+        },
+        {
+          "ref": "proof_tombstone",
+          "value": {
+            "created_at": "2026-01-01T00:00:02Z",
+            "device_id": "peer_alpha",
+            "device_sequence": 2,
+            "idempotency_key": "idem_proof_tombstone_00000001",
+            "object_id": "event_proof",
+            "object_type": "event",
+            "operation": "tombstone",
+            "payload": {
+              "required_peer_ids": [
+                "peer_alpha",
+                "peer_beta",
+                "peer_gamma"
+              ]
+            },
+            "schema_version": 1,
+            "space_id": "space_sync_synthetic",
+            "sync_envelope_id": "syn_proof_tombstone"
+          }
+        }
+      ],
+      "expected": {
+        "converged": false,
+        "deletion_proofs": [
+          {
+            "acknowledged_peer_ids": [
+              "peer_alpha",
+              "peer_beta"
+            ],
+            "pending_peer_ids": [
+              "peer_gamma"
+            ],
+            "required_peer_ids": [
+              "peer_alpha",
+              "peer_beta",
+              "peer_gamma"
+            ],
+            "status": "proof_incomplete",
+            "target_id": "event_proof"
+          }
+        ],
+        "event_states": {
+          "peer_alpha": {
+            "event_proof": "deleted"
+          },
+          "peer_beta": {
+            "event_proof": "deleted"
+          },
+          "peer_gamma": {
+            "event_proof": "active"
+          }
+        },
+        "key_evidence_codes": [
+          "PEER_OFFLINE",
+          "TOMBSTONE_APPLIED"
+        ],
+        "partial_reasons": {
+          "peer_gamma": [
+            "offline_replay_pending:1",
+            "peer_offline"
+          ]
+        },
+        "peer_projection_digests": {
+          "peer_alpha": "ea747e2e1119921a015ba664b169950381d45f22e23c1255075c7a3f5a22dade",
+          "peer_beta": "ea747e2e1119921a015ba664b169950381d45f22e23c1255075c7a3f5a22dade",
+          "peer_gamma": "2e28335825ced229b962183376300bef73b43434374e1abaf9f10c842c77a4bc"
+        },
+        "peer_projections": {
+          "peer_alpha": {
+            "events": {
+              "event_proof": {
+                "conflicts": {},
+                "event_id": "event_proof",
+                "fields": {},
+                "revision": 0,
+                "revision_ids": [],
+                "state": "deleted",
+                "tombstone_count": 1
+              }
+            },
+            "revoked_devices": [],
+            "space_id": "space_sync_synthetic"
+          },
+          "peer_beta": {
+            "events": {
+              "event_proof": {
+                "conflicts": {},
+                "event_id": "event_proof",
+                "fields": {},
+                "revision": 0,
+                "revision_ids": [],
+                "state": "deleted",
+                "tombstone_count": 1
+              }
+            },
+            "revoked_devices": [],
+            "space_id": "space_sync_synthetic"
+          },
+          "peer_gamma": {
+            "events": {
+              "event_proof": {
+                "ancestry_gaps": [],
+                "conflicts": {},
+                "event_id": "event_proof",
+                "fields": {
+                  "title": "Delete"
+                },
+                "revision": 1,
+                "revision_ids": [
+                  "rev_proof_initial"
+                ],
+                "state": "active",
+                "tombstone_count": 0
+              }
+            },
+            "revoked_devices": [],
+            "space_id": "space_sync_synthetic"
+          }
+        },
+        "result_class": "proof_incomplete"
+      },
+      "id": "offline_delete_proof_incomplete",
+      "peer_ids": [
+        "peer_alpha",
+        "peer_beta",
+        "peer_gamma"
+      ],
+      "peer_initial_state": {
+        "peer_alpha": {
+          "authorization_expiry_by_device": {},
+          "projection": "empty",
+          "supported_schema_versions": [
+            1
+          ]
+        },
+        "peer_beta": {
+          "authorization_expiry_by_device": {},
+          "projection": "empty",
+          "supported_schema_versions": [
+            1
+          ]
+        },
+        "peer_gamma": {
+          "authorization_expiry_by_device": {},
+          "projection": "empty",
+          "supported_schema_versions": [
+            1
+          ]
+        }
+      },
+      "seed": 20260714,
+      "steps": [
+        {
+          "action": "deliver",
+          "envelope_ref": "proof_initial",
+          "target_peer_id": "peer_alpha"
+        },
+        {
+          "action": "deliver",
+          "envelope_ref": "proof_initial",
+          "target_peer_id": "peer_beta"
+        },
+        {
+          "action": "deliver",
+          "envelope_ref": "proof_initial",
+          "target_peer_id": "peer_gamma"
+        },
+        {
+          "action": "set_online",
+          "online": false,
+          "peer_id": "peer_gamma"
+        },
+        {
+          "action": "deliver",
+          "envelope_ref": "proof_tombstone",
+          "target_peer_id": "peer_alpha"
+        },
+        {
+          "action": "deliver",
+          "envelope_ref": "proof_tombstone",
+          "target_peer_id": "peer_beta"
+        },
+        {
+          "action": "deliver",
+          "envelope_ref": "proof_tombstone",
+          "target_peer_id": "peer_gamma"
+        }
+      ]
+    },
+    {
+      "description": "A peer rejects a content envelope after the origin device has been revoked.",
+      "envelopes": [
+        {
+          "ref": "device_revoke",
+          "value": {
+            "created_at": "2026-01-01T00:00:01Z",
+            "device_id": "peer_gamma",
+            "device_sequence": 1,
+            "idempotency_key": "idem_device_revoke_00000001",
+            "object_id": "peer_alpha",
+            "object_type": "device_grant",
+            "operation": "grant_revocation",
+            "payload": {
+              "target_id": "peer_alpha",
+              "target_type": "device"
+            },
+            "schema_version": 1,
+            "space_id": "space_sync_synthetic",
+            "sync_envelope_id": "syn_device_revoke"
+          }
+        },
+        {
+          "ref": "revoked_message",
+          "value": {
+            "base_revision": 0,
+            "created_at": "2026-01-01T00:00:01Z",
+            "device_id": "peer_alpha",
+            "device_sequence": 1,
+            "idempotency_key": "idem_revoked_message_00000001",
+            "object_id": "rev_revoked_message",
+            "object_type": "event_revision",
+            "operation": "append_revision",
+            "payload": {
+              "changes": {
+                "title": "Rejected"
+              },
+              "event_id": "event_revoked"
+            },
+            "schema_version": 1,
+            "space_id": "space_sync_synthetic",
+            "sync_envelope_id": "syn_revoked_message"
+          }
+        }
+      ],
+      "expected": {
+        "converged": false,
+        "deletion_proofs": [],
+        "event_states": {
+          "peer_alpha": {
+            "event_revoked": "active"
+          },
+          "peer_beta": {},
+          "peer_gamma": {}
+        },
+        "key_evidence_codes": [
+          "DEVICE_REVOKED",
+          "REVOCATION_APPLIED"
+        ],
+        "partial_reasons": {
+          "peer_beta": [
+            "device_revoked:peer_alpha"
+          ]
+        },
+        "peer_projection_digests": {
+          "peer_alpha": "36c167423aaf0e1da1b4a1adcd1a920bcdd293313630fd50fba91a0fbc91baa1",
+          "peer_beta": "12ba5307dbe95a0852f4d237664225b7c1234b3111efd15c37c0f0f2f36ccedd",
+          "peer_gamma": "12ba5307dbe95a0852f4d237664225b7c1234b3111efd15c37c0f0f2f36ccedd"
+        },
+        "peer_projections": {
+          "peer_alpha": {
+            "events": {
+              "event_revoked": {
+                "ancestry_gaps": [],
+                "conflicts": {},
+                "event_id": "event_revoked",
+                "fields": {
+                  "title": "Rejected"
+                },
+                "revision": 1,
+                "revision_ids": [
+                  "rev_revoked_message"
+                ],
+                "state": "active",
+                "tombstone_count": 0
+              }
+            },
+            "revoked_devices": [],
+            "space_id": "space_sync_synthetic"
+          },
+          "peer_beta": {
+            "events": {},
+            "revoked_devices": [
+              "peer_alpha"
+            ],
+            "space_id": "space_sync_synthetic"
+          },
+          "peer_gamma": {
+            "events": {},
+            "revoked_devices": [
+              "peer_alpha"
+            ],
+            "space_id": "space_sync_synthetic"
+          }
+        },
+        "result_class": "partial"
+      },
+      "id": "revoked_device_message_partial",
+      "peer_ids": [
+        "peer_alpha",
+        "peer_beta",
+        "peer_gamma"
+      ],
+      "peer_initial_state": {
+        "peer_alpha": {
+          "authorization_expiry_by_device": {},
+          "projection": "empty",
+          "supported_schema_versions": [
+            1
+          ]
+        },
+        "peer_beta": {
+          "authorization_expiry_by_device": {},
+          "projection": "empty",
+          "supported_schema_versions": [
+            1
+          ]
+        },
+        "peer_gamma": {
+          "authorization_expiry_by_device": {},
+          "projection": "empty",
+          "supported_schema_versions": [
+            1
+          ]
+        }
+      },
+      "seed": 20260714,
+      "steps": [
+        {
+          "action": "deliver",
+          "envelope_ref": "device_revoke",
+          "target_peer_id": "peer_gamma"
+        },
+        {
+          "action": "deliver",
+          "envelope_ref": "device_revoke",
+          "target_peer_id": "peer_beta"
+        },
+        {
+          "action": "deliver",
+          "envelope_ref": "revoked_message",
+          "target_peer_id": "peer_alpha"
+        },
+        {
+          "action": "deliver",
+          "envelope_ref": "revoked_message",
+          "target_peer_id": "peer_beta"
+        }
+      ]
+    },
+    {
+      "description": "A receiving peer rejects an envelope after its deterministic authorization expiry tick.",
+      "envelopes": [
+        {
+          "ref": "expired_message",
+          "value": {
+            "base_revision": 0,
+            "created_at": "2026-01-01T00:00:01Z",
+            "device_id": "peer_alpha",
+            "device_sequence": 1,
+            "idempotency_key": "idem_expired_message_00000001",
+            "object_id": "rev_expired_message",
+            "object_type": "event_revision",
+            "operation": "append_revision",
+            "payload": {
+              "changes": {
+                "title": "Rejected"
+              },
+              "event_id": "event_expired"
+            },
+            "schema_version": 1,
+            "space_id": "space_sync_synthetic",
+            "sync_envelope_id": "syn_expired_message"
+          }
+        }
+      ],
+      "expected": {
+        "converged": false,
+        "deletion_proofs": [],
+        "event_states": {
+          "peer_alpha": {
+            "event_expired": "active"
+          },
+          "peer_beta": {}
+        },
+        "key_evidence_codes": [
+          "AUTHORIZATION_EXPIRED"
+        ],
+        "partial_reasons": {
+          "peer_beta": [
+            "authorization_expired:peer_alpha"
+          ]
+        },
+        "peer_projection_digests": {
+          "peer_alpha": "dd32b7484c6f3def524484cdc252fae8248a71db3c4694a114b4e721a96b194d",
+          "peer_beta": "c2b43a60c198083a8145360aee2b313c2988df1ee7e7bf39be78bea76867c362"
+        },
+        "peer_projections": {
+          "peer_alpha": {
+            "events": {
+              "event_expired": {
+                "ancestry_gaps": [],
+                "conflicts": {},
+                "event_id": "event_expired",
+                "fields": {
+                  "title": "Rejected"
+                },
+                "revision": 1,
+                "revision_ids": [
+                  "rev_expired_message"
+                ],
+                "state": "active",
+                "tombstone_count": 0
+              }
+            },
+            "revoked_devices": [],
+            "space_id": "space_sync_synthetic"
+          },
+          "peer_beta": {
+            "events": {},
+            "revoked_devices": [],
+            "space_id": "space_sync_synthetic"
+          }
+        },
+        "result_class": "partial"
+      },
+      "id": "authorization_expired_message_partial",
+      "peer_ids": [
+        "peer_alpha",
+        "peer_beta"
+      ],
+      "peer_initial_state": {
+        "peer_alpha": {
+          "authorization_expiry_by_device": {},
+          "projection": "empty",
+          "supported_schema_versions": [
+            1
+          ]
+        },
+        "peer_beta": {
+          "authorization_expiry_by_device": {
+            "peer_alpha": 1
+          },
+          "projection": "empty",
+          "supported_schema_versions": [
+            1
+          ]
+        }
+      },
+      "seed": 20260714,
+      "steps": [
+        {
+          "action": "deliver",
+          "envelope_ref": "expired_message",
+          "target_peer_id": "peer_alpha"
+        },
+        {
+          "action": "deliver",
+          "envelope_ref": "expired_message",
+          "target_peer_id": "peer_beta"
+        }
+      ]
+    },
+    {
+      "description": "A different digest reusing an observed device sequence is rejected as a replay collision.",
+      "envelopes": [
+        {
+          "ref": "replay_original",
+          "value": {
+            "base_revision": 0,
+            "created_at": "2026-01-01T00:00:01Z",
+            "device_id": "peer_alpha",
+            "device_sequence": 1,
+            "idempotency_key": "idem_replay_original_00000001",
+            "object_id": "rev_replay_original",
+            "object_type": "event_revision",
+            "operation": "append_revision",
+            "payload": {
+              "changes": {
+                "title": "Original"
+              },
+              "event_id": "event_replay"
+            },
+            "schema_version": 1,
+            "space_id": "space_sync_synthetic",
+            "sync_envelope_id": "syn_replay_original"
+          }
+        },
+        {
+          "ref": "replay_altered",
+          "value": {
+            "base_revision": 0,
+            "created_at": "2026-01-01T00:00:01Z",
+            "device_id": "peer_alpha",
+            "device_sequence": 1,
+            "idempotency_key": "idem_replay_altered_00000001",
+            "object_id": "rev_replay_altered",
+            "object_type": "event_revision",
+            "operation": "append_revision",
+            "payload": {
+              "changes": {
+                "title": "Altered"
+              },
+              "event_id": "event_replay"
+            },
+            "schema_version": 1,
+            "space_id": "space_sync_synthetic",
+            "sync_envelope_id": "syn_replay_altered"
+          }
+        }
+      ],
+      "expected": {
+        "converged": true,
+        "deletion_proofs": [],
+        "event_states": {
+          "peer_alpha": {
+            "event_replay": "active"
+          },
+          "peer_beta": {
+            "event_replay": "active"
+          }
+        },
+        "key_evidence_codes": [
+          "REPLAY_SEQUENCE_COLLISION"
+        ],
+        "partial_reasons": {
+          "peer_beta": [
+            "replay_sequence_collision:peer_alpha:1"
+          ]
+        },
+        "peer_projection_digests": {
+          "peer_alpha": "c4adcca07bfbdd10801aa3b0b310a0b7ecd9dd2f433177ee4253db8319f681c2",
+          "peer_beta": "c4adcca07bfbdd10801aa3b0b310a0b7ecd9dd2f433177ee4253db8319f681c2"
+        },
+        "peer_projections": {
+          "peer_alpha": {
+            "events": {
+              "event_replay": {
+                "ancestry_gaps": [],
+                "conflicts": {},
+                "event_id": "event_replay",
+                "fields": {
+                  "title": "Original"
+                },
+                "revision": 1,
+                "revision_ids": [
+                  "rev_replay_original"
+                ],
+                "state": "active",
+                "tombstone_count": 0
+              }
+            },
+            "revoked_devices": [],
+            "space_id": "space_sync_synthetic"
+          },
+          "peer_beta": {
+            "events": {
+              "event_replay": {
+                "ancestry_gaps": [],
+                "conflicts": {},
+                "event_id": "event_replay",
+                "fields": {
+                  "title": "Original"
+                },
+                "revision": 1,
+                "revision_ids": [
+                  "rev_replay_original"
+                ],
+                "state": "active",
+                "tombstone_count": 0
+              }
+            },
+            "revoked_devices": [],
+            "space_id": "space_sync_synthetic"
+          }
+        },
+        "result_class": "partial"
+      },
+      "id": "altered_sequence_replay_partial",
+      "peer_ids": [
+        "peer_alpha",
+        "peer_beta"
+      ],
+      "peer_initial_state": {
+        "peer_alpha": {
+          "authorization_expiry_by_device": {},
+          "projection": "empty",
+          "supported_schema_versions": [
+            1
+          ]
+        },
+        "peer_beta": {
+          "authorization_expiry_by_device": {},
+          "projection": "empty",
+          "supported_schema_versions": [
+            1
+          ]
+        }
+      },
+      "seed": 20260714,
+      "steps": [
+        {
+          "action": "deliver",
+          "envelope_ref": "replay_original",
+          "target_peer_id": "peer_alpha"
+        },
+        {
+          "action": "deliver",
+          "envelope_ref": "replay_original",
+          "target_peer_id": "peer_beta"
+        },
+        {
+          "action": "deliver",
+          "envelope_ref": "replay_altered",
+          "target_peer_id": "peer_beta"
+        }
+      ]
+    },
+    {
+      "description": "The same idempotency key with different logical content is rejected on every receiving peer.",
+      "envelopes": [
+        {
+          "ref": "idem_first",
+          "value": {
+            "base_revision": 0,
+            "created_at": "2026-01-01T00:00:01Z",
+            "device_id": "peer_alpha",
+            "device_sequence": 1,
+            "idempotency_key": "idem_shared_vector_0001",
+            "object_id": "rev_idem_first",
+            "object_type": "event_revision",
+            "operation": "append_revision",
+            "payload": {
+              "changes": {
+                "title": "One"
+              },
+              "event_id": "event_idempotency"
+            },
+            "schema_version": 1,
+            "space_id": "space_sync_synthetic",
+            "sync_envelope_id": "syn_idem_first"
+          }
+        },
+        {
+          "ref": "idem_second",
+          "value": {
+            "base_revision": 1,
+            "created_at": "2026-01-01T00:00:02Z",
+            "device_id": "peer_alpha",
+            "device_sequence": 2,
+            "idempotency_key": "idem_shared_vector_0001",
+            "object_id": "rev_idem_second",
+            "object_type": "event_revision",
+            "operation": "append_revision",
+            "payload": {
+              "changes": {
+                "title": "Two"
+              },
+              "event_id": "event_idempotency"
+            },
+            "schema_version": 1,
+            "space_id": "space_sync_synthetic",
+            "sync_envelope_id": "syn_idem_second"
+          }
+        }
+      ],
+      "expected": {
+        "converged": true,
+        "deletion_proofs": [],
+        "event_states": {
+          "peer_alpha": {
+            "event_idempotency": "active"
+          },
+          "peer_beta": {
+            "event_idempotency": "active"
+          }
+        },
+        "key_evidence_codes": [
+          "IDEMPOTENCY_CONFLICT"
+        ],
+        "partial_reasons": {
+          "peer_alpha": [
+            "idempotency_conflict:idem_shared_vector_0001"
+          ],
+          "peer_beta": [
+            "idempotency_conflict:idem_shared_vector_0001"
+          ]
+        },
+        "peer_projection_digests": {
+          "peer_alpha": "3f0e473ae09a768a00d1af60c7037a3df395654293248d2246aca0404c4c3735",
+          "peer_beta": "3f0e473ae09a768a00d1af60c7037a3df395654293248d2246aca0404c4c3735"
+        },
+        "peer_projections": {
+          "peer_alpha": {
+            "events": {
+              "event_idempotency": {
+                "ancestry_gaps": [],
+                "conflicts": {},
+                "event_id": "event_idempotency",
+                "fields": {
+                  "title": "One"
+                },
+                "revision": 1,
+                "revision_ids": [
+                  "rev_idem_first"
+                ],
+                "state": "active",
+                "tombstone_count": 0
+              }
+            },
+            "revoked_devices": [],
+            "space_id": "space_sync_synthetic"
+          },
+          "peer_beta": {
+            "events": {
+              "event_idempotency": {
+                "ancestry_gaps": [],
+                "conflicts": {},
+                "event_id": "event_idempotency",
+                "fields": {
+                  "title": "One"
+                },
+                "revision": 1,
+                "revision_ids": [
+                  "rev_idem_first"
+                ],
+                "state": "active",
+                "tombstone_count": 0
+              }
+            },
+            "revoked_devices": [],
+            "space_id": "space_sync_synthetic"
+          }
+        },
+        "result_class": "partial"
+      },
+      "id": "idempotency_content_collision_partial",
+      "peer_ids": [
+        "peer_alpha",
+        "peer_beta"
+      ],
+      "peer_initial_state": {
+        "peer_alpha": {
+          "authorization_expiry_by_device": {},
+          "projection": "empty",
+          "supported_schema_versions": [
+            1
+          ]
+        },
+        "peer_beta": {
+          "authorization_expiry_by_device": {},
+          "projection": "empty",
+          "supported_schema_versions": [
+            1
+          ]
+        }
+      },
+      "seed": 20260714,
+      "steps": [
+        {
+          "action": "deliver",
+          "envelope_ref": "idem_first",
+          "target_peer_id": "peer_alpha"
+        },
+        {
+          "action": "deliver",
+          "envelope_ref": "idem_second",
+          "target_peer_id": "peer_alpha"
+        },
+        {
+          "action": "deliver",
+          "envelope_ref": "idem_first",
+          "target_peer_id": "peer_beta"
+        },
+        {
+          "action": "deliver",
+          "envelope_ref": "idem_second",
+          "target_peer_id": "peer_beta"
+        }
+      ]
+    }
+  ]
+}
