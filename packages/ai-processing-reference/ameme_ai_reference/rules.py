@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .errors import ErrorCode, ProcessingError
 from .model import EventDraft, MergeDecision, canonical_json, stable_digest
-from .schema import MachineContract
+from .schema import MachineContract, observation_supports_event_time
 
 
 FACT_FIELDS = ("time", "place", "people", "action", "result", "intent", "description")
@@ -171,7 +171,7 @@ def build_event_draft(
         choices: list[tuple[int, str, Any, Mapping[str, Any]]] = []
         for item in items:
             if field == "time":
-                if "time_range" not in item:
+                if not observation_supports_event_time(item):
                     continue
                 value = item["time_range"]
             else:
@@ -396,7 +396,7 @@ def draft_from_provider_candidate(
         source_object_ids=tuple(
             sorted({str(item["source_object_id"]) for item in referenced})
         ),
-        superseded_evidence_ids=(),
+        superseded_evidence_ids=r0_draft.superseded_evidence_ids,
         fallback_reason=None,
     )
 

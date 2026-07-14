@@ -30,6 +30,23 @@ FIELD_VALUE_KEYS = {
     "relationship": {"relationship"},
     "description": {"description"},
 }
+NON_TIME_FACT_VALUE_KEYS = frozenset(
+    {"place", "people", "action", "result", "intent", "description"}
+)
+# A future contract may explicitly allow a kind whose time range is itself the
+# factual payload. No current Observation kind has that contract.
+TIME_ONLY_FACT_KINDS: frozenset[str] = frozenset()
+
+
+def observation_supports_event_time(observation: Mapping[str, Any]) -> bool:
+    """Return whether an Observation may contribute factual event time."""
+
+    if "time_range" not in observation:
+        return False
+    value_keys = set(observation.get("value", {}))
+    return bool(NON_TIME_FACT_VALUE_KEYS & value_keys) or str(
+        observation.get("kind", "")
+    ) in TIME_ONLY_FACT_KINDS
 
 
 class MachineContract:
@@ -117,7 +134,7 @@ class MachineContract:
             if any(item["space_id"] != candidate["space_id"] for item in typed):
                 raise ProcessingError(ErrorCode.SPACE_DENIED)
             if field == "time":
-                supported = all("time_range" in item for item in typed)
+                supported = all(observation_supports_event_time(item) for item in typed)
             else:
                 keys = FIELD_VALUE_KEYS.get(str(field), set())
                 supported = bool(keys) and all(bool(keys & set(item.get("value", {}))) for item in typed)

@@ -108,6 +108,23 @@ class AIProcessingReferenceTest(unittest.TestCase):
         self.assertEqual(draft.fact_status, "user_asserted")
         self.assertIn("obs_description_old", draft.superseded_evidence_ids)
 
+    def test_provider_draft_preserves_r0_superseded_lineage(self) -> None:
+        observations = [self.observation("incorrect"), self.observation("correction")]
+        r0_draft = build_event_draft(observations, contract=MachineContract())
+        provider_candidate = deepcopy(dict(r0_draft.candidate))
+        provider = FakeSyntheticProvider({"correction": provider_candidate})
+
+        draft = self.reference.create_candidate(
+            observations,
+            context=self.context,
+            provider=provider,
+            synthetic_fixture_id="correction",
+        )
+
+        self.assertIsNone(draft.fallback_reason)
+        self.assertEqual(draft.description, "实际去了合成图书馆")
+        self.assertIn("obs_description_old", draft.superseded_evidence_ids)
+
     def test_user_addendum_becomes_user_asserted_observation(self) -> None:
         addendum = {
             "schema_version": 1,
@@ -198,21 +215,30 @@ class AIProcessingReferenceTest(unittest.TestCase):
             "fact_status": "user_asserted",
             "confidence": 1.0,
             "parser_version": "synthetic-user-v1",
+            "time_range": {
+                "start": "2026-07-14T22:02:00+08:00",
+                "timezone": "Asia/Shanghai",
+                "precision": "minute"
+            },
             "created_at": "2026-07-14T22:02:00+08:00"
         }
         draft = build_event_draft([factual, salience_only], contract=MachineContract())
         action_evidence = next(
             item for item in draft.candidate["field_evidence"] if item["field"] == "action"
         )
+        time_evidence = next(
+            item for item in draft.candidate["field_evidence"] if item["field"] == "time"
+        )
         self.assertEqual(action_evidence["status"], "inferred")
         self.assertEqual(action_evidence["confidence"], 0.4)
+        self.assertEqual(time_evidence["observation_ids"], ["obs_salience_only"])
+        self.assertEqual(time_evidence["status"], "inferred")
         self.assertEqual(draft.fact_status, "low_confidence_candidate")
         self.assertEqual(draft.fact_confidence, 0.4)
         self.assertEqual(draft.title, "保留低置信事实标题")
 
     def test_salience_only_observation_cannot_form_event_candidate(self) -> None:
         salience_only = self.observation("salience")
-        salience_only.pop("time_range")
         salience_only["value"] = {
             "emotion": "合成情绪",
             "relationship": "合成关系",
@@ -225,6 +251,53 @@ class AIProcessingReferenceTest(unittest.TestCase):
         with self.assertRaises(ProcessingError) as raised:
             build_event_draft([salience_only], contract=MachineContract())
         self.assertEqual(raised.exception.code, ErrorCode.DATA_INSUFFICIENT)
+
+    def test_provider_cannot_use_salience_only_timestamp_as_time_evidence(self) -> None:
+        factual = self.observation("salience")
+        factual["value"] = {"action": "保留事实时间"}
+        salience_only = self.observation("salience")
+        salience_only["observation_id"] = "obs_provider_salience_only"
+        salience_only["source_object_id"] = "src_provider_salience_only"
+        salience_only["value"] = {
+            "emotion": "合成情绪",
+            "importance": 1.0,
+            "emotional_salience": 1.0
+        }
+        salience_only["time_range"]["start"] = "2026-07-14T22:05:00+08:00"
+        salience_only["fact_status"] = "user_asserted"
+        salience_only["confidence"] = 1.0
+
+        r0_draft = build_event_draft(
+            [factual, salience_only], contract=MachineContract()
+        )
+        provider_candidate = deepcopy(dict(r0_draft.candidate))
+        provider_candidate["time_range"] = deepcopy(salience_only["time_range"])
+        time_evidence = next(
+            item
+            for item in provider_candidate["field_evidence"]
+            if item["field"] == "time"
+        )
+        time_evidence.update(
+            {
+                "observation_ids": [salience_only["observation_id"]],
+                "confidence": 1.0,
+                "status": "user_asserted"
+            }
+        )
+        provider = FakeSyntheticProvider({"salience_time": provider_candidate})
+
+        draft = self.reference.create_candidate(
+            [factual, salience_only],
+            context=self.context,
+            provider=provider,
+            synthetic_fixture_id="salience_time",
+        )
+
+        self.assertEqual(draft.fallback_reason, ErrorCode.MISSING_EVIDENCE.value)
+        factual_time = next(
+            item for item in draft.candidate["field_evidence"] if item["field"] == "time"
+        )
+        self.assertEqual(factual_time["observation_ids"], ["obs_salience_only"])
 
     def test_budget_exhaustion_preserves_r0_candidate_and_no_summary(self) -> None:
         context = PolicyContext(
