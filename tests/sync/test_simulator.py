@@ -114,6 +114,94 @@ class SyncProtocolTests(unittest.TestCase):
         self.assertEqual(result.outcome, Outcome.PARTIAL)
         self.assertIn("schema_unsupported:peer_alpha:1", result.partial_reasons["peer_beta"])
 
+    def test_cross_space_in_order_is_rejected_without_receive_state(self) -> None:
+        sim = DeterministicSimulator(("peer_alpha", "peer_beta"))
+        envelope = self._revision(
+            sim, "peer_alpha", "event_foreign", "rev_foreign", 0, {"title": "Foreign"}
+        )
+        foreign = replace(envelope, space_id="space_foreign")
+
+        receipt = sim.deliver(foreign, "peer_beta")
+        peer = sim.peers["peer_beta"]
+
+        self.assertEqual(receipt.status, "rejected")
+        self.assertEqual(receipt.code, "SPACE_DENIED")
+        self.assertFalse(receipt.semantic_applied)
+        self.assertEqual(peer.cursors["peer_alpha"], 0)
+        self.assertNotIn(1, peer._sequence_digests["peer_alpha"])
+        self.assertNotIn(1, peer._pending["peer_alpha"])
+        self.assertNotIn("event_foreign", peer.state_snapshot()["events"])
+        self.assertEqual(peer.audit[-1]["result_code"], "SPACE_DENIED")
+
+    def test_cross_space_out_of_order_never_enters_gap_buffer(self) -> None:
+        sim = DeterministicSimulator(("peer_alpha", "peer_beta"))
+        first = self._revision(
+            sim, "peer_alpha", "event_gap_space", "rev_gap_space_1", 0, {"title": "One"}
+        )
+        second = self._revision(
+            sim, "peer_alpha", "event_gap_space", "rev_gap_space_2", 1, {"status": "Two"}
+        )
+
+        denied = sim.deliver(replace(second, space_id="space_foreign"), "peer_beta")
+        peer = sim.peers["peer_beta"]
+        self.assertEqual(denied.code, "SPACE_DENIED")
+        self.assertEqual(peer.cursors["peer_alpha"], 0)
+        self.assertNotIn(2, peer._sequence_digests["peer_alpha"])
+        self.assertNotIn(2, peer._pending["peer_alpha"])
+
+        gap = sim.deliver(second, "peer_beta")
+        self.assertEqual(gap.code, "SYNC_SEQUENCE_GAP")
+        sim.deliver(first, "peer_beta")
+        self.assertEqual(peer.cursors["peer_alpha"], 2)
+        self.assertEqual(peer.state_snapshot()["events"]["event_gap_space"]["revision"], 2)
+
+    def test_cross_space_duplicate_and_replay_stay_space_denied(self) -> None:
+        sim = DeterministicSimulator(("peer_alpha", "peer_beta"))
+        envelope = self._revision(
+            sim, "peer_alpha", "event_space_replay", "rev_space_replay", 0, {"title": "One"}
+        )
+        foreign = replace(envelope, space_id="space_foreign")
+        altered = replace(
+            foreign,
+            payload={"event_id": "event_space_replay", "changes": {"title": "Altered"}},
+        )
+
+        receipts = (
+            sim.deliver(foreign, "peer_beta"),
+            sim.deliver(foreign, "peer_beta"),
+            sim.deliver(altered, "peer_beta"),
+        )
+        peer = sim.peers["peer_beta"]
+        self.assertEqual([receipt.code for receipt in receipts], ["SPACE_DENIED"] * 3)
+        self.assertEqual(peer.cursors["peer_alpha"], 0)
+        self.assertNotIn(1, peer._sequence_digests["peer_alpha"])
+        self.assertNotIn(1, peer._pending["peer_alpha"])
+        self.assertEqual(
+            [item["result_code"] for item in peer.audit[-3:]],
+            ["SPACE_DENIED"] * 3,
+        )
+
+    def test_correct_space_same_sequence_applies_after_space_denial(self) -> None:
+        sim = DeterministicSimulator(("peer_alpha", "peer_beta"))
+        envelope = self._revision(
+            sim, "peer_alpha", "event_space_retry", "rev_space_retry", 0, {"title": "Valid"}
+        )
+
+        denied = sim.deliver(replace(envelope, space_id="space_foreign"), "peer_beta")
+        accepted = sim.deliver(envelope, "peer_beta")
+        duplicate = sim.deliver(envelope, "peer_beta")
+        peer = sim.peers["peer_beta"]
+
+        self.assertEqual(denied.code, "SPACE_DENIED")
+        self.assertEqual(accepted.code, "REVISION_APPLIED")
+        self.assertEqual(duplicate.code, "DUPLICATE_ENVELOPE")
+        self.assertEqual(peer.cursors["peer_alpha"], 1)
+        self.assertEqual(peer._sequence_digests["peer_alpha"][1], envelope.digest)
+        self.assertEqual(
+            peer.state_snapshot()["events"]["event_space_retry"]["fields"]["title"],
+            "Valid",
+        )
+
     def test_partial_demo_scenario_is_stable(self) -> None:
         first = partial_scenario()
         second = partial_scenario()

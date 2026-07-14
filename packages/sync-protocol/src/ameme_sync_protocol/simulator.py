@@ -84,6 +84,14 @@ class Peer:
     def receive(self, envelope: Envelope, *, now_tick: int) -> Receipt:
         origin = envelope.device_id
         sequence = envelope.device_sequence
+        # Space is an ingress authorization boundary. Reject before recording a
+        # sequence digest or gap so a foreign-space packet cannot reserve an
+        # origin sequence, preapply priority semantics, or block a later valid
+        # envelope for this peer's space.
+        if envelope.space_id != self.space_id:
+            self._record_space_denial(envelope)
+            return self._receipt(envelope, "rejected", "SPACE_DENIED")
+
         existing_digest = self._sequence_digests[origin].get(sequence)
         if existing_digest is not None:
             if existing_digest != envelope.digest:
@@ -140,6 +148,11 @@ class Peer:
 
     def _apply_semantics(self, envelope: Envelope, *, now_tick: int) -> tuple[bool, str]:
         origin = envelope.device_id
+        # Defense in depth for future callers or restored pending state. Normal
+        # receive flow rejects this before any sequence state is recorded.
+        if envelope.space_id != self.space_id:
+            self._record_space_denial(envelope)
+            return False, "SPACE_DENIED"
         if origin in self._revoked_devices:
             self._security_reasons.add(f"device_revoked:{origin}")
             self._record_audit(envelope, "DEVICE_REVOKED")
@@ -189,6 +202,12 @@ class Peer:
 
         self._record_audit(envelope, "ACCEPTED_NO_PROJECTION")
         return True, "ACCEPTED_NO_PROJECTION"
+
+    def _record_space_denial(self, envelope: Envelope) -> None:
+        self._security_reasons.add(
+            f"space_denied:{envelope.device_id}:{envelope.device_sequence}"
+        )
+        self._record_audit(envelope, "SPACE_DENIED")
 
     def _record_audit(self, envelope: Envelope, code: str) -> None:
         self.audit.append(
