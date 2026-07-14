@@ -7,7 +7,7 @@
 
 ## 当前阶段
 
-Ameme 已完成 MVP 研发前本地可完善准备与 D1–D10 最终拍板；差距矩阵 `needs_work = 0`、`needs_owner_review = 0`，全链结论为 `pass_with_external_evidence`。M1–M6 全面研发获批且首批契约、参考 Core、同步、Agent 与 Android 切片已集成；Gate 1 仍为 `hold`、Gate 2 未执行，不能用开工进度替代真实用户、双端真机和生产实现证据。
+Ameme 已完成 MVP 研发前本地可完善准备与 D1–D10 最终拍板；差距矩阵 `needs_work = 0`、`needs_owner_review = 0`，全链结论为 `pass_with_external_evidence`。M1–M6 全面研发获批；当前已集成契约、参考 Core/Raw/队列与同步、Agent↔Core 测试适配、R0 AI/固定评测，以及 Android SQLCipher Local Event Node/显式来源/检索/URI 清理切片。Gate 1 仍为 `hold`、Gate 2 未执行，不能用合成评测和 AVD 进度替代真实用户、双端真机和生产实现证据。
 
 ## 按问题查正本
 

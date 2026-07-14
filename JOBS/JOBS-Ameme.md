@@ -171,12 +171,20 @@
 - [x] AI-001/002/004 第一段：增加 Task registry、PromptEnvelope、显式 Provider allow-list、R0 时间/计划/去重规则、EventCandidate 结构化/evidence validator 和安全回退；无真实模型、完整 Grant 或 Summary 质量结论。
 - [x] 合并后全链 Review：125 项 Python 测试、2,715 项兼容检查、2,709 项契约检查、5 个契约质量门、14-case/14-risk Skill、32 个 Markdown 链接、128 项治理、Android JVM/lint/assemble 与 API 36 AVD 13 项设备测试通过。
 
+### 已集成第三批切片
+
+- [x] AND-003/004 第一段：Android Photo Picker、受限 ACTION_SEND、文字入口、语音明确 Unsupported、用户触发且有界的 Calendar 合成 adapter；Calendar 只写 `Planned`，无媒体/麦克风/日历/位置敏感 Manifest 权限。
+- [x] DB-01 后续第一段：SQLCipher v4 SourceLocator、API 36 FTS5 + 参数化 LIKE 共同多词语义、keyset 日期分页、space/delete 过滤，以及 Persisted URI `RELEASE_PENDING → RELEASED` 两阶段恢复；25/25 AVD，通过不代表 16 KB、容量或真机性能。
+- [x] AI-005/006 第一段：12-case 固定合成 Eval、攻击/删除集、差异报告，以及 scope-bound budget/cache/batch/route observability；真实模型质量、成本和供应商行为仍未证明。
+- [x] SKILL-01/AG-003 Windows 测试段：MCP Mock 接 EventNodeStore/Core Oracle 测试适配，覆盖授权/撤权/离线/injection/undo、双存储三崩溃窗口和内容安全控制面；Python Core 与 Mock 均非真实宿主或生产 Local Node。
+- [x] 合并后全链 Review：143 项 Python 测试、AI Eval 12/12、2,715/2,709 契约检查、14-case/14-risk Skill、32 个链接、129 项治理、Android JVM/lint/assemble 与 API 36 AVD 25 项设备测试通过。
+
 ### 下一执行批次
 
-- [ ] AND-003/004 第一段：Android Photo Picker/Share/文字与语音显式入口、Calendar scoped adapter 与 planned 语义；不申请无关后台权限。
-- [ ] DB-01 后续证据：FTS5/日期分页、10k/100k 合成容量、启动/检索/迁移指标；16 KB 和物理真机保留给设备矩阵。
-- [ ] AI-005/006 第一段：固定 eval/攻击删除集、差异报告和预算/批处理/路由观测；真实 Provider 仍受 PIA/供应商准入门控制。
-- [ ] SKILL-01/AG-003 可在 Windows 完成的部分：把 MCP Mock 接到本地 Event Node 测试适配层，复跑授权、撤销、离线和注入；真实 Codex/Claude Code/Cursor 宿主证据单独保存。
+- [ ] DB-01 性能段：移除 Android Compose/主线程上的同步 SQLCipher 打开、写入、检索和授权清理；用 10k/100k 合成库记录启动、分页、FTS/LIKE、迁移、内存和磁盘指标。16 KB 与物理真机继续保留给设备矩阵。
+- [ ] AND-003/004 第二段：用户触发的真实语音 recording contract 与 Calendar Provider scoped adapter；权限拒绝/撤销、取消、后台限制和 `Planned` 不升级均需真机证据。
+- [ ] CORE/AG 原生接合：把已验证 Store/对账语义映射到 Android SQLCipher Local Node，再接真实 Codex/Claude Code/Cursor host；Python CoreStore 只保留 Oracle。
+- [ ] SYNC-002/003：Android NSD/未来 iOS Network.framework 的发现、同账户设备认证、加密会话和冻结向量 conformance；iOS 部分等待 Mac。
 
 ### 当前门禁
 

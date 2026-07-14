@@ -5,12 +5,12 @@
 
 ## 当前阶段
 
-- 生命周期：Discovery Gate 仍在补证，MVP 工程实现进行中；M1–M6 全面研发获批，当前已集成契约、参考 Core/Raw/队列、同步、Agent、R0 AI 与 Android 加密 Local Event Node 首切片。
+- 生命周期：Discovery Gate 仍在补证，MVP 工程实现进行中；M1–M6 全面研发获批，当前已集成契约、参考 Core/Raw/队列、同步、Agent↔Core 测试适配、R0 AI/固定评测与 Android 加密 Local Event Node/显式来源切片。
 - 当前 Gate：Gate 1 `hold`。产品主链已改为 DayLedger 事件覆盖优先；桌面 Spike 和 FORMALdoc 只能证明专业来源，通用来源与正式用户证据仍不足。
 - 产品 MVP：`今天` 为唯一默认主页，单悬浮记录按钮展开文字/语音/照片/导入，右上搜索进入统一历史日流；数据稀疏是默认状态。品牌为简洁、高效、安静、可信、流畅；双端使用原生控件。
-- Agent：仓库内统一 `ameme-memory` Skill 与本地 MCP Mock 已形成六模式、授权内自动读写、撤销、预算控制和 14-case 风险评测；真实宿主与真实 Local Node 集成待 SKILL-01/AG-003。
+- Agent：统一 `ameme-memory` Skill 与本地 MCP Mock 已形成六模式、授权内自动读写、撤销、预算控制和 14-case 风险评测；新增 EventNodeStore/Core Oracle 测试适配、双存储崩溃对账与 24 项回归。Python Core 仍非生产节点，真实 Codex/Claude Code/Cursor 宿主和原生 Local Node 集成待 SKILL-01/AG-003。
 - 同步/账户：同账户已批准设备在 LAN 内点对点同步；身份服务不保存记忆内容；无用户密钥 UX，也无全设备丢失后的旧数据恢复。
-- 工程实现：截至 main `c85f425`，Android API 36 AVD 已通过 SQLCipher 4.15.0、Keystore 包裹密钥、WAL、错误密钥、v1→v2→v3 迁移、空间隔离、不可变 Revision、重建/删除和备份排除 13 项设备测试；参考 Core 已补 Raw Vault/耐久队列/可恢复删除，R0 AI 已补确定性处理和证据约束。它们仍不等于双端真机、16 KB/容量/性能、生产 Raw/LAN、真实模型或真实 Agent 宿主通过。
+- 工程实现：截至 main `2b2f02f`，Android API 36 AVD 已通过 25 项设备测试，覆盖 SQLCipher/Keystore/WAL/迁移/space/Revision、Photo Picker/ACTION_SEND、Calendar planned 适配、FTS5/LIKE 多词检索、keyset 分页及持久 URI 授权两阶段清理；AI 固定合成评测 12/12，Agent↔Core 故障恢复通过。它们仍不等于双端真机、16 KB/容量/性能、真实语音/Calendar、生产 Raw/LAN、真实模型或真实 Agent 宿主通过。
 
 ## 进行中
 
@@ -21,7 +21,7 @@
 | MVP 范围与体验原则 | accepted | 品牌、单悬浮记录入口、双端页面、统一 Skill、六条旅程和指标已接受 |
 | MVP 三线并行设计与技术方案 | accepted | 产品、交互、契约、架构、安全、质量和工程计划完成全链审计 |
 | MVP 研发前准备 Goal | done | owner/local gap 清零；13 项正式决策已登记（ADR-003 被替代）；Skill/Schema/治理/链接/编译门禁通过，只保留 Spike/外部证据 |
-| MVP 工程实现 | in_progress | 当前批次已通过合并后回归；下一批推进 Android 显式来源/索引与容量证据、真实宿主/Local Node 接合和 AI 固定评测；iOS 构建等待 Mac |
+| MVP 工程实现 | in_progress | 第三批已通过合并后回归；下一批推进 Android 异步 I/O/容量性能与真实显式来源、原生 Local Node/真实宿主接合和 LAN；iOS 构建等待 Mac |
 | R0 用户与场景研究 | plan_ready | 按产品决策有意后置 |
 | R1 多端信息源调研 | plan_ready | 按产品决策有意后置，后续只做 MVP 定向补证 |
 | Event/每日事件记录模型 | plan_ready | v0.4 保留情绪/关系/重要性独立字段，但禁止其提高事实置信度或触发扩权 |
@@ -48,4 +48,4 @@
 
 ## 下一执行门
 
-第二批研发切片已集成并通过 125 项 Python 测试、2,715/2,709 项契约检查、14-case/14-risk Skill、32 个 Markdown 链接、128 项治理、Android JVM/lint/assemble 和 API 36 AVD 13 项设备测试。下一步在 Windows 侧推进 Android 显式来源、索引/容量、Agent 接合与 AI 固定评测；iOS 源码、构建和真机证据等待 Mac 环境。Gate 1 继续 `hold`，不能将研发进度写成真实用户价值已验证。
+第三批研发切片已集成并通过 143 项 Python 测试、AI 固定 Eval 12/12、2,715/2,709 项契约检查、14-case/14-risk Skill、32 个 Markdown 链接、129 项治理、Android JVM/lint/assemble 和 API 36 AVD 25 项设备测试。下一步在 Windows 侧优先关闭 Android 主线程同步 I/O 与 10k/100k 容量性能证据，再推进真实语音/Calendar、原生 Local Node/真实宿主和 LAN；iOS 源码、构建和真机证据等待 Mac 环境。Gate 1 继续 `hold`，不能将合成/模拟器进度写成真实用户价值已验证。
