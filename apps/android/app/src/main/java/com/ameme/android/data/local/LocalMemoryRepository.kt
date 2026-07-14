@@ -10,6 +10,7 @@ import com.ameme.android.domain.MemoryEvent
 import com.ameme.android.domain.MemoryPage
 import com.ameme.android.domain.SourceCaptureRequest
 import com.ameme.android.domain.SourceLocator
+import com.ameme.android.domain.PendingSourceLocatorRelease
 import java.net.URI
 import java.io.File
 import java.time.Clock
@@ -75,6 +76,12 @@ class LocalMemoryRepository(
     override fun deleteEvent(eventId: String): Boolean = database.deleteEvent(eventId)
 
     override fun sourceLocator(eventId: String): SourceLocator? = database.sourceLocator(eventId)
+
+    override fun pendingSourceLocatorReleases(): List<PendingSourceLocatorRelease> =
+        database.pendingSourceLocatorReleases()
+
+    override fun markSourceLocatorReleased(eventId: String): Boolean =
+        database.markSourceLocatorReleased(eventId)
 
     override fun close() = database.close()
 

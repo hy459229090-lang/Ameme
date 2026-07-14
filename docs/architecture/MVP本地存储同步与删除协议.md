@@ -162,7 +162,9 @@ Deletion planner 从 target 沿 lineage 计算：Raw、SourceObject、Observatio
 
 `source_locators` 只在 SQLCipher 内保存 `content://` URI、MIME、来源、访问模式和生命周期状态，不复制照片/PDF 原始内容。Event revision、current projection 和 locator 在同一事务写入；用户取消 Photo Picker、空输入、无读取授权、非 `content://`、多项或非白名单 ACTION_SEND 不产生 Event。语音契约保持 `Unsupported`，不申请麦克风权限，也不生成 mock 成功。Calendar 当前只有显式用户触发、非空 calendar IDs、匹配 space、最长 31 天窗口的可注入适配器；合成输入固定写为 `Planned`，不等于实际发生，且未连接 Calendar Provider/权限。
 
-Recall 已增加不透明 keyset cursor 和日期分页。被测 SQLCipher 运行时成功创建 FTS5 虚表并与强制 LIKE fallback 使用同一组合成夹具得到等价结果；两条路径都应用参数化查询、`space_id`、日期、ACTIVE state、删除过滤和稳定倒序。FTS 表是派生索引，创建或重建失败时数据库仍可打开并使用 LIKE。该结论只覆盖 API 36 AVD 的 SQLCipher 4.15.0 运行时，不外推所有设备或 16 KB page size。
+持久 URI 授权删除使用可恢复两阶段状态：Event tombstone 事务只把同空间 `PersistedRead` locator 改为 `RELEASE_PENDING`，普通 `sourceLocator` 立即不可见；`SessionRead` 可直接进入 `DELETED`。事务外、按 repository space 注入的 cleanup coordinator 在生产 App 打开 repository 后和 UI 删除后运行；OS release 成功或确认授权已不存在后写 `RELEASED`，返回 false、抛异常或无法确认时保持 pending。即使删除由 Agent/API 直接调用、commit 后进程崩溃或首次 release 失败，重启仍可枚举并重试；其他 space 不能读取或完成该任务。数据库事务内禁止调用 `ContentResolver`。
+
+Recall 已增加不透明 keyset cursor 和日期分页。被测 SQLCipher 运行时成功创建 FTS5 虚表；FTS5 与强制 LIKE fallback 已验证共同的“最多 16 个空白分词、每个词都须在 Event 字段中命中”契约，以及一致的参数化查询、`space_id`、日期、ACTIVE state、删除过滤和稳定倒序。该证据不声称 FTS tokenizer 的所有边界与 substring LIKE 完全等价。FTS 表是派生索引，创建或重建失败时数据库仍可打开并使用 LIKE。结论只覆盖 API 36 AVD 的 SQLCipher 4.15.0 运行时，不外推所有设备或 16 KB page size。
 
 Android 清单同时保持 `allowBackup=false`，`data-extraction-rules` 对 cloud backup 和 device transfer 显式排除 root/file/database/sharedpref/external 及四个 device-protected data domain；编译后 XML 资源由设备测试核对。该配置用于避免 SQLCipher DB 和 wrapped-key blob 被系统备份或 D2D 搬迁，仍需后续厂商/真机矩阵验证：<https://developer.android.com/identity/data/autobackup>。
 

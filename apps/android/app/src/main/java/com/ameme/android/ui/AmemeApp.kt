@@ -24,13 +24,12 @@ import com.ameme.android.data.local.LocalEventDatabase
 import com.ameme.android.data.local.LocalMemoryRepository
 import com.ameme.android.data.source.ContentUriGrantResolver
 import com.ameme.android.data.source.PhotoCaptureCoordinator
+import com.ameme.android.data.source.SourceGrantCleanupCoordinator
 import com.ameme.android.data.source.UnsupportedVoiceCaptureContract
 import com.ameme.android.data.source.VoiceCaptureAvailability
 import com.ameme.android.domain.CaptureKind
 import com.ameme.android.domain.ExperienceMode
 import com.ameme.android.domain.SourceCaptureRequest
-import com.ameme.android.domain.LocatorPermissionState
-import android.net.Uri
 import com.ameme.android.ui.screens.DeleteScreen
 import com.ameme.android.ui.screens.EventDetailScreen
 import com.ameme.android.ui.screens.OnboardingScreen
@@ -94,6 +93,9 @@ fun AmemeApp(
     val photoCoordinator = remember(repository, uriGrantResolver) {
         PhotoCaptureCoordinator(repository, uriGrantResolver)
     }
+    val grantCleanupCoordinator = remember(repository, uriGrantResolver) {
+        SourceGrantCleanupCoordinator(repository, uriGrantResolver)
+    }
     val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) {
             runCatching { photoCoordinator.capture(uri) }
@@ -103,6 +105,16 @@ fun AmemeApp(
                 }
                 .onFailure { persistenceError = "照片引用尚未保存；本机加密节点写入失败，请重试。" }
         }
+    }
+
+    LaunchedEffect(repository, grantCleanupCoordinator) {
+        runCatching { grantCleanupCoordinator.retryPending() }
+            .onSuccess { cleanup ->
+                if (cleanup.remaining > 0) {
+                    persistenceError = "仍有 ${cleanup.remaining} 个系统来源授权等待释放；下次启动会继续重试。"
+                }
+            }
+            .onFailure { persistenceError = "系统来源授权清理暂不可用；待处理记录仍保留在本机并会重试。" }
     }
 
     LaunchedEffect(incomingShare) {
@@ -191,16 +203,18 @@ fun AmemeApp(
                 event = event,
                 onBack = navController::popBackStack,
                 onDeleteLocally = {
-                    val locator = repository.sourceLocator(eventId)
                     val deleted = runCatching { repository.deleteEvent(eventId) }.getOrDefault(false)
                     if (deleted) {
                         events.removeAll { it.id == eventId }
-                        val grantReleased = if (locator?.permissionState == LocatorPermissionState.PersistedRead) {
-                            uriGrantResolver.releasePersisted(Uri.parse(locator.uri))
-                        } else {
-                            true
-                        }
-                        persistenceError = if (grantReleased) null else "事件已删除，但系统来源授权未能释放；请在系统设置中检查应用访问。"
+                        persistenceError = runCatching { grantCleanupCoordinator.retryPending() }
+                            .fold(
+                                onSuccess = { cleanup ->
+                                    if (cleanup.remaining == 0) null else {
+                                        "事件已删除；仍有 ${cleanup.remaining} 个系统来源授权等待释放，稍后会重试。"
+                                    }
+                                },
+                                onFailure = { "事件已删除；系统来源授权清理待稍后重试。" },
+                            )
                         navController.popBackStack(Routes.Today, false)
                     } else {
                         persistenceError = "删除尚未持久化；本机事件仍保持可见。"

@@ -8,6 +8,8 @@ import com.ameme.android.domain.MemoryPage
 import com.ameme.android.domain.SearchBackend
 import com.ameme.android.domain.SourceCaptureRequest
 import com.ameme.android.domain.SourceLocator
+import com.ameme.android.domain.PendingSourceLocatorRelease
+import com.ameme.android.domain.LocatorPermissionState
 import java.time.Clock
 import java.time.LocalDate
 import java.time.LocalTime
@@ -23,6 +25,7 @@ class FakeMemoryRepository(
     private val captureCounter = AtomicInteger(100)
     private val events by lazy { seedEvents().toMutableList() }
     private val locators = mutableMapOf<String, SourceLocator>()
+    private val pendingReleases = mutableMapOf<String, PendingSourceLocatorRelease>()
 
     fun seedEvents(): List<MemoryEvent> {
         val today = LocalDate.now(clock)
@@ -162,8 +165,17 @@ class FakeMemoryRepository(
     }
 
     override fun deleteEvent(eventId: String): Boolean = events.removeAll { it.id == eventId }.also { deleted ->
-        if (deleted) locators.remove(eventId)
+        if (deleted) {
+            val locator = locators.remove(eventId)
+            if (locator?.permissionState == LocatorPermissionState.PersistedRead) {
+                pendingReleases[eventId] = PendingSourceLocatorRelease(eventId, locator.uri)
+            }
+        }
     }
 
     override fun sourceLocator(eventId: String): SourceLocator? = locators[eventId]
+
+    override fun pendingSourceLocatorReleases(): List<PendingSourceLocatorRelease> = pendingReleases.values.toList()
+
+    override fun markSourceLocatorReleased(eventId: String): Boolean = pendingReleases.remove(eventId) != null
 }

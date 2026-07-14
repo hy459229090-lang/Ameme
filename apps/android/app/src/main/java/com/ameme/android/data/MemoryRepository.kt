@@ -6,6 +6,7 @@ import com.ameme.android.domain.MemoryEvent
 import com.ameme.android.domain.MemoryPage
 import com.ameme.android.domain.SourceCaptureRequest
 import com.ameme.android.domain.SourceLocator
+import com.ameme.android.domain.PendingSourceLocatorRelease
 import java.io.Closeable
 import java.time.LocalDate
 
@@ -26,6 +27,10 @@ interface MemoryRepository : Closeable {
     ): MemoryPage
 
     fun sourceLocator(eventId: String): SourceLocator?
+
+    fun pendingSourceLocatorReleases(): List<PendingSourceLocatorRelease>
+
+    fun markSourceLocatorReleased(eventId: String): Boolean
 
     fun deleteEvent(eventId: String): Boolean
 

@@ -51,6 +51,11 @@ data class SourceLocator(
     val permissionState: LocatorPermissionState,
 )
 
+data class PendingSourceLocatorRelease(
+    val eventId: String,
+    val uri: String,
+)
+
 data class SourceCaptureRequest(
     val sourceKind: SourceKind,
     val title: String,

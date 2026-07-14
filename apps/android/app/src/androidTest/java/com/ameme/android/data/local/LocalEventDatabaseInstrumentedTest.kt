@@ -11,6 +11,9 @@ import com.ameme.android.domain.LocatorPermissionState
 import com.ameme.android.domain.SearchBackend
 import com.ameme.android.domain.SourceCaptureRequest
 import com.ameme.android.domain.SourceKind
+import com.ameme.android.data.source.SourceGrantCleanupCoordinator
+import com.ameme.android.data.source.UriGrantResolver
+import android.net.Uri
 import java.io.File
 import java.time.Clock
 import java.time.Instant
@@ -217,30 +220,141 @@ class LocalEventDatabaseInstrumentedTest {
     }
 
     @Test
+    fun persistedLocatorDeleteSurvivesCrashAndDirectNonUiDeleteCreatesPendingRelease() {
+        val file = newDatabaseFile()
+        val first = LocalMemoryRepository.open(
+            context, SPACE_A, SyntheticDatabaseKeyProvider(key), file, clock, seedSyntheticEvents = false,
+        )
+        val captured = first.captureSource(sourceRequest(LocatorPermissionState.PersistedRead))
+
+        assertTrue(first.deleteEvent(captured.id))
+        assertEquals(null, first.sourceLocator(captured.id))
+        assertEquals(listOf(captured.id), first.pendingSourceLocatorReleases().map { it.eventId })
+        first.close() // Simulates process loss after the delete commit and before OS grant cleanup.
+
+        LocalMemoryRepository.open(
+            context, SPACE_A, SyntheticDatabaseKeyProvider(key), file, clock, seedSyntheticEvents = false,
+        ).use { reopened ->
+            assertEquals(listOf(captured.id), reopened.pendingSourceLocatorReleases().map { it.eventId })
+            assertTrue(reopened.loadActiveEvents().isEmpty())
+        }
+    }
+
+    @Test
+    fun releaseFalseAndExceptionStayPendingThenRestartRetryCompletes() {
+        val file = newDatabaseFile()
+        val eventId = LocalMemoryRepository.open(
+            context, SPACE_A, SyntheticDatabaseKeyProvider(key), file, clock, seedSyntheticEvents = false,
+        ).use { repository ->
+            repository.captureSource(sourceRequest(LocatorPermissionState.PersistedRead)).id.also(repository::deleteEvent)
+        }
+
+        LocalMemoryRepository.open(
+            context, SPACE_A, SyntheticDatabaseKeyProvider(key), file, clock, seedSyntheticEvents = false,
+        ).use { repository ->
+            val falseResolver = object : UriGrantResolver {
+                override fun resolve(uri: Uri, grantFlags: Int) = LocatorPermissionState.PersistedRead
+                override fun releasePersisted(uri: Uri) = false
+                override fun hasPersistedRead(uri: Uri) = true
+            }
+            val falseResult = SourceGrantCleanupCoordinator(repository, falseResolver).retryPending()
+            assertEquals(1, falseResult.remaining)
+
+            val throwingResolver = object : UriGrantResolver {
+                override fun resolve(uri: Uri, grantFlags: Int) = LocatorPermissionState.PersistedRead
+                override fun releasePersisted(uri: Uri): Boolean = error("synthetic release failure")
+                override fun hasPersistedRead(uri: Uri) = true
+            }
+            val throwingResult = SourceGrantCleanupCoordinator(repository, throwingResolver).retryPending()
+            assertEquals(1, throwingResult.remaining)
+        }
+
+        LocalMemoryRepository.open(
+            context, SPACE_A, SyntheticDatabaseKeyProvider(key), file, clock, seedSyntheticEvents = false,
+        ).use { restarted ->
+            val successResolver = object : UriGrantResolver {
+                override fun resolve(uri: Uri, grantFlags: Int) = LocatorPermissionState.PersistedRead
+                override fun releasePersisted(uri: Uri) = true
+            }
+            val success = SourceGrantCleanupCoordinator(restarted, successResolver).retryPending()
+            assertEquals(1, success.completed)
+            assertEquals(0, success.remaining)
+            assertTrue(restarted.pendingSourceLocatorReleases().isEmpty())
+            assertEquals(null, restarted.sourceLocator(eventId))
+        }
+
+        LocalEventDatabase.open(file, SyntheticDatabaseKeyProvider(key), SPACE_A).use { database ->
+            assertEquals(LocalEventDatabase.LOCATOR_STATE_RELEASED, database.sourceLocatorLifecycleState(eventId))
+        }
+    }
+
+    @Test
+    fun pendingReleaseIsSpaceScopedAndSessionLocatorDeletesDirectly() {
+        val file = newDatabaseFile()
+        val persistedId = LocalMemoryRepository.open(
+            context, SPACE_A, SyntheticDatabaseKeyProvider(key), file, clock, seedSyntheticEvents = false,
+        ).use { repository ->
+            repository.captureSource(sourceRequest(LocatorPermissionState.PersistedRead)).id.also(repository::deleteEvent)
+        }
+
+        LocalMemoryRepository.open(
+            context, SPACE_B, SyntheticDatabaseKeyProvider(key), file, clock, seedSyntheticEvents = false,
+        ).use { otherSpace ->
+            assertTrue(otherSpace.pendingSourceLocatorReleases().isEmpty())
+            assertFalse(otherSpace.markSourceLocatorReleased(persistedId))
+            val cleanup = SourceGrantCleanupCoordinator(
+                otherSpace,
+                UriGrantResolver { _, _ -> LocatorPermissionState.PersistedRead },
+            ).retryPending()
+            assertEquals(0, cleanup.attempted)
+        }
+
+        LocalMemoryRepository.open(
+            context, SPACE_A, SyntheticDatabaseKeyProvider(key), file, clock, seedSyntheticEvents = false,
+        ).use { ownerSpace ->
+            assertEquals(listOf(persistedId), ownerSpace.pendingSourceLocatorReleases().map { it.eventId })
+            val alreadyAbsentResolver = object : UriGrantResolver {
+                override fun resolve(uri: Uri, grantFlags: Int) = LocatorPermissionState.PersistedRead
+                override fun releasePersisted(uri: Uri) = false
+                override fun hasPersistedRead(uri: Uri) = false
+            }
+            val absent = SourceGrantCleanupCoordinator(ownerSpace, alreadyAbsentResolver).retryPending()
+            assertEquals(1, absent.completed)
+            assertEquals(0, absent.remaining)
+
+            val session = ownerSpace.captureSource(sourceRequest(LocatorPermissionState.SessionRead))
+            assertTrue(ownerSpace.deleteEvent(session.id))
+            assertTrue(ownerSpace.pendingSourceLocatorReleases().none { it.eventId == session.id })
+            assertEquals(null, ownerSpace.sourceLocator(session.id))
+        }
+    }
+
+    @Test
     fun api36SqlCipherCreatesFts5AndFtsAndLikeFallbackReturnEquivalentScopedResults() {
         val ftsFile = newDatabaseFile()
         val likeFile = newDatabaseFile()
         val fixtures = listOf(
-            syntheticEvent("evt_search_a", "alpha shared keyword"),
+            syntheticEvent("evt_search_a", "alpha shared").copy(detail = "second field has keyword"),
             syntheticEvent("evt_search_b", "beta hidden"),
         )
         LocalEventDatabase.open(ftsFile, SyntheticDatabaseKeyProvider(key), SPACE_A, enableFts = true).use { fts ->
             fixtures.forEach(fts::insertCaptured)
             assertTrue("FTS5 virtual table must be created on the API 36 SQLCipher runtime", fts.hasSearchTable())
-            assertEquals(SearchBackend.Fts5, fts.readPage("shared", null, null, 20).searchBackend)
+            assertEquals(SearchBackend.Fts5, fts.readPage("alpha keyword", null, null, 20).searchBackend)
         }
         LocalEventDatabase.open(likeFile, SyntheticDatabaseKeyProvider(key), SPACE_A, enableFts = false).use { like ->
             fixtures.forEach(like::insertCaptured)
-            assertEquals(SearchBackend.LikeFallback, like.readPage("shared", null, null, 20).searchBackend)
+            assertEquals(SearchBackend.LikeFallback, like.readPage("alpha keyword", null, null, 20).searchBackend)
         }
 
         val ftsIds = LocalEventDatabase.open(ftsFile, SyntheticDatabaseKeyProvider(key), SPACE_A, true).use {
-            it.readPage("shared", LocalDate.of(2026, 7, 14), null, 20).events.map(MemoryEvent::id)
+            it.readPage("alpha keyword", LocalDate.of(2026, 7, 14), null, 20).events.map(MemoryEvent::id)
         }
         val likeIds = LocalEventDatabase.open(likeFile, SyntheticDatabaseKeyProvider(key), SPACE_A, false).use {
-            it.readPage("shared", LocalDate.of(2026, 7, 14), null, 20).events.map(MemoryEvent::id)
+            it.readPage("alpha keyword", LocalDate.of(2026, 7, 14), null, 20).events.map(MemoryEvent::id)
         }
         assertEquals(likeIds, ftsIds)
+        assertEquals(listOf("evt_search_a"), ftsIds)
     }
 
     @Test
@@ -343,6 +457,18 @@ class LocalEventDatabaseInstrumentedTest {
         factStatus = FactStatus.Confirmed,
         sourceLabel = "synthetic fixture",
         isLocalOnly = true,
+    )
+
+    private fun sourceRequest(permissionState: LocatorPermissionState) = SourceCaptureRequest(
+        sourceKind = SourceKind.PhotoPicker,
+        title = "合成持久授权",
+        detail = "仅验证 URI 生命周期",
+        factStatus = FactStatus.Processing,
+        localDate = LocalDate.of(2026, 7, 14),
+        time = null,
+        locatorUri = "content://synthetic.provider/photo/${UUID.randomUUID()}",
+        mimeType = "image/png",
+        locatorPermissionState = permissionState,
     )
 
     private fun createVersionOneDatabase(file: File) {

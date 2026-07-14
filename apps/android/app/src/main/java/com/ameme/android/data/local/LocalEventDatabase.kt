@@ -8,6 +8,7 @@ import com.ameme.android.domain.SearchBackend
 import com.ameme.android.domain.SourceCaptureRequest
 import com.ameme.android.domain.SourceLocator
 import com.ameme.android.domain.LocatorPermissionState
+import com.ameme.android.domain.PendingSourceLocatorRelease
 import java.nio.charset.StandardCharsets
 import java.io.Closeable
 import java.io.File
@@ -52,16 +53,18 @@ class LocalEventDatabase private constructor(
             where += "e.local_date = ?"
             args += date.toString()
         }
-        val normalized = query.trim()
-        val useFts = normalized.isNotEmpty() && searchBackend == SearchBackend.Fts5
-        if (normalized.isNotEmpty()) {
+        val terms = searchTerms(query)
+        val useFts = terms.isNotEmpty() && searchBackend == SearchBackend.Fts5
+        if (terms.isNotEmpty()) {
             if (useFts) {
                 where += "events_fts MATCH ?"
-                args += toFtsExpression(normalized)
+                args += toFtsExpression(terms)
             } else {
-                where += "(e.title LIKE ? ESCAPE '\\' OR e.detail LIKE ? ESCAPE '\\' OR e.source_label LIKE ? ESCAPE '\\' OR COALESCE(e.user_words, '') LIKE ? ESCAPE '\\')"
-                val pattern = "%${escapeLike(normalized)}%"
-                repeat(4) { args += pattern }
+                terms.forEach { term ->
+                    where += "(e.title LIKE ? ESCAPE '\\' OR e.detail LIKE ? ESCAPE '\\' OR e.source_label LIKE ? ESCAPE '\\' OR COALESCE(e.user_words, '') LIKE ? ESCAPE '\\')"
+                    val pattern = "%${escapeLike(term)}%"
+                    repeat(4) { args += pattern }
+                }
             }
         }
         decodedCursor?.let { position ->
@@ -162,8 +165,21 @@ class LocalEventDatabase private constructor(
             database.delete("events_fts", "space_id = ? AND event_id = ?", arrayOf(spaceId, eventId))
         }
         database.execSQL(
-            "UPDATE source_locators SET state = ?, updated_at = ? WHERE space_id = ? AND event_id = ?",
-            arrayOf<Any>(STATE_DELETED, System.currentTimeMillis(), spaceId, eventId),
+            """
+                UPDATE source_locators
+                SET state = CASE WHEN permission_state = ? THEN ? ELSE ? END,
+                    updated_at = ?
+                WHERE space_id = ? AND event_id = ? AND state = ?
+            """.trimIndent(),
+            arrayOf<Any>(
+                LocatorPermissionState.PersistedRead.name,
+                LOCATOR_STATE_RELEASE_PENDING,
+                LOCATOR_STATE_DELETED,
+                System.currentTimeMillis(),
+                spaceId,
+                eventId,
+                STATE_ACTIVE,
+            ),
         )
         true
     }
@@ -182,6 +198,43 @@ class LocalEventDatabase private constructor(
             permissionState = LocatorPermissionState.valueOf(cursor.getString(1)),
         )
     }
+
+    fun pendingSourceLocatorReleases(): List<PendingSourceLocatorRelease> = database.rawQuery(
+        """
+            SELECT event_id, locator_uri FROM source_locators
+            WHERE space_id = ? AND permission_state = ? AND state = ?
+            ORDER BY updated_at ASC, event_id ASC
+        """.trimIndent(),
+        arrayOf(spaceId, LocatorPermissionState.PersistedRead.name, LOCATOR_STATE_RELEASE_PENDING),
+    ).use { cursor ->
+        buildList {
+            while (cursor.moveToNext()) {
+                add(PendingSourceLocatorRelease(cursor.getString(0), cursor.getString(1)))
+            }
+        }
+    }
+
+    fun markSourceLocatorReleased(eventId: String): Boolean = inTransaction {
+        database.update(
+            "source_locators",
+            ContentValues().apply {
+                put("state", LOCATOR_STATE_RELEASED)
+                put("updated_at", System.currentTimeMillis())
+            },
+            "space_id = ? AND event_id = ? AND permission_state = ? AND state = ?",
+            arrayOf(
+                spaceId,
+                eventId,
+                LocatorPermissionState.PersistedRead.name,
+                LOCATOR_STATE_RELEASE_PENDING,
+            ),
+        ) == 1
+    }
+
+    fun sourceLocatorLifecycleState(eventId: String): String? = database.rawQuery(
+        "SELECT state FROM source_locators WHERE space_id = ? AND event_id = ?",
+        arrayOf(spaceId, eventId),
+    ).use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
 
     fun revisionCount(eventId: String): Int = database.rawQuery(
         "SELECT COUNT(*) FROM event_revisions WHERE event_id = ? AND space_id = ?",
@@ -412,6 +465,9 @@ class LocalEventDatabase private constructor(
         const val STATE_DELETED = "DELETED"
         const val DEFAULT_SPACE_ID = "space_personal"
         const val LEGACY_SPACE_ID = "space_legacy"
+        const val LOCATOR_STATE_RELEASE_PENDING = "RELEASE_PENDING"
+        const val LOCATOR_STATE_RELEASED = "RELEASED"
+        const val LOCATOR_STATE_DELETED = "DELETED"
 
         fun open(
             databaseFile: File,
@@ -756,10 +812,16 @@ class LocalEventDatabase private constructor(
             .replace("%", "\\%")
             .replace("_", "\\_")
 
-        private fun toFtsExpression(value: String): String = value
+        private fun searchTerms(value: String): List<String> = value
+            .trim()
             .split(Regex("\\s+"))
             .filter(String::isNotBlank)
+            .take(MAX_SEARCH_TERMS)
+
+        private fun toFtsExpression(terms: List<String>): String = terms
             .joinToString(" AND ") { token -> "\"${token.replace("\"", "\"\"")}\"" }
+
+        private const val MAX_SEARCH_TERMS = 16
 
     }
 }

@@ -17,6 +17,8 @@ fun interface UriGrantResolver {
     fun resolve(uri: Uri, grantFlags: Int): LocatorPermissionState
 
     fun releasePersisted(uri: Uri): Boolean = true
+
+    fun hasPersistedRead(uri: Uri): Boolean? = null
 }
 
 class ContentUriGrantResolver(private val contentResolver: ContentResolver) : UriGrantResolver {
@@ -36,6 +38,43 @@ class ContentUriGrantResolver(private val contentResolver: ContentResolver) : Ur
     override fun releasePersisted(uri: Uri): Boolean = runCatching {
         contentResolver.releasePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
     }.isSuccess
+
+    override fun hasPersistedRead(uri: Uri): Boolean = contentResolver.persistedUriPermissions.any { permission ->
+        permission.uri == uri && permission.isReadPermission
+    }
+}
+
+data class SourceGrantCleanupResult(
+    val attempted: Int,
+    val completed: Int,
+    val remaining: Int,
+)
+
+class SourceGrantCleanupCoordinator(
+    private val repository: MemoryRepository,
+    private val grantResolver: UriGrantResolver,
+) {
+    fun retryPending(): SourceGrantCleanupResult {
+        val pending = repository.pendingSourceLocatorReleases()
+        var completed = 0
+        pending.forEach { locator ->
+            val uri = Uri.parse(locator.uri)
+            val released = runCatching { grantResolver.releasePersisted(uri) }.getOrNull() == true
+            val provenAbsent = if (released) {
+                false
+            } else {
+                runCatching { grantResolver.hasPersistedRead(uri) }.getOrNull() == false
+            }
+            if ((released || provenAbsent) && repository.markSourceLocatorReleased(locator.eventId)) {
+                completed++
+            }
+        }
+        return SourceGrantCleanupResult(
+            attempted = pending.size,
+            completed = completed,
+            remaining = repository.pendingSourceLocatorReleases().size,
+        )
+    }
 }
 
 class IncomingShareParser(
@@ -111,7 +150,7 @@ class PhotoCaptureCoordinator(
                 locatorUri = uri.toString(),
                 mimeType = "image/*",
                 locatorPermissionState = permission,
-                ),
+            ),
             )
         } catch (error: Throwable) {
             if (permission == LocatorPermissionState.PersistedRead) grantResolver.releasePersisted(uri)

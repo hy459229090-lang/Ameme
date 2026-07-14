@@ -7,6 +7,7 @@ import com.ameme.android.domain.MemoryPage
 import com.ameme.android.domain.SearchBackend
 import com.ameme.android.domain.SourceCaptureRequest
 import com.ameme.android.domain.SourceLocator
+import com.ameme.android.domain.PendingSourceLocatorRelease
 import java.time.LocalDate
 
 /** Fail-closed UI adapter used only when the encrypted repository cannot be opened. */
@@ -27,4 +28,8 @@ class UnavailableMemoryRepository : MemoryRepository {
     override fun deleteEvent(eventId: String): Boolean = false
 
     override fun sourceLocator(eventId: String): SourceLocator? = null
+
+    override fun pendingSourceLocatorReleases(): List<PendingSourceLocatorRelease> = emptyList()
+
+    override fun markSourceLocatorReleased(eventId: String): Boolean = false
 }
