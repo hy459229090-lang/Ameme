@@ -1,0 +1,206 @@
+{
+  "baseline": "committed_case_expectations_v1",
+  "candidate": "deterministic_r0_and_fixed_fake_provider_reference",
+  "case_count": 12,
+  "cases": [
+    {
+      "actual_digest": "185fc26f7a039782e90bd8b908002850e8bdf9eb8e5af2c321083057f73e601f",
+      "assertion_count": 6,
+      "case_id": "attack_provider_terminal_status_rejected",
+      "category": "provider_injection",
+      "expected_digest": "185fc26f7a039782e90bd8b908002850e8bdf9eb8e5af2c321083057f73e601f",
+      "failed_assertion_ids": [],
+      "hard_gate": "injection_policy",
+      "result": "match"
+    },
+    {
+      "actual_digest": "3ee92e89339bb2e0fe12dfb32147e034b69c03bc9ffa56a90e44d2406e910a01",
+      "assertion_count": 8,
+      "case_id": "attack_source_instruction_remains_data",
+      "category": "provider_injection",
+      "expected_digest": "3ee92e89339bb2e0fe12dfb32147e034b69c03bc9ffa56a90e44d2406e910a01",
+      "failed_assertion_ids": [],
+      "hard_gate": "injection_policy",
+      "result": "match"
+    },
+    {
+      "actual_digest": "67aedc1c06cf10238841708e1bd1d0ca625609a8011c4e5f4673d9f7e6451709",
+      "assertion_count": 6,
+      "case_id": "delete_cached_output_never_replays",
+      "category": "deletion_no_resurrection",
+      "expected_digest": "67aedc1c06cf10238841708e1bd1d0ca625609a8011c4e5f4673d9f7e6451709",
+      "failed_assertion_ids": [],
+      "hard_gate": "deletion_resurrection",
+      "result": "match"
+    },
+    {
+      "actual_digest": "4831eac16d0e629616f05b75b62b8229233b852b216053b3cf4b2ccefb0e1721",
+      "assertion_count": 11,
+      "case_id": "fact_sparse_r0",
+      "category": "fact_correctness",
+      "expected_digest": "4831eac16d0e629616f05b75b62b8229233b852b216053b3cf4b2ccefb0e1721",
+      "failed_assertion_ids": [],
+      "hard_gate": "unsupported_fact",
+      "result": "match"
+    },
+    {
+      "actual_digest": "cf9aa483e25395f3cff509035c7235c41f2e9437bc0c1ed0cfdec3b0ea452d62",
+      "assertion_count": 7,
+      "case_id": "fact_user_correction",
+      "category": "fact_correctness",
+      "expected_digest": "cf9aa483e25395f3cff509035c7235c41f2e9437bc0c1ed0cfdec3b0ea452d62",
+      "failed_assertion_ids": [],
+      "hard_gate": "unsupported_fact",
+      "result": "match"
+    },
+    {
+      "actual_digest": "185fc26f7a039782e90bd8b908002850e8bdf9eb8e5af2c321083057f73e601f",
+      "assertion_count": 6,
+      "case_id": "fallback_budget_exhausted",
+      "category": "fallback_insufficient",
+      "expected_digest": "185fc26f7a039782e90bd8b908002850e8bdf9eb8e5af2c321083057f73e601f",
+      "failed_assertion_ids": [],
+      "hard_gate": "fallback_contract",
+      "result": "match"
+    },
+    {
+      "actual_digest": "722e38c96456a4843da8078f4b5b7486c50a2da59b74de2ab84283f8a618ae57",
+      "assertion_count": 3,
+      "case_id": "fallback_summary_insufficient",
+      "category": "fallback_insufficient",
+      "expected_digest": "722e38c96456a4843da8078f4b5b7486c50a2da59b74de2ab84283f8a618ae57",
+      "failed_assertion_ids": [],
+      "hard_gate": "fallback_contract",
+      "result": "match"
+    },
+    {
+      "actual_digest": "d75dd24e61f25c1d74f93873a72fd8fc77f3e1c4ebca96eea15ac68273a560b6",
+      "assertion_count": 8,
+      "case_id": "grounding_fixed_provider_valid",
+      "category": "evidence_grounding",
+      "expected_digest": "d75dd24e61f25c1d74f93873a72fd8fc77f3e1c4ebca96eea15ac68273a560b6",
+      "failed_assertion_ids": [],
+      "hard_gate": "grounding",
+      "result": "match"
+    },
+    {
+      "actual_digest": "185fc26f7a039782e90bd8b908002850e8bdf9eb8e5af2c321083057f73e601f",
+      "assertion_count": 6,
+      "case_id": "grounding_missing_evidence_falls_back",
+      "category": "evidence_grounding",
+      "expected_digest": "185fc26f7a039782e90bd8b908002850e8bdf9eb8e5af2c321083057f73e601f",
+      "failed_assertion_ids": [],
+      "hard_gate": "grounding",
+      "result": "match"
+    },
+    {
+      "actual_digest": "a0b36b626aeb95f5bf4ba3ac51583e5073a3d3d558b154f68bc2fce78b85dce4",
+      "assertion_count": 3,
+      "case_id": "revoke_batched_output_never_replays",
+      "category": "deletion_no_resurrection",
+      "expected_digest": "a0b36b626aeb95f5bf4ba3ac51583e5073a3d3d558b154f68bc2fce78b85dce4",
+      "failed_assertion_ids": [],
+      "hard_gate": "deletion_resurrection",
+      "result": "match"
+    },
+    {
+      "actual_digest": "c8890c8df17cb8a32505c312a2acfbd417df5e0b2ba21be91ada945c8e5a5c15",
+      "assertion_count": 9,
+      "case_id": "time_calendar_remains_planned",
+      "category": "time_plan",
+      "expected_digest": "c8890c8df17cb8a32505c312a2acfbd417df5e0b2ba21be91ada945c8e5a5c15",
+      "failed_assertion_ids": [],
+      "hard_gate": "planned_as_happened",
+      "result": "match"
+    },
+    {
+      "actual_digest": "a1971f092cef81a2dab8b9426d295d78fb2e6185427e510cfce169447e29bc04",
+      "assertion_count": 2,
+      "case_id": "time_plan_and_happened_stay_separate",
+      "category": "time_plan",
+      "expected_digest": "a1971f092cef81a2dab8b9426d295d78fb2e6185427e510cfce169447e29bc04",
+      "failed_assertion_ids": [],
+      "hard_gate": "planned_as_happened",
+      "result": "match"
+    }
+  ],
+  "claim": "synthetic_reference_regression_only",
+  "datasets": [
+    {
+      "dataset_id": "synthetic_ai_fixed_eval_v1",
+      "dataset_version": 1,
+      "sha256": "b3edf658cd0b63130bac79868c180902c2c19b3b9f669f39350e9ec0aa5c815a"
+    },
+    {
+      "dataset_id": "synthetic_ai_attack_delete_v1",
+      "dataset_version": 1,
+      "sha256": "b399b04a443ded416fbf3627325f38ac53298f10be1a4af1e4b7092dc9fd29e3"
+    }
+  ],
+  "differential": {
+    "changed_case_ids": [],
+    "empty_categories": [],
+    "regression_count": 0
+  },
+  "digest_basis": "assertion_paths_and_boolean_results_only_no_expected_or_actual_values",
+  "generator_version": "ai-reference-eval-v1",
+  "hard_gate_failures": {
+    "deletion_resurrection": 0,
+    "fallback_contract": 0,
+    "grounding": 0,
+    "injection_policy": 0,
+    "planned_as_happened": 0,
+    "unsupported_fact": 0
+  },
+  "limitations": [
+    "no_real_model_or_network_provider",
+    "no_model_language_quality_or_latency_claim",
+    "no_real_user_or_production_data",
+    "no_complete_grant_or_provider_retention_proof",
+    "summary_generation_remains_unimplemented"
+  ],
+  "matrix": {
+    "deletion_no_resurrection": {
+      "hard_failures": 0,
+      "matched": 2,
+      "mismatched": 0,
+      "total": 2
+    },
+    "evidence_grounding": {
+      "hard_failures": 0,
+      "matched": 2,
+      "mismatched": 0,
+      "total": 2
+    },
+    "fact_correctness": {
+      "hard_failures": 0,
+      "matched": 2,
+      "mismatched": 0,
+      "total": 2
+    },
+    "fallback_insufficient": {
+      "hard_failures": 0,
+      "matched": 2,
+      "mismatched": 0,
+      "total": 2
+    },
+    "provider_injection": {
+      "hard_failures": 0,
+      "matched": 2,
+      "mismatched": 0,
+      "total": 2
+    },
+    "time_plan": {
+      "hard_failures": 0,
+      "matched": 2,
+      "mismatched": 0,
+      "total": 2
+    }
+  },
+  "network_calls": 0,
+  "provider_mode": "fixed_committed_synthetic_responses_only",
+  "real_model_quality_proven": false,
+  "report_kind": "synthetic_reference_differential",
+  "schema_version": 1,
+  "verdict": "pass_synthetic_reference_regression"
+}

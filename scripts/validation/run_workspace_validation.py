@@ -40,6 +40,7 @@ COMMANDS = [
         "ai_reference",
         [sys.executable, "-m", "unittest", "discover", "-s", "tests/ai", "-p", "test_*.py", "-v"],
     ),
+    ("ai_fixed_eval", [sys.executable, "scripts/validation/run_ai_reference_eval.py"]),
     ("skill_package", [sys.executable, "scripts/validation/validate_ameme_skill.py"]),
     ("markdown_links", [sys.executable, "scripts/governance/check_markdown_links.py"]),
     ("workspace_governance", [sys.executable, "scripts/governance/check_workspace.py"]),

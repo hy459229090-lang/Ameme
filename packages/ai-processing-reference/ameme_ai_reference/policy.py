@@ -29,6 +29,8 @@ class PrivacyPolicyGate:
             raise ProcessingError(ErrorCode.MISSING_EVIDENCE, safe_context={"reason": "block_not_manifested"})
         if manifest & context.deleted_evidence_ids:
             raise ProcessingError(ErrorCode.DELETED_INPUT)
+        if manifest & context.revoked_evidence_ids:
+            raise ProcessingError(ErrorCode.REVOKED_INPUT)
 
         if adapter is None:
             return

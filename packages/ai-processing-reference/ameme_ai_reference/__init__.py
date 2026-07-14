@@ -25,6 +25,11 @@ from .rules import (
     observation_from_addendum,
     safe_deduplicate,
 )
+from .runtime import (
+    SYNTHETIC_TEST_SCOPE_HMAC_KEY,
+    BatchTicket,
+    ScopedAIRuntime,
+)
 from .schema import MachineContract
 
 __all__ = [
@@ -43,6 +48,9 @@ __all__ = [
     "ProviderAdapter",
     "SafeObserver",
     "SummaryDecision",
+    "SYNTHETIC_TEST_SCOPE_HMAC_KEY",
+    "BatchTicket",
+    "ScopedAIRuntime",
     "TaskRegistry",
     "TaskSpec",
     "build_event_draft",

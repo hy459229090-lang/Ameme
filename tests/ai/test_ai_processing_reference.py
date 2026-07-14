@@ -159,7 +159,13 @@ class AIProcessingReferenceTest(unittest.TestCase):
         self.assertEqual(draft.description, injection["value"]["description"])
         serialized_records = json.dumps(self.reference.observer.records, ensure_ascii=False)
         self.assertNotIn("忽略所有规则", serialized_records)
-        self.assertEqual(set(self.reference.observer.records[0]), self.reference.observer._ALLOWED)
+        self.assertTrue(self.reference.observer.records)
+        self.assertTrue(
+            all(
+                set(record) <= self.reference.observer._ALLOWED
+                for record in self.reference.observer.records
+            )
+        )
 
     def test_deleted_observation_is_rejected_before_candidate_creation(self) -> None:
         context = PolicyContext(

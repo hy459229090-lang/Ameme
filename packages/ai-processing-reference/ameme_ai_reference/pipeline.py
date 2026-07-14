@@ -6,12 +6,20 @@ from dataclasses import replace
 from typing import Any, Iterable, Mapping
 
 from .errors import ErrorCode, ProcessingError
-from .model import ContentBlock, EventDraft, PolicyContext, PromptEnvelope, SummaryDecision, canonical_json
+from .model import (
+    ContentBlock,
+    EventDraft,
+    PolicyContext,
+    PromptEnvelope,
+    SummaryDecision,
+    canonical_json,
+)
 from .observability import SafeObserver
 from .policy import PrivacyPolicyGate
 from .provider import ProviderAdapter
 from .registry import TaskRegistry, default_registry
 from .rules import build_event_draft, draft_from_provider_candidate
+from .runtime import SYNTHETIC_TEST_SCOPE_HMAC_KEY, ScopedAIRuntime
 from .schema import MachineContract
 
 
@@ -33,10 +41,19 @@ class AIProcessingReference:
         registry: TaskRegistry | None = None,
         contract: MachineContract | None = None,
         observer: SafeObserver | None = None,
+        runtime: ScopedAIRuntime | None = None,
     ) -> None:
         self.registry = registry or default_registry()
         self.contract = contract or MachineContract()
-        self.observer = observer or SafeObserver()
+        self.observer = observer or (
+            runtime.observer if runtime is not None else SafeObserver()
+        )
+        if runtime is not None and runtime.observer is not self.observer:
+            raise ValueError("runtime and reference must share the same SafeObserver")
+        self.runtime = runtime or ScopedAIRuntime(
+            self.observer,
+            scope_hmac_key=SYNTHETIC_TEST_SCOPE_HMAC_KEY,
+        )
         self.gate = PrivacyPolicyGate()
 
     def create_candidate(
@@ -60,22 +77,46 @@ class AIProcessingReference:
         )
 
         # Local processing still obeys space, deletion, purpose and evidence gates.
+        self.runtime.apply_context_revocations(context)
+        self.runtime.ensure_evidence_allowed(context, envelope.evidence_manifest)
         self.gate.authorize(envelope, spec, context, None)
         if any(item.get("space_id") != context.space_id for item in items):
             raise ProcessingError(ErrorCode.SPACE_DENIED)
         draft = build_event_draft(items, contract=self.contract)
         if provider is None:
+            self.runtime.record_route(
+                envelope,
+                context,
+                route="deterministic_r0",
+                result_code="R0_RULE_APPLIED",
+            )
             self._observe(envelope, "candidate", "R0_RULE_APPLIED", None)
             return draft
 
         try:
             self.gate.authorize(envelope, spec, context, provider)
-            response = dict(provider.generate(envelope))
+            cached = self.runtime.cache_get(envelope, context)
+            if cached is None:
+                if not self.runtime.reserve_provider_budget(envelope, context):
+                    raise ProcessingError(ErrorCode.BUDGET_EXHAUSTED)
+                response = dict(provider.generate(envelope))
+                route = "provider_generate"
+            else:
+                response = dict(cached)
+                route = "provider_cache"
             provider_draft = draft_from_provider_candidate(
                 response,
                 items,
                 contract=self.contract,
                 r0_draft=draft,
+            )
+            if cached is None:
+                self.runtime.cache_put(envelope, context, response)
+            self.runtime.record_route(
+                envelope,
+                context,
+                route=route,
+                result_code="PROVIDER_CANDIDATE_VALID",
             )
             self._observe(envelope, "candidate", "PROVIDER_CANDIDATE_VALID", provider)
             return provider_draft
@@ -83,6 +124,12 @@ class AIProcessingReference:
             if exc.code not in FALLBACK_CODES:
                 self._observe(envelope, "rejected", exc.code.value, provider)
                 raise
+            self.runtime.record_route(
+                envelope,
+                context,
+                route="fallback_r0",
+                result_code=exc.code.value,
+            )
             self._observe(envelope, "candidate", exc.code.value, provider)
             return replace(draft, fallback_reason=exc.code.value)
 
@@ -98,6 +145,8 @@ class AIProcessingReference:
             return SummaryDecision("no_summary", None, ErrorCode.DATA_INSUFFICIENT.value)
         if context.deleted_evidence_ids & set(ids):
             return SummaryDecision("no_summary", None, ErrorCode.DELETED_INPUT.value)
+        if context.revoked_evidence_ids & set(ids):
+            return SummaryDecision("no_summary", None, ErrorCode.REVOKED_INPUT.value)
         if context.budget_remaining <= 0:
             return SummaryDecision("no_summary", None, ErrorCode.BUDGET_EXHAUSTED.value)
         if provider is not None and context.sensitivity == "restricted":
@@ -155,6 +204,10 @@ class AIProcessingReference:
             result_code=result_code,
             input_hash=envelope.input_hash,
             evidence_count=len(envelope.evidence_manifest),
-            adapter_name=provider.adapter_name if provider else "deterministic-r0",
-            processing_location=provider.processing_location if provider else "device",
+            adapter_name=self.observer.safe_category(
+                provider.adapter_name if provider else "deterministic-r0"
+            ),
+            processing_location=self.observer.safe_category(
+                provider.processing_location if provider else "device"
+            ),
         )

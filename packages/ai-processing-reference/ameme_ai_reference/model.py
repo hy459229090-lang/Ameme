@@ -81,6 +81,9 @@ class PolicyContext:
     processing_locations: frozenset[str]
     allowed_provider_adapters: frozenset[str] = frozenset()
     deleted_evidence_ids: frozenset[str] = frozenset()
+    revoked_evidence_ids: frozenset[str] = frozenset()
+    policy_generation: str = "policy-snapshot-v1"
+    revocation_generation: str = "revocation-snapshot-v1"
     budget_remaining: int = 0
 
 
