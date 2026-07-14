@@ -12,6 +12,7 @@ from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 import base64
 import hashlib
+import hmac
 import json
 import os
 from pathlib import Path
@@ -132,6 +133,7 @@ class CoreOracle:
             raise InvariantViolation("raw_quota_bytes must be positive")
         self._now = now or _default_now
         self._raw_quota_bytes = raw_quota_bytes
+        self._raw_fault_injector = raw_fault_injector
         self._raw_vault = (
             RawVaultIO(
                 raw_vault_dir,
@@ -147,6 +149,7 @@ class CoreOracle:
         self.connection.execute("PRAGMA journal_mode = WAL")
         self.connection.execute("PRAGMA synchronous = FULL")
         self.connection.executescript(SCHEMA_SQL)
+        self._migrate_reference_schema()
         self.connection.execute(
             "INSERT OR IGNORE INTO schema_migrations(migration_id, applied_at) VALUES (?, ?)",
             (SCHEMA_VERSION, self._now()),
@@ -413,13 +416,26 @@ class CoreOracle:
             relative_path = f"objects/{raw_object_id}.agcm"
             nonce = self._unique_raw_nonce()
             nonce_b64 = base64.b64encode(nonce).decode("ascii")
-            aad_value = {
-                "raw_object_id": raw_object_id,
-                "source_object_id": source_object_id,
-                "space_id": source["space_id"],
-                "created_at": created_at,
-                "schema_version": 1,
-            }
+            plaintext_sha256 = hashlib.sha256(content).hexdigest()
+            aad_value = self._raw_aad_value(
+                {
+                    "raw_object_id": raw_object_id,
+                    "source_object_id": source_object_id,
+                    "space_id": source["space_id"],
+                    "relative_path": relative_path,
+                    "key_id": key_id,
+                    "nonce_b64": nonce_b64,
+                    "aad_version": 2,
+                    "plaintext_sha256": plaintext_sha256,
+                    "plaintext_size": len(content),
+                    "ciphertext_size": len(content) + 16,
+                    "mime_type": mime_type,
+                    "retention_class": retention_class,
+                    "created_at": created_at,
+                    "expires_at": normalized_expires_at,
+                    "selected_for_sync": selected_for_sync,
+                }
+            )
             aad = _canonical(aad_value).encode("utf-8")
             written = vault.write_encrypted(
                 relative_path=relative_path,
@@ -431,7 +447,13 @@ class CoreOracle:
             written_relative_path = relative_path
             try:
                 self.connection.execute(
-                    "INSERT INTO raw_manifests VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO raw_manifests (raw_object_id, source_object_id, space_id, "
+                    "relative_path, key_id, nonce_b64, aad_json, aad_version, "
+                    "plaintext_sha256, ciphertext_sha256, plaintext_size, "
+                    "ciphertext_size, mime_type, "
+                    "retention_class, created_at, expires_at, deletion_state, "
+                    "pending_deletion_state, selected_for_sync, state, updated_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)",
                     (
                         raw_object_id,
                         source_object_id,
@@ -440,6 +462,7 @@ class CoreOracle:
                         key_id,
                         nonce_b64,
                         _canonical(aad_value),
+                        2,
                         written["plaintext_sha256"],
                         written["ciphertext_sha256"],
                         written["plaintext_size"],
@@ -482,11 +505,15 @@ class CoreOracle:
         row = self._raw_manifest_row(raw_object_id)
         if row["state"] != "ready" or row["deletion_state"] != "active":
             raise NotFound("Raw Vault object is not available")
+        aad_value = self._raw_aad_value(row)
+        canonical_aad = _canonical(aad_value)
+        if not hmac.compare_digest(canonical_aad, row["aad_json"]):
+            raise RawIntegrityError("Raw Vault authenticated metadata mismatch")
         plaintext = vault.read_encrypted(
             relative_path=row["relative_path"],
             key_id=row["key_id"],
             nonce=base64.b64decode(row["nonce_b64"], validate=True),
-            aad=row["aad_json"].encode("utf-8"),
+            aad=canonical_aad.encode("utf-8"),
             expected_ciphertext_sha256=row["ciphertext_sha256"],
         )
         if hashlib.sha256(plaintext).hexdigest() != row["plaintext_sha256"]:
@@ -503,6 +530,7 @@ class CoreOracle:
             "key_id": row["key_id"],
             "nonce_b64": row["nonce_b64"],
             "aad": json.loads(row["aad_json"]),
+            "aad_version": row["aad_version"],
             "plaintext_sha256": row["plaintext_sha256"],
             "ciphertext_sha256": row["ciphertext_sha256"],
             "plaintext_size": row["plaintext_size"],
@@ -512,6 +540,7 @@ class CoreOracle:
             "created_at": row["created_at"],
             "expires_at": row["expires_at"],
             "deletion_state": row["deletion_state"],
+            "pending_deletion_state": row["pending_deletion_state"],
             "selected_for_sync": bool(row["selected_for_sync"]),
             "state": row["state"],
             "updated_at": row["updated_at"],
@@ -520,7 +549,8 @@ class CoreOracle:
     def raw_vault_usage(self) -> dict[str, int]:
         row = self.connection.execute(
             "SELECT COUNT(*) object_count, COALESCE(SUM(ciphertext_size), 0) ciphertext_bytes "
-            "FROM raw_manifests WHERE state = 'ready' AND deletion_state = 'active'"
+            "FROM raw_manifests WHERE state IN ('ready', 'delete_pending') "
+            "AND deletion_state IN ('active', 'pending')"
         ).fetchone()
         return {
             "object_count": int(row["object_count"]),
@@ -536,25 +566,37 @@ class CoreOracle:
 
         def action() -> dict[str, Any]:
             rows = self.connection.execute(
-                "SELECT raw_object_id FROM raw_manifests WHERE state = 'ready' "
-                "AND deletion_state = 'active' AND retention_class IN (?, ?) "
-                "AND expires_at IS NOT NULL AND expires_at <= ? ORDER BY raw_object_id",
+                "SELECT raw_object_id FROM raw_manifests WHERE ("
+                "state = 'ready' AND deletion_state = 'active' "
+                "AND retention_class IN (?, ?) AND expires_at IS NOT NULL "
+                "AND expires_at <= ?) OR (state = 'delete_pending' "
+                "AND deletion_state = 'pending' "
+                "AND pending_deletion_state = 'expired') ORDER BY raw_object_id",
                 (*sorted(EXPIRING_RAW_RETENTION_CLASSES), normalized_at),
             ).fetchall()
-            deleted: list[str] = []
-            failed: list[str] = []
             for row in rows:
-                try:
-                    self._delete_raw_manifest_tx(
-                        row["raw_object_id"], "expired", normalized_at
-                    )
-                except OSError:
-                    failed.append(row["raw_object_id"])
-                else:
-                    deleted.append(row["raw_object_id"])
-            return {"deleted_raw_object_ids": deleted, "failed_raw_object_ids": failed}
+                self._stage_raw_deletion_tx(
+                    row["raw_object_id"], "expired", normalized_at
+                )
+            self._fault("before_raw_delete_stage_commit")
+            return {"staged_raw_object_ids": [row["raw_object_id"] for row in rows]}
 
-        return self._command("purge_expired_raw", idempotency_key, payload, action)
+        staged = self._command("purge_expired_raw", idempotency_key, payload, action)
+        failed: list[str] = []
+        for raw_object_id in staged["staged_raw_object_ids"]:
+            try:
+                self._finalize_raw_deletion(raw_object_id)
+            except Exception:
+                failed.append(raw_object_id)
+        deleted = [
+            raw_object_id
+            for raw_object_id in staged["staged_raw_object_ids"]
+            if self._raw_manifest_row(raw_object_id)["state"] == "deleted"
+        ]
+        return {
+            "deleted_raw_object_ids": deleted,
+            "failed_raw_object_ids": failed,
+        }
 
     def enqueue_job(
         self,
@@ -1235,16 +1277,10 @@ class CoreOracle:
             self._recompute_episodes_after_deletion(set(deleted_event_ids), touched_dates)
             for owner_id, space_id, local_date, timezone_name in touched_dates:
                 self._refresh_ledger(owner_id, space_id, local_date, timezone_name)
-            failed_raw_object_ids: list[str] = []
             for raw_object_id in impact["raw_object_ids"]:
-                try:
-                    self._delete_raw_manifest_tx(raw_object_id, reason, now)
-                except Exception:
-                    failed_raw_object_ids.append(raw_object_id)
+                self._stage_raw_deletion_tx(raw_object_id, "deleted", now)
             job_id = self._next_id("del")
-            local_cleanup_complete = not failed_raw_object_ids and self._raw_cleanup_complete(
-                impact["raw_object_ids"]
-            )
+            local_cleanup_complete = self._raw_cleanup_complete(impact["raw_object_ids"])
             state = (
                 "completed"
                 if local_cleanup_complete and not replicas
@@ -1260,7 +1296,10 @@ class CoreOracle:
                 "episode_ids": impact["episode_ids"],
                 "day_ledger_ids": impact["day_ledger_ids"],
                 "lineage_edge_ids": impact["lineage_edge_ids"],
-                "failed_raw_object_ids": failed_raw_object_ids,
+                "failed_raw_object_ids": [],
+                "pending_raw_object_ids": (
+                    [] if local_cleanup_complete else impact["raw_object_ids"]
+                ),
                 "local_cleanup_complete": local_cleanup_complete,
                 "pending_replica_ids": replicas,
                 "acked_replica_ids": [],
@@ -1296,6 +1335,7 @@ class CoreOracle:
                     "WHERE job_id = ?",
                     (_canonical({"proof_hash": proof_hash}), now, queue_job["job_id"]),
                 )
+            self._fault("before_raw_delete_stage_commit")
             return {
                 "deletion_job_id": job_id,
                 "queue_job_id": queue_job["job_id"],
@@ -1304,7 +1344,11 @@ class CoreOracle:
                 "proof_hash": proof_hash,
             }
 
-        return self._command("delete_source", idempotency_key, payload, action)
+        staged = self._command("delete_source", idempotency_key, payload, action)
+        try:
+            return self._finalize_deletion_job_raw(staged["deletion_job_id"])
+        except Exception:
+            return self.get_deletion_job(staged["deletion_job_id"])
 
     def retry_deletion_job(
         self, deletion_job_id: str, *, idempotency_key: str
@@ -1312,33 +1356,14 @@ class CoreOracle:
         payload = {"deletion_job_id": deletion_job_id}
 
         def action() -> dict[str, Any]:
-            row = self._deletion_job_row(deletion_job_id)
-            affected = json.loads(row["affected_json"])
-            now = _utc_timestamp(self._now())
-            failed: list[str] = []
-            for raw_object_id in affected.get("raw_object_ids", []):
-                try:
-                    self._delete_raw_manifest_tx(raw_object_id, "deletion_retry", now)
-                except Exception:
-                    failed.append(raw_object_id)
-            affected["failed_raw_object_ids"] = failed
-            affected["local_cleanup_complete"] = not failed and self._raw_cleanup_complete(
-                affected.get("raw_object_ids", [])
-            )
-            state = self._deletion_state(affected)
-            affected["proof_complete"] = state == "completed"
-            proof_hash = _hash(affected)
-            self._update_deletion_job_tx(
-                deletion_job_id, state, affected, proof_hash, now
-            )
-            return {
-                "deletion_job_id": deletion_job_id,
-                "state": state,
-                "affected": affected,
-                "proof_hash": proof_hash,
-            }
+            self._deletion_job_row(deletion_job_id)
+            return {"deletion_job_id": deletion_job_id}
 
-        return self._command("retry_deletion_job", idempotency_key, payload, action)
+        self._command("retry_deletion_job", idempotency_key, payload, action)
+        try:
+            return self._finalize_deletion_job_raw(deletion_job_id)
+        except Exception:
+            return self.get_deletion_job(deletion_job_id)
 
     def acknowledge_deletion(
         self,
@@ -1376,7 +1401,8 @@ class CoreOracle:
                 "proof_hash": proof_hash,
             }
 
-        return self._command("acknowledge_deletion", idempotency_key, payload, action)
+        self._command("acknowledge_deletion", idempotency_key, payload, action)
+        return self.get_deletion_job(deletion_job_id)
 
     def deletion_impact(self, source_object_id: str) -> dict[str, list[str]]:
         self._source(source_object_id)
@@ -1715,6 +1741,24 @@ class CoreOracle:
             raise InvariantViolation("Raw Vault directory was not configured")
         return self._raw_vault
 
+    def _fault(self, stage: str) -> None:
+        if self._raw_fault_injector is not None:
+            self._raw_fault_injector(stage)
+
+    def _migrate_reference_schema(self) -> None:
+        columns = {
+            row["name"]
+            for row in self.connection.execute("PRAGMA table_info(raw_manifests)")
+        }
+        if "aad_version" not in columns:
+            self.connection.execute(
+                "ALTER TABLE raw_manifests ADD COLUMN aad_version INTEGER NOT NULL DEFAULT 1"
+            )
+        if "pending_deletion_state" not in columns:
+            self.connection.execute(
+                "ALTER TABLE raw_manifests ADD COLUMN pending_deletion_state TEXT"
+            )
+
     def _raw_manifest_row(self, raw_object_id: str) -> sqlite3.Row:
         row = self.connection.execute(
             "SELECT * FROM raw_manifests WHERE raw_object_id = ?", (raw_object_id,)
@@ -1722,6 +1766,31 @@ class CoreOracle:
         if not row:
             raise NotFound("Raw Vault manifest not found")
         return row
+
+    @staticmethod
+    def _raw_aad_value(values: Any) -> dict[str, Any]:
+        """Rebuild authenticated metadata from manifest columns, never aad_json."""
+        if int(values["aad_version"]) != 2:
+            raise RawIntegrityError(
+                "Raw Vault AAD v1 requires an explicit re-encryption migration"
+            )
+        return {
+            "schema_version": 2,
+            "raw_object_id": values["raw_object_id"],
+            "source_object_id": values["source_object_id"],
+            "space_id": values["space_id"],
+            "relative_path": values["relative_path"],
+            "key_id": values["key_id"],
+            "nonce_b64": values["nonce_b64"],
+            "plaintext_sha256": values["plaintext_sha256"],
+            "plaintext_size": int(values["plaintext_size"]),
+            "ciphertext_size": int(values["ciphertext_size"]),
+            "mime_type": values["mime_type"],
+            "retention_class": values["retention_class"],
+            "created_at": values["created_at"],
+            "expires_at": values["expires_at"],
+            "selected_for_sync": bool(values["selected_for_sync"]),
+        }
 
     def _unique_raw_nonce(self) -> bytes:
         for _ in range(16):
@@ -1737,32 +1806,92 @@ class CoreOracle:
         vault = self._require_raw_vault()
         rows = self.connection.execute(
             "SELECT raw_object_id, relative_path FROM raw_manifests "
-            "WHERE state = 'ready' AND deletion_state = 'active'"
+            "WHERE (state = 'ready' AND deletion_state = 'active') OR "
+            "(state = 'delete_pending' AND deletion_state = 'pending')"
         ).fetchall()
         vault.recover(row["relative_path"] for row in rows)
         now = _utc_timestamp(self._now())
         with self._transaction():
             for row in rows:
-                if not vault.exists(row["relative_path"]):
+                manifest = self._raw_manifest_row(row["raw_object_id"])
+                if (
+                    manifest["state"] == "ready"
+                    and manifest["deletion_state"] == "active"
+                    and not vault.exists(row["relative_path"])
+                ):
                     self.connection.execute(
                         "UPDATE raw_manifests SET state = 'missing', updated_at = ? "
                         "WHERE raw_object_id = ?",
                         (now, row["raw_object_id"]),
                     )
+        pending_ids = [
+            row["raw_object_id"]
+            for row in rows
+            if self._raw_manifest_row(row["raw_object_id"])["state"]
+            == "delete_pending"
+        ]
+        for raw_object_id in pending_ids:
+            try:
+                self._finalize_raw_deletion(raw_object_id)
+            except Exception:
+                pass
+        deletion_job_ids = [
+            row["deletion_job_id"]
+            for row in self.connection.execute(
+                "SELECT deletion_job_id FROM deletion_jobs ORDER BY deletion_job_id"
+            )
+        ]
+        for deletion_job_id in deletion_job_ids:
+            try:
+                self._reconcile_deletion_job(deletion_job_id, failed_raw_object_ids=[])
+            except Exception:
+                pass
 
-    def _delete_raw_manifest_tx(
-        self, raw_object_id: str, deletion_state: str, now: str
+    def _stage_raw_deletion_tx(
+        self, raw_object_id: str, final_deletion_state: str, now: str
     ) -> None:
         row = self._raw_manifest_row(raw_object_id)
-        if row["deletion_state"] != "active":
+        if row["state"] == "deleted":
             return
-        vault = self._require_raw_vault()
-        vault.delete(row["relative_path"])
+        if row["state"] == "delete_pending":
+            if row["pending_deletion_state"] != final_deletion_state:
+                raise InvariantViolation("Raw deletion is pending for a different outcome")
+            return
+        if row["state"] != "ready" or row["deletion_state"] != "active":
+            raise InvariantViolation("Raw object is not eligible for deletion staging")
         self.connection.execute(
-            "UPDATE raw_manifests SET state = 'deleted', deletion_state = ?, updated_at = ? "
+            "UPDATE raw_manifests SET state = 'delete_pending', deletion_state = 'pending', "
+            "pending_deletion_state = ?, updated_at = ? "
             "WHERE raw_object_id = ?",
-            (deletion_state, now, raw_object_id),
+            (final_deletion_state, now, raw_object_id),
         )
+
+    def _finalize_raw_deletion(self, raw_object_id: str) -> None:
+        row = self._raw_manifest_row(raw_object_id)
+        if row["state"] == "deleted":
+            return
+        if (
+            row["state"] != "delete_pending"
+            or row["deletion_state"] != "pending"
+            or not row["pending_deletion_state"]
+        ):
+            raise InvariantViolation("Raw deletion must be durably staged first")
+        vault = self._require_raw_vault()
+        final_deletion_state = row["pending_deletion_state"]
+        with self._transaction():
+            current = self._raw_manifest_row(raw_object_id)
+            if current["state"] == "deleted":
+                return
+            if current["state"] != "delete_pending":
+                raise InvariantViolation("Raw deletion stage changed before finalization")
+            vault.delete(current["relative_path"])
+            now = _utc_timestamp(self._now())
+            self.connection.execute(
+                "UPDATE raw_manifests SET state = 'deleted', deletion_state = ?, "
+                "pending_deletion_state = NULL, updated_at = ? WHERE raw_object_id = ?",
+                (final_deletion_state, now, raw_object_id),
+            )
+            self._fault("before_raw_delete_finalize_commit")
 
     def _raw_cleanup_complete(self, raw_object_ids: list[str]) -> bool:
         if not raw_object_ids:
@@ -1771,7 +1900,7 @@ class CoreOracle:
             return False
         for raw_object_id in raw_object_ids:
             row = self._raw_manifest_row(raw_object_id)
-            if row["deletion_state"] == "active":
+            if row["state"] != "deleted":
                 return False
             if self._raw_vault.exists(row["relative_path"]):
                 return False
@@ -1875,6 +2004,60 @@ class CoreOracle:
         ):
             return "completed"
         return "partial_failed"
+
+    def _finalize_deletion_job_raw(self, deletion_job_id: str) -> dict[str, Any]:
+        row = self._deletion_job_row(deletion_job_id)
+        affected = json.loads(row["affected_json"])
+        raw_object_ids = affected.get("raw_object_ids", [])
+        if not raw_object_ids:
+            return self.get_deletion_job(deletion_job_id)
+        if (
+            affected.get("local_cleanup_complete")
+            and not affected.get("pending_raw_object_ids")
+            and not affected.get("failed_raw_object_ids")
+        ):
+            return self.get_deletion_job(deletion_job_id)
+        failed: list[str] = []
+        for raw_object_id in raw_object_ids:
+            try:
+                self._finalize_raw_deletion(raw_object_id)
+            except Exception:
+                failed.append(raw_object_id)
+        self._fault("before_deletion_proof_reconcile")
+        return self._reconcile_deletion_job(
+            deletion_job_id, failed_raw_object_ids=failed
+        )
+
+    def _reconcile_deletion_job(
+        self,
+        deletion_job_id: str,
+        *,
+        failed_raw_object_ids: list[str],
+    ) -> dict[str, Any]:
+        now = _utc_timestamp(self._now())
+        with self._transaction():
+            row = self._deletion_job_row(deletion_job_id)
+            affected = json.loads(row["affected_json"])
+            raw_object_ids = affected.get("raw_object_ids", [])
+            pending_raw_object_ids = [
+                raw_object_id
+                for raw_object_id in raw_object_ids
+                if not self._raw_cleanup_complete([raw_object_id])
+            ]
+            affected["pending_raw_object_ids"] = sorted(pending_raw_object_ids)
+            prior_failed = set(affected.get("failed_raw_object_ids", []))
+            affected["failed_raw_object_ids"] = sorted(
+                (prior_failed | set(failed_raw_object_ids))
+                & set(pending_raw_object_ids)
+            )
+            affected["local_cleanup_complete"] = not pending_raw_object_ids
+            state = self._deletion_state(affected)
+            affected["proof_complete"] = state == "completed"
+            proof_hash = _hash(affected)
+            self._update_deletion_job_tx(
+                deletion_job_id, state, affected, proof_hash, now
+            )
+        return self.get_deletion_job(deletion_job_id)
 
     def _update_deletion_job_tx(
         self,

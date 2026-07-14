@@ -1,6 +1,6 @@
 """SQLite logical schema for the non-production core oracle."""
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 SCHEMA_SQL = r"""
 PRAGMA foreign_keys = ON;
@@ -65,6 +65,7 @@ CREATE TABLE IF NOT EXISTS raw_manifests (
     key_id TEXT NOT NULL,
     nonce_b64 TEXT NOT NULL UNIQUE,
     aad_json TEXT NOT NULL,
+    aad_version INTEGER NOT NULL CHECK (aad_version IN (1, 2)),
     plaintext_sha256 TEXT NOT NULL,
     ciphertext_sha256 TEXT NOT NULL,
     plaintext_size INTEGER NOT NULL CHECK (plaintext_size >= 0),
@@ -74,6 +75,7 @@ CREATE TABLE IF NOT EXISTS raw_manifests (
     created_at TEXT NOT NULL,
     expires_at TEXT,
     deletion_state TEXT NOT NULL,
+    pending_deletion_state TEXT,
     selected_for_sync INTEGER NOT NULL CHECK (selected_for_sync IN (0, 1)),
     state TEXT NOT NULL,
     updated_at TEXT NOT NULL

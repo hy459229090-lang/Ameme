@@ -28,9 +28,9 @@ Suggested contract follow-up: define the minimum tombstone identity/scope/causal
 
 ## 5. Raw manifest is a sync operation but not a typed object
 
-`SyncEnvelope.operation` includes `raw_manifest`, while the domain contract has no `RawManifest` definition. The Oracle therefore uses an internal manifest with a private relative path, key identifier, unique nonce, authenticated identifiers, plaintext/ciphertext hashes and sizes, retention/TTL, deletion state and selected-sync flag. Raw ciphertext remains outside SQLite and SourceLocator remains a separate source reference.
+`SyncEnvelope.operation` includes `raw_manifest`, while the domain contract has no `RawManifest` definition. The Oracle therefore uses an internal manifest with a private relative path, key identifier, unique nonce, AAD version, authenticated policy/identity fields, plaintext/ciphertext hashes and sizes, retention/TTL, two-phase deletion state and selected-sync flag. Raw ciphertext remains outside SQLite and SourceLocator remains a separate source reference.
 
-Suggested contract follow-up: define a metadata-only RawManifest for compatible sync/migration without exposing plaintext, an encryption key or a portable absolute path. Specify nonce uniqueness scope, hash meaning, retention transitions and whether `key_id` is device-local or transferable.
+Suggested contract follow-up: define a metadata-only RawManifest for compatible sync/migration without exposing plaintext, an encryption key or a portable absolute path. Specify nonce uniqueness scope, AAD version/migration, hash meaning, `delete_pending -> deleted` recovery, retention transitions and whether `key_id` is device-local or transferable.
 
 ## 6. Durable worker queue semantics are not machine-readable
 

@@ -33,9 +33,11 @@ The Oracle enforces:
 - contract-aligned `planned`, `high_confidence_inference`, `conflict`, DayLedger/Recall `partial`, and data-insufficient states;
 - SourceLocator degradation history (`available -> moved/missing/permission_revoked/deleted`) without inventing availability;
 - a SourceLocator that stays separate from Raw Vault ciphertext and manifest metadata;
-- AES-256-GCM per-object encryption with caller-injected 32-byte keys, unique 96-bit nonces, authenticated metadata, plaintext/ciphertext SHA-256, atomic temp-file/fsync/rename writes, quota checks, TTL cleanup and reopen recovery;
+- AES-256-GCM per-object encryption with caller-injected 32-byte keys, unique 96-bit nonces, plaintext/ciphertext SHA-256, atomic temp-file/fsync/rename writes, quota checks, TTL cleanup and reopen recovery;
+- AAD v2 rebuilt from manifest columns—not trusted from `aad_json`—and binding identity, private path, key ID, nonce, content hash/size, MIME type, retention/TTL and selected-sync policy;
 - fail-closed behavior when `cryptography`, a key provider or a valid 256-bit key is unavailable—there is no plaintext or home-grown crypto fallback;
 - durable job priority, command idempotency, leases, attempts, deterministic exponential backoff and crash/reopen lease recovery;
+- two-phase Raw deletion: first commit `delete_pending`, then remove the ciphertext, then commit the final manifest state and reconcile proof; every persisted interruption point is recoverable on reopen;
 - deletion impact calculated from lineage, with `completed` allowed only after Raw/structured/derived/index cleanup and every declared replica acknowledgement are satisfied;
 - tombstone precedence during rebuild so deleted objects do not return through Today or FTS Recall.
 
@@ -65,11 +67,12 @@ This package is an executable semantic and failure oracle. It is **not** the Mob
 
 - SQLite metadata and structured content are plaintext in this reference database. SQLCipher-at-rest, migration and backup behavior are unimplemented.
 - AES-GCM proves the reference file format and fail-closed calls only. The key is supplied by the test/caller and held in process memory; OS Data Protection, iOS Keychain/Secure Enclave, Android Keystore, key rotation, backup exclusion and secure key deletion are unimplemented.
+- Schema v3 labels pre-AAD-v2 rows as `aad_version=1` and fails closed with an explicit re-encryption-migration error. This Oracle does not silently reinterpret or automatically re-encrypt legacy ciphertext, so upgrading an existing reference database does not make legacy Raw objects readable.
 - On POSIX, the reference fsyncs the encrypted file and containing directory around atomic rename. Python/Windows does not expose the same directory-fsync primitive here, so Windows proves same-volume `os.replace` behavior and recovery cleanup, not power-loss durability. Mobile filesystem durability still requires platform Spike evidence.
 - The manifest contains non-content metadata (`key_id`, nonce, hashes, sizes, retention, relative private path and authenticated identifiers), never the key or plaintext. Hashes, sizes and MIME types can still reveal information, and this plaintext reference database does not protect them. Directory permissions are best-effort process calls, not evidence for app-sandbox/ACL enforcement. The Oracle has no logging pipeline; production redaction and access audit are not proven.
 - Quota is a configured ciphertext-byte cap and TTL is caller-driven cleanup. Production storage pressure signals, background schedulers and OS lifecycle recovery are unimplemented.
 - Durable queues prove SQLite state transitions for one local process/database. They do not prove mobile schedulers, multi-process fairness, network delivery, cloud queues or real peer synchronization.
-- A deletion job reaches `completed` only after its local synthetic cleanup checks and every replica ID explicitly declared to this Oracle are acknowledged. This is useful proof-state semantics, not evidence that real devices received, verified or cryptographically attested deletion. Unknown/offline peers, physical/cryptographic erasure and account-wide discovery remain unimplemented.
+- A deletion job reaches `completed` only after every affected Raw manifest is in a final deleted state, its ciphertext path is absent, local synthetic cleanup checks pass and every replica ID explicitly declared to this Oracle is acknowledged. A missing file behind `delete_pending` remains proof-incomplete until manifest reconciliation. This is useful proof-state semantics, not evidence that real devices received, verified or cryptographically attested deletion. Unknown/offline peers, physical/cryptographic erasure and account-wide discovery remain unimplemented.
 - System Health/Location APIs, LAN transport, network APIs, real model calls, performance, accessibility, observability and release readiness are outside this package.
 
 Revision snapshots retain synthetic text so the Oracle can prove replay and tombstone precedence. Production content erasure requires the approved encrypted storage/Raw Vault design plus DEL/SEC evidence. No real user data may be loaded here.

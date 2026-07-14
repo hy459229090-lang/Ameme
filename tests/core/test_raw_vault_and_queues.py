@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 import json
 from pathlib import Path
+import sqlite3
 import sys
 import tempfile
 import unittest
@@ -55,7 +56,10 @@ class RawVaultAndQueueTest(unittest.TestCase):
         self.database = self.root / "oracle.sqlite3"
         self.vault_dir = self.root / "vault"
         self.clock = MutableClock()
-        self.keys = {"space-key-v1": bytes(range(32))}
+        self.keys = {
+            "space-key-v1": bytes(range(32)),
+            "space-key-v2": bytes(reversed(range(32))),
+        }
         self.faults = FaultPlan()
         self.core = self.open_core()
 
@@ -177,6 +181,169 @@ class RawVaultAndQueueTest(unittest.TestCase):
         with self.assertRaises(RawIntegrityError):
             self.core.read_raw(raw_id)
 
+    def test_aad_binds_policy_key_and_private_path_metadata(self) -> None:
+        handles = self.load_day()
+        source_id = handles["records"]["river_walk"]["capture"]["source_object_id"]
+        content = b"synthetic aad-bound raw payload"
+        stored = self.store_raw(source_id, content=content)
+        raw_id = stored["raw_object_id"]
+        original_aad_json = json.dumps(
+            stored["aad"], ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        )
+        copied_path = "objects/forged-relative-path.agcm"
+        (self.vault_dir / copied_path).write_bytes(
+            (self.vault_dir / stored["relative_path"]).read_bytes()
+        )
+        cases = {
+            "mime_type": "image/forged",
+            "retention_class": "user_retained",
+            "expires_at": "2026-07-30T12:00:00+00:00",
+            "selected_for_sync": 1,
+            "key_id": "space-key-v2",
+            "relative_path": copied_path,
+        }
+        originals = {
+            "mime_type": stored["mime_type"],
+            "retention_class": stored["retention_class"],
+            "expires_at": stored["expires_at"],
+            "selected_for_sync": int(stored["selected_for_sync"]),
+            "key_id": stored["key_id"],
+            "relative_path": stored["relative_path"],
+        }
+        for field, forged_value in cases.items():
+            with self.subTest(field=field):
+                self.core.connection.execute(
+                    f"UPDATE raw_manifests SET {field} = ? WHERE raw_object_id = ?",
+                    (forged_value, raw_id),
+                )
+                with self.assertRaises(RawIntegrityError):
+                    self.core.read_raw(raw_id)
+                self.core.connection.execute(
+                    f"UPDATE raw_manifests SET {field} = ? WHERE raw_object_id = ?",
+                    (originals[field], raw_id),
+                )
+                self.assertEqual(self.core.read_raw(raw_id), content)
+
+        self.core.connection.execute(
+            "UPDATE raw_manifests SET aad_json = '{}' WHERE raw_object_id = ?",
+            (raw_id,),
+        )
+        with self.assertRaises(RawIntegrityError):
+            self.core.read_raw(raw_id)
+        self.core.connection.execute(
+            "UPDATE raw_manifests SET aad_json = ? WHERE raw_object_id = ?",
+            (original_aad_json, raw_id),
+        )
+
+        self.core.connection.execute(
+            "UPDATE raw_manifests SET mime_type = ? WHERE raw_object_id = ?",
+            ("image/forged-with-aad", raw_id),
+        )
+        forged_row = self.core.connection.execute(
+            "SELECT * FROM raw_manifests WHERE raw_object_id = ?", (raw_id,)
+        ).fetchone()
+        forged_aad_json = json.dumps(
+            self.core._raw_aad_value(forged_row),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        self.core.connection.execute(
+            "UPDATE raw_manifests SET aad_json = ? WHERE raw_object_id = ?",
+            (forged_aad_json, raw_id),
+        )
+        with self.assertRaises(RawIntegrityError):
+            self.core.read_raw(raw_id)
+        self.core.connection.execute(
+            "UPDATE raw_manifests SET mime_type = ?, aad_json = ? WHERE raw_object_id = ?",
+            (stored["mime_type"], original_aad_json, raw_id),
+        )
+        self.assertEqual(self.core.read_raw(raw_id), content)
+
+    def test_legacy_aad_v1_fails_closed_with_explicit_migration_error(self) -> None:
+        handles = self.load_day()
+        source_id = handles["records"]["river_walk"]["capture"]["source_object_id"]
+        stored = self.store_raw(source_id)
+        self.core.connection.execute(
+            "UPDATE raw_manifests SET aad_version = 1 WHERE raw_object_id = ?",
+            (stored["raw_object_id"],),
+        )
+        with self.assertRaisesRegex(RawIntegrityError, "re-encryption migration"):
+            self.core.read_raw(stored["raw_object_id"])
+
+    def test_schema_v2_reopen_labels_existing_raw_as_legacy_aad(self) -> None:
+        with tempfile.TemporaryDirectory() as tempdir:
+            root = Path(tempdir)
+            database = root / "legacy-v2.sqlite3"
+            vault_dir = root / "vault"
+            relative_path = "objects/raw_legacy_v2.agcm"
+            connection = sqlite3.connect(database)
+            connection.execute(
+                "CREATE TABLE raw_manifests ("
+                "raw_object_id TEXT PRIMARY KEY, source_object_id TEXT NOT NULL, "
+                "space_id TEXT NOT NULL, relative_path TEXT NOT NULL UNIQUE, "
+                "key_id TEXT NOT NULL, nonce_b64 TEXT NOT NULL UNIQUE, "
+                "aad_json TEXT NOT NULL, plaintext_sha256 TEXT NOT NULL, "
+                "ciphertext_sha256 TEXT NOT NULL, plaintext_size INTEGER NOT NULL, "
+                "ciphertext_size INTEGER NOT NULL, mime_type TEXT NOT NULL, "
+                "retention_class TEXT NOT NULL, created_at TEXT NOT NULL, "
+                "expires_at TEXT, deletion_state TEXT NOT NULL, "
+                "selected_for_sync INTEGER NOT NULL, state TEXT NOT NULL, "
+                "updated_at TEXT NOT NULL)"
+            )
+            legacy_aad = json.dumps(
+                {
+                    "raw_object_id": "raw_legacy_v2",
+                    "source_object_id": "src_legacy_v2",
+                    "space_id": "space_personal",
+                    "created_at": "2026-07-14T12:00:00+00:00",
+                    "schema_version": 1,
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            connection.execute(
+                "INSERT INTO raw_manifests VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    "raw_legacy_v2",
+                    "src_legacy_v2",
+                    "space_personal",
+                    relative_path,
+                    "space-key-v1",
+                    "AAAAAAAAAAAAAAAA",
+                    legacy_aad,
+                    "legacy_plaintext_hash",
+                    "legacy_ciphertext_hash",
+                    1,
+                    16,
+                    "audio/synthetic",
+                    "ephemeral_recovery",
+                    "2026-07-14T12:00:00+00:00",
+                    "2026-07-21T12:00:00+00:00",
+                    "active",
+                    0,
+                    "ready",
+                    "2026-07-14T12:00:00+00:00",
+                ),
+            )
+            connection.commit()
+            connection.close()
+            (vault_dir / "objects").mkdir(parents=True)
+            (vault_dir / relative_path).write_bytes(b"x" * 16)
+
+            core = CoreOracle(
+                database,
+                now=MutableClock(),
+                raw_vault_dir=vault_dir,
+                raw_key_provider=lambda key_id: self.keys[key_id],
+            )
+            manifest = core.raw_manifest("raw_legacy_v2")
+            self.assertEqual(manifest["aad_version"], 1)
+            self.assertIsNone(manifest["pending_deletion_state"])
+            with self.assertRaisesRegex(RawIntegrityError, "re-encryption migration"):
+                core.read_raw("raw_legacy_v2")
+            core.close()
+
     def test_quota_and_ttl_cleanup_keep_source_locator(self) -> None:
         self.core.close()
         self.core = self.open_core(quota_bytes=64)
@@ -207,6 +374,32 @@ class RawVaultAndQueueTest(unittest.TestCase):
         self.assertEqual(
             self.core.locator_history(source_id)[-1]["state"], "available"
         )
+
+    def test_ttl_finalize_commit_failure_recovers_after_reopen(self) -> None:
+        handles = self.load_day()
+        source_id = handles["records"]["river_walk"]["capture"]["source_object_id"]
+        stored = self.store_raw(
+            source_id,
+            expires_at="2026-07-14T12:00:10+00:00",
+        )
+        self.faults.stages = {"before_raw_delete_finalize_commit"}
+        purged = self.core.purge_expired_raw(
+            at="2026-07-14T12:00:11+00:00",
+            idempotency_key="raw-ttl-two-phase-001",
+        )
+        self.assertEqual(purged["deleted_raw_object_ids"], [])
+        self.assertEqual(purged["failed_raw_object_ids"], [stored["raw_object_id"]])
+        manifest = self.core.raw_manifest(stored["raw_object_id"])
+        self.assertEqual(
+            (manifest["state"], manifest["deletion_state"]),
+            ("delete_pending", "pending"),
+        )
+        self.assertFalse((self.vault_dir / stored["relative_path"]).exists())
+        self.core.close()
+        self.faults.stages.clear()
+        self.core = self.open_core()
+        recovered = self.core.raw_manifest(stored["raw_object_id"])
+        self.assertEqual((recovered["state"], recovered["deletion_state"]), ("deleted", "expired"))
 
     def test_reopen_cleans_atomic_orphans_and_temp_files(self) -> None:
         (self.vault_dir / "objects" / "orphan.agcm").write_bytes(b"synthetic orphan")
@@ -371,6 +564,129 @@ class RawVaultAndQueueTest(unittest.TestCase):
         terminal = self.core.get_job(queued["job_id"])
         self.assertEqual(terminal["state"], "failed")
         self.assertEqual(terminal["last_error_code"], "LEASE_EXPIRED_MAX_ATTEMPTS")
+
+    def test_deletion_stage_rollback_keeps_active_manifest_and_file_consistent(self) -> None:
+        handles = self.load_day()
+        source_id = handles["records"]["river_walk"]["capture"]["source_object_id"]
+        stored = self.store_raw(source_id)
+        self.faults.stages = {"before_raw_delete_stage_commit"}
+        with self.assertRaises(OSError):
+            self.core.delete_source(
+                source_id,
+                idempotency_key="delete-stage-rollback-001",
+            )
+        manifest = self.core.raw_manifest(stored["raw_object_id"])
+        self.assertEqual((manifest["state"], manifest["deletion_state"]), ("ready", "active"))
+        self.assertTrue((self.vault_dir / stored["relative_path"]).exists())
+        source_state = self.core.connection.execute(
+            "SELECT processing_state FROM source_objects WHERE source_object_id = ?",
+            (source_id,),
+        ).fetchone()["processing_state"]
+        self.assertEqual(source_state, "processed")
+        self.assertEqual(self.core.table_count("deletion_jobs"), 0)
+        self.core.close()
+        self.faults.stages.clear()
+        self.core = self.open_core()
+        self.assertEqual(
+            self.core.read_raw(stored["raw_object_id"]),
+            b"synthetic encrypted audio fragment",
+        )
+
+    def test_delete_enqueue_failure_never_touches_raw_file(self) -> None:
+        handles = self.load_day()
+        source_id = handles["records"]["river_walk"]["capture"]["source_object_id"]
+        stored = self.store_raw(source_id)
+        with patch.object(
+            self.core,
+            "_enqueue_job_tx",
+            side_effect=RuntimeError("synthetic enqueue failure"),
+        ):
+            with self.assertRaises(RuntimeError):
+                self.core.delete_source(
+                    source_id,
+                    idempotency_key="delete-enqueue-rollback-001",
+                )
+        manifest = self.core.raw_manifest(stored["raw_object_id"])
+        self.assertEqual((manifest["state"], manifest["deletion_state"]), ("ready", "active"))
+        self.assertTrue((self.vault_dir / stored["relative_path"]).exists())
+        source_state = self.core.connection.execute(
+            "SELECT processing_state FROM source_objects WHERE source_object_id = ?",
+            (source_id,),
+        ).fetchone()["processing_state"]
+        self.assertEqual(source_state, "processed")
+        self.assertEqual(self.core.table_count("deletion_jobs"), 0)
+
+    def test_two_phase_deletion_recovers_every_committed_restart_stage(self) -> None:
+        stages = {
+            "before_raw_delete": (True, "delete_pending"),
+            "before_raw_delete_finalize_commit": (False, "delete_pending"),
+            "before_deletion_proof_reconcile": (False, "deleted"),
+        }
+        for index, (stage, expected) in enumerate(stages.items(), start=1):
+            with self.subTest(stage=stage), tempfile.TemporaryDirectory() as tempdir:
+                root = Path(tempdir)
+                database = root / "oracle.sqlite3"
+                vault_dir = root / "vault"
+                clock = MutableClock()
+                faults = FaultPlan()
+                core = CoreOracle(
+                    database,
+                    now=clock,
+                    raw_vault_dir=vault_dir,
+                    raw_key_provider=lambda key_id: self.keys[key_id],
+                    raw_fault_injector=faults,
+                )
+                handles = load_synthetic_day(core, self.fixture)
+                source_id = handles["records"]["river_walk"]["capture"][
+                    "source_object_id"
+                ]
+                stored = core.store_raw(
+                    source_id,
+                    b"synthetic restart-stage raw",
+                    key_id="space-key-v1",
+                    mime_type="audio/synthetic",
+                    retention_class="ephemeral_recovery",
+                    expires_at="2026-07-21T12:00:00+00:00",
+                    idempotency_key=f"raw-restart-stage-{index:03d}",
+                )
+                faults.stages = {stage}
+                deletion = core.delete_source(
+                    source_id,
+                    idempotency_key=f"delete-restart-stage-{index:03d}",
+                )
+                manifest = core.raw_manifest(stored["raw_object_id"])
+                file_exists = (vault_dir / stored["relative_path"]).exists()
+                self.assertEqual(deletion["state"], "partial_failed")
+                self.assertFalse(deletion["affected"]["proof_complete"])
+                self.assertFalse(deletion["affected"]["local_cleanup_complete"])
+                self.assertEqual(file_exists, expected[0])
+                self.assertEqual(manifest["state"], expected[1])
+                self.assertFalse(
+                    manifest["state"] == "ready"
+                    and manifest["deletion_state"] == "active"
+                    and not file_exists
+                )
+                deletion_job_id = deletion["deletion_job_id"]
+                queue_job_id = deletion["queue_job_id"]
+                core.close()
+
+                faults.stages.clear()
+                core = CoreOracle(
+                    database,
+                    now=clock,
+                    raw_vault_dir=vault_dir,
+                    raw_key_provider=lambda key_id: self.keys[key_id],
+                    raw_fault_injector=faults,
+                )
+                recovered = core.get_deletion_job(deletion_job_id)
+                recovered_manifest = core.raw_manifest(stored["raw_object_id"])
+                self.assertEqual(recovered_manifest["state"], "deleted")
+                self.assertFalse((vault_dir / stored["relative_path"]).exists())
+                self.assertEqual(recovered["state"], "completed")
+                self.assertTrue(recovered["affected"]["proof_complete"])
+                self.assertTrue(recovered["affected"]["local_cleanup_complete"])
+                self.assertEqual(core.get_job(queue_job_id)["state"], "completed")
+                core.close()
 
     def test_deletion_proof_waits_for_raw_cleanup_and_replica_ack(self) -> None:
         handles = self.load_day()
