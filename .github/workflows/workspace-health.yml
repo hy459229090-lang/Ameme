@@ -7,25 +7,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  governance:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-      - name: Install validation dependencies
-        run: python -m pip install -r scripts/requirements-dev.txt
-      - name: Check workspace governance
-        run: python scripts/governance/check_workspace.py
-      - name: Check local documentation links
-        run: python scripts/governance/check_markdown_links.py
-      - name: Validate Ameme Skill package
-        run: python scripts/validation/validate_ameme_skill.py
-      - name: Compile Python scripts
-        run: python -m compileall -q scripts research
-
-  contract-quality:
+  workspace-validation:
     strategy:
       fail-fast: false
       matrix:
@@ -38,5 +20,7 @@ jobs:
           python-version: "3.12"
       - name: Install validation dependencies
         run: python -m pip install -r scripts/requirements-dev.txt
-      - name: Run contract quality baseline
-        run: python scripts/validation/run_contract_quality.py
+      - name: Run complete no-network validation baseline
+        run: python scripts/validation/run_workspace_validation.py
+      - name: Compile Python sources
+        run: python -m compileall -q scripts research packages services tests
