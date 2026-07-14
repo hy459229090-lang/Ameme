@@ -19,6 +19,7 @@ enum class ExperienceMode(
 
 enum class FactStatus(val label: String) {
     Confirmed("已记录"),
+    UserAsserted("用户陈述"),
     Planned("计划，未确认发生"),
     Inferred("推测"),
     NeedsReview("待核验"),
@@ -34,6 +35,7 @@ enum class CaptureKind(val label: String) {
 }
 
 enum class SourceKind {
+    AgentAutonomous,
     PhotoPicker,
     SharedText,
     SharedContent,

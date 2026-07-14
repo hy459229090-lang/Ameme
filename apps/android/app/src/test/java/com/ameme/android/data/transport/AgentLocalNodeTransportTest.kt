@@ -14,7 +14,7 @@ class AgentLocalNodeTransportTest {
         purpose = "autonomous_memory",
         spaces = setOf("space_work"),
         memoryTypes = setOf("event"),
-        operation = "capture",
+        operation = "create_event",
         idempotencySlot = "idem_" + "a".repeat(64),
         payloadDigest = "sha256_" + "b".repeat(64),
     )
@@ -53,6 +53,7 @@ class AgentLocalNodeTransportTest {
             protocolVersion = AgentLocalNodeControl.PROTOCOL_VERSION,
             requestId = request.control.requestId,
             status = AgentLocalNodeStatus.Ok,
+            resultDigest = "sha256_" + "c".repeat(64),
             payload = byteArrayOf(2),
         )
         matching.requireMatches(request)
@@ -65,11 +66,24 @@ class AgentLocalNodeTransportTest {
                 protocolVersion = AgentLocalNodeControl.PROTOCOL_VERSION,
                 requestId = "req_synthetic_other",
                 status = AgentLocalNodeStatus.Ok,
+                resultDigest = "sha256_" + "c".repeat(64),
+                payload = byteArrayOf(2),
             )
         }
         assertFails {
             control().copy(protocolVersion = "ameme.agent-local-node.v2")
         }
+    }
+
+    @Test
+    fun controlRejectsValuesOutsideSharedV1SchemaBeforeDispatch() {
+        assertFails { control().copy(requestId = "invalid/request") }
+        assertFails { control().copy(callerId = "a".repeat(129)) }
+        assertFails { control().copy(spaces = (1..9).map { "space_$it" }.toSet()) }
+        assertFails { control().copy(memoryTypes = setOf("artifact")) }
+        assertFails { control().copy(memoryTypes = setOf("event", "artifact")) }
+        assertFails { control().copy(operation = "capture") }
+        assertFails { AgentLocalNodeError(AgentLocalNodeErrorCode.TEMPORARILY_UNAVAILABLE, retryable = false) }
     }
 
     private fun assertFails(block: () -> Unit) {
