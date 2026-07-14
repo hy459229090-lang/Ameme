@@ -1,0 +1,219 @@
+{
+  "schema": "ameme.android.db01.performance.v2",
+  "synthetic_data_only": true,
+  "contains_user_content": false,
+  "environment": {
+    "sdk_int": 36,
+    "abi": "x86_64",
+    "model": "sdk_gphone64_x86_64",
+    "manufacturer": "Google"
+  },
+  "memory_sampling": "coarse process snapshots on one AVD; not peak or physical-device evidence",
+  "datasets": [
+    {
+      "event_count": 10000,
+      "batch_size": 1000,
+      "schema_version": 5,
+      "cipher_version": "4.15.0 community",
+      "initial_search_backend": "Fts5",
+      "insert_ms": 2302.158357,
+      "events_per_second": 4343.749842226862,
+      "database_bytes": 9502720,
+      "bytes_per_event": 950.272,
+      "cold_open_with_existing_fts_ms": 943.318007,
+      "first_page_ms": {
+        "samples": 20,
+        "p50": 5.323132,
+        "p95": 9.578812,
+        "max": 9.632458,
+        "result_count": 50
+      },
+      "fts_keyword_page_ms": {
+        "samples": 20,
+        "p50": 6.294916,
+        "p95": 9.243951,
+        "max": 10.568952,
+        "result_count": 50
+      },
+      "fts_multi_field_page_ms": {
+        "samples": 20,
+        "p50": 5.9553,
+        "p95": 7.557924,
+        "max": 10.706308,
+        "result_count": 50
+      },
+      "date_filter_page_ms": {
+        "samples": 20,
+        "p50": 65.990803,
+        "p95": 75.608111,
+        "max": 77.288654,
+        "result_count": 28
+      },
+      "pagination_walk": {
+        "page_size": 50,
+        "pages": 200,
+        "events": 10000,
+        "elapsed_ms": 1009.910586,
+        "average_page_ms": 5.04955293
+      },
+      "single_capture_commit_ms": {
+        "samples": 20,
+        "p50": 6.384043,
+        "p95": 8.257703,
+        "max": 16.525711,
+        "target_p95_ms": 300,
+        "p95_le_target": true
+      },
+      "forced_like_comparison": {
+        "open_ms": 937.160838,
+        "keyword_page_ms": {
+          "samples": 20,
+          "p50": 8.229625,
+          "p95": 13.384392,
+          "max": 17.562677,
+          "result_count": 50
+        },
+        "multi_field_page_ms": {
+          "samples": 20,
+          "p50": 7.300034,
+          "p95": 10.671517,
+          "max": 10.889603,
+          "result_count": 50
+        },
+        "keyword_result_ids_equal": true,
+        "multi_field_result_ids_equal": true,
+        "result_ids_emitted": false
+      },
+      "coarse_process_memory": {
+        "before_cold_open": {
+          "pss_kb": 92296,
+          "java_heap_used_bytes": 2144032,
+          "native_heap_allocated_bytes": 5789840
+        },
+        "after_cold_open": {
+          "pss_kb": 92287,
+          "java_heap_used_bytes": 2127648,
+          "native_heap_allocated_bytes": 5903168
+        },
+        "after_queries_and_single_commits": {
+          "pss_kb": 91816,
+          "java_heap_used_bytes": 2164512,
+          "native_heap_allocated_bytes": 8255680
+        },
+        "pss_delta_open_kb": -9,
+        "pss_delta_total_kb": -480
+      }
+    },
+    {
+      "event_count": 100000,
+      "batch_size": 1000,
+      "schema_version": 5,
+      "cipher_version": "4.15.0 community",
+      "initial_search_backend": "Fts5",
+      "insert_ms": 49224.628375,
+      "events_per_second": 2031.5034018781457,
+      "database_bytes": 95227904,
+      "bytes_per_event": 952.27904,
+      "cold_open_with_existing_fts_ms": 1149.694506,
+      "first_page_ms": {
+        "samples": 20,
+        "p50": 3.230085,
+        "p95": 5.709651,
+        "max": 6.98111,
+        "result_count": 50
+      },
+      "fts_keyword_page_ms": {
+        "samples": 20,
+        "p50": 168.029941,
+        "p95": 177.719609,
+        "max": 183.423043,
+        "result_count": 50,
+        "target_p95_ms": 700,
+        "p95_le_target": true,
+        "target_scope": "DB query on one API 36 AVD; not UI search or physical-device evidence"
+      },
+      "fts_multi_field_page_ms": {
+        "samples": 20,
+        "p50": 165.502167,
+        "p95": 181.620794,
+        "max": 181.706403,
+        "result_count": 50
+      },
+      "date_filter_page_ms": {
+        "samples": 20,
+        "p50": 690.889192,
+        "p95": 734.560928,
+        "max": 758.471172,
+        "result_count": 50
+      },
+      "pagination_walk": {
+        "page_size": 50,
+        "pages": 1000,
+        "events": 50000,
+        "elapsed_ms": 36089.379377,
+        "average_page_ms": 36.089379377
+      },
+      "single_capture_commit_ms": {
+        "samples": 20,
+        "p50": 192.34513,
+        "p95": 215.668061,
+        "max": 249.369484,
+        "target_p95_ms": 300,
+        "p95_le_target": true
+      },
+      "forced_like_comparison": {
+        "open_ms": 893.113757,
+        "keyword_page_ms": {
+          "samples": 20,
+          "p50": 43.451514,
+          "p95": 47.675441,
+          "max": 49.600675,
+          "result_count": 50
+        },
+        "multi_field_page_ms": {
+          "samples": 20,
+          "p50": 40.925477,
+          "p95": 50.127065,
+          "max": 50.588139,
+          "result_count": 50
+        },
+        "keyword_result_ids_equal": true,
+        "multi_field_result_ids_equal": true,
+        "result_ids_emitted": false
+      },
+      "coarse_process_memory": {
+        "before_cold_open": {
+          "pss_kb": 91813,
+          "java_heap_used_bytes": 2168608,
+          "native_heap_allocated_bytes": 5812384
+        },
+        "after_cold_open": {
+          "pss_kb": 91837,
+          "java_heap_used_bytes": 2148128,
+          "native_heap_allocated_bytes": 5925920
+        },
+        "after_queries_and_single_commits": {
+          "pss_kb": 92112,
+          "java_heap_used_bytes": 2180896,
+          "native_heap_allocated_bytes": 8267952
+        },
+        "pss_delta_open_kb": 24,
+        "pss_delta_total_kb": 299
+      }
+    }
+  ],
+  "migration_v3_to_current": {
+    "fixture_source_schema_version": 3,
+    "target_schema_version": 5,
+    "fixture_event_count": 10000,
+    "samples": 3,
+    "fts_backfill_included": false,
+    "open_and_migrate_ms": {
+      "samples": 3,
+      "p50": 880.145813,
+      "p95": 892.508351,
+      "max": 892.508351
+    },
+    "post_migration_first_page_rows": 50
+  }
+}

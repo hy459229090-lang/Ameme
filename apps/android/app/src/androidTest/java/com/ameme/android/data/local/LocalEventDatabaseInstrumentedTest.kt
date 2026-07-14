@@ -238,6 +238,28 @@ class LocalEventDatabaseInstrumentedTest {
     }
 
     @Test
+    fun capturedBatchPreflightsAcrossChunksAndKeepsConflictsAtomic() {
+        val file = newDatabaseFile()
+        LocalEventDatabase.open(file, SyntheticDatabaseKeyProvider(key), SPACE_A).use { database ->
+            val initial = (0..500).map { index ->
+                syntheticEvent("evt_batch_$index", "合成批量 $index")
+            }
+            assertEquals(initial.size, database.insertCapturedBatch(initial))
+            assertEquals(initial.size, database.readActive().size)
+
+            val conflicting = (501..1_000).map { index ->
+                syntheticEvent("evt_batch_$index", "合成批量 $index")
+            } + initial.last()
+            assertTrue(runCatching { database.insertCapturedBatch(conflicting) }.isFailure)
+            assertEquals(initial.size, database.readActive().size)
+
+            val duplicate = syntheticEvent("evt_batch_duplicate_fast_path", "合成批量重复")
+            assertTrue(runCatching { database.insertCapturedBatch(listOf(duplicate, duplicate)) }.isFailure)
+            assertEquals(initial.size, database.readActive().size)
+        }
+    }
+
+    @Test
     fun calendarSourceInstanceIsIdempotentWithinBatchAcrossReopenAndIsolatedBySpace() {
         val file = newDatabaseFile()
         val request = calendarSourceRequest()

@@ -40,12 +40,38 @@ $env:JAVA_HOME = $JavaHome
 $env:ANDROID_SERIAL = $Serial
 Push-Location $androidProject
 try {
-    & .\gradlew.bat connectedDebugAndroidTest `
-        "-Pandroid.testInstrumentationRunnerArguments.class=com.ameme.android.performance.EventNodePerformanceInstrumentedTest" `
-        "-Pandroid.testInstrumentationRunnerArguments.amemePerformance=true"
-    if ($LASTEXITCODE -ne 0) { throw "Android DB-01 instrumented probe failed" }
+    & .\gradlew.bat assembleDebug assembleDebugAndroidTest --no-daemon
+    if ($LASTEXITCODE -ne 0) { throw "Android DB-01 APK build failed" }
 } finally {
     Pop-Location
+}
+
+$appApk = Join-Path $androidProject "app\build\outputs\apk\debug\app-debug.apk"
+$testApk = Join-Path $androidProject "app\build\outputs\apk\androidTest\debug\app-debug-androidTest.apk"
+if (-not (Test-Path -LiteralPath $appApk)) { throw "Android DB-01 app APK is missing" }
+if (-not (Test-Path -LiteralPath $testApk)) { throw "Android DB-01 test APK is missing" }
+
+& $adb -s $Serial install -r -t $appApk
+if ($LASTEXITCODE -ne 0) { throw "Android DB-01 app APK install failed" }
+& $adb -s $Serial install -r -t $testApk
+if ($LASTEXITCODE -ne 0) { throw "Android DB-01 test APK install failed" }
+$clearResult = (& $adb -s $Serial shell pm clear com.ameme.android 2>&1) -join ""
+if ($LASTEXITCODE -ne 0 -or $clearResult.Trim() -ne "Success") {
+    throw "Android DB-01 app data reset failed"
+}
+
+$instrumentationLines = @(& $adb -s $Serial shell am instrument -w -r `
+    -e class com.ameme.android.performance.EventNodePerformanceInstrumentedTest `
+    -e amemePerformance true `
+    com.ameme.android.test/androidx.test.runner.AndroidJUnitRunner 2>&1)
+$instrumentationLines | Write-Output
+$instrumentationText = $instrumentationLines -join [Environment]::NewLine
+if (
+    $LASTEXITCODE -ne 0 -or
+    $instrumentationText -match "FAILURES!!!|INSTRUMENTATION_FAILED|Process crashed" -or
+    $instrumentationText -notmatch "OK \(1 test\)"
+) {
+    throw "Android DB-01 instrumented probe failed"
 }
 
 if ([string]::IsNullOrWhiteSpace($OutputPath)) {
@@ -56,7 +82,9 @@ if ([string]::IsNullOrWhiteSpace($OutputPath)) {
 $outputDirectory = Split-Path -Parent $OutputPath
 New-Item -ItemType Directory -Force -Path $outputDirectory | Out-Null
 $jsonLines = @(& $adb -s $Serial exec-out run-as com.ameme.android cat files/db01-performance.json)
-if ($LASTEXITCODE -ne 0 -or $jsonLines.Count -eq 0) { throw "Could not read DB-01 metrics from the target app" }
+if ($LASTEXITCODE -ne 0 -or $jsonLines.Count -eq 0 -or $jsonLines[0] -notmatch "^\s*\{") {
+    throw "Could not read DB-01 metrics from the target app"
+}
 $json = $jsonLines -join [Environment]::NewLine
 $parsed = $json | ConvertFrom-Json
 if (

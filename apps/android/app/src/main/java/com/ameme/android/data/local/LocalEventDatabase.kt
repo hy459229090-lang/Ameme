@@ -46,10 +46,12 @@ class LocalEventDatabase private constructor(
     }
 
     fun insertCapturedBatch(events: List<MemoryEvent>): Int = inTransaction {
+        val eventIds = events.map(MemoryEvent::id)
+        check(eventIds.toSet().size == eventIds.size) { "Event ids in a batch must be unique" }
+        checkNoExistingEvents(eventIds)
         events.forEach { event ->
-            check(findCurrent(event.id, includeDeleted = true) == null) { "Event id already exists" }
-            appendRevision(event, reason = "capture_batch", state = STATE_ACTIVE)
-            refreshSearchIndex(event, STATE_ACTIVE)
+            appendNewRevision(event, reason = "capture_batch", state = STATE_ACTIVE)
+            insertSearchIndex(event)
         }
         events.size
     }
@@ -312,6 +314,14 @@ class LocalEventDatabase private constructor(
 
     private fun appendRevision(event: MemoryEvent, reason: String, state: String) {
         val current = findCurrent(event.id, includeDeleted = true)
+        writeRevision(event, reason, state, current)
+    }
+
+    private fun appendNewRevision(event: MemoryEvent, reason: String, state: String) {
+        writeRevision(event, reason, state, current = null)
+    }
+
+    private fun writeRevision(event: MemoryEvent, reason: String, state: String, current: CurrentEvent?) {
         val revision = (current?.revision ?: 0) + 1
         val revisionId = "rev_${UUID.randomUUID()}"
         val now = System.currentTimeMillis()
@@ -344,6 +354,18 @@ class LocalEventDatabase private constructor(
                     arrayOf(spaceId, event.id),
                 ) == 1,
             ) { "Current event projection update failed" }
+        }
+    }
+
+    private fun checkNoExistingEvents(eventIds: List<String>) {
+        eventIds.chunked(BATCH_EXISTENCE_CHECK_SIZE).forEach { chunk ->
+            val placeholders = chunk.joinToString(",") { "?" }
+            val args = arrayOf(spaceId, *chunk.toTypedArray())
+            val exists = database.rawQuery(
+                "SELECT 1 FROM events_current WHERE space_id = ? AND event_id IN ($placeholders) LIMIT 1",
+                args,
+            ).use { it.moveToFirst() }
+            check(!exists) { "Event id already exists" }
         }
     }
 
@@ -457,6 +479,11 @@ class LocalEventDatabase private constructor(
         if (searchBackend != SearchBackend.Fts5) return
         database.delete("events_fts", "space_id = ? AND event_id = ?", arrayOf(spaceId, event.id))
         if (state != STATE_ACTIVE) return
+        insertSearchIndex(event)
+    }
+
+    private fun insertSearchIndex(event: MemoryEvent) {
+        if (searchBackend != SearchBackend.Fts5) return
         database.insertOrThrow(
             "events_fts",
             null,
@@ -540,6 +567,7 @@ class LocalEventDatabase private constructor(
         const val LOCATOR_STATE_RELEASE_PENDING = "RELEASE_PENDING"
         const val LOCATOR_STATE_RELEASED = "RELEASED"
         const val LOCATOR_STATE_DELETED = "DELETED"
+        const val BATCH_EXISTENCE_CHECK_SIZE = 500
 
         fun open(
             databaseFile: File,
