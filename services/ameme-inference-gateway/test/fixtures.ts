@@ -1,0 +1,43 @@
+import { INPUT_SCHEMA_VERSION, type DaySummaryRequest } from "../src/contracts.js";
+
+export function syntheticRequest(): DaySummaryRequest {
+  return {
+    schema_version: INPUT_SCHEMA_VERSION,
+    request_id: "req_synthetic_001",
+    subject_ref: "subject_synthetic_001",
+    data_class: "structured",
+    ledger_id: "ledger_synthetic_20260714",
+    ledger_revision: 7,
+    local_date: "2026-07-14",
+    timezone: "Asia/Shanghai",
+    output_token_budget: 800,
+    events: [
+      {
+        event_id: "evt_synthetic_result",
+        revision: 2,
+        local_date: "2026-07-14",
+        event_time: "2026-07-14T10:00:00+08:00",
+        event_type: "result",
+        title: "Synthetic contract test passed",
+        detail: "Only synthetic structured fields are present.",
+        fact_status: "confirmed",
+        evidence_state: "observed",
+        sensitivity: "personal",
+        importance: 0.9,
+      },
+      {
+        event_id: "evt_synthetic_decision",
+        revision: 1,
+        local_date: "2026-07-14",
+        event_time: "2026-07-14T11:00:00+08:00",
+        event_type: "decision",
+        title: "Synthetic follow-up retained",
+        detail: "No real user data.",
+        fact_status: "user_asserted",
+        evidence_state: "user_asserted",
+        sensitivity: "personal",
+        importance: 0.7,
+      },
+    ],
+  };
+}
