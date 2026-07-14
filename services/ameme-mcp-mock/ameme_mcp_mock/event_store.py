@@ -4,7 +4,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+import hashlib
 from typing import Any, Iterable, Protocol, runtime_checkable
+
+
+def idempotency_slot(value: str, *, domain: str) -> str:
+    """Return a stable domain-separated slot without persisting caller input."""
+    material = f"ameme:idempotency:v1:{domain}\0{value}".encode("utf-8")
+    return f"idem_{hashlib.sha256(material).hexdigest()}"
 
 
 class EventNodeStoreError(Exception):

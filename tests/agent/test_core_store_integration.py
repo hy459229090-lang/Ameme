@@ -12,6 +12,7 @@ from ameme_mcp_mock.event_store import (
     EventNodeNotVisible,
     EventNodeScope,
     EventNodeStoreError,
+    idempotency_slot,
 )
 
 
@@ -30,13 +31,18 @@ class FailOnce:
             raise InjectedCrash(stage)
 
 
+def operation_slot(kind: str, key: str) -> str:
+    return idempotency_slot(key, domain=f"event-store-operation:{kind}")
+
+
 class CoreStoreIntegrationTests(unittest.TestCase):
     def test_exact_grant_offline_idempotency_and_restart_restore_projection(self) -> None:
         harness = Harness(backend="core", seed=False, offline=True)
         try:
             grant = harness.exact_grant()
+            capture_key = "sk_live_CAPTURE_SECRET_CANARY_7f3a91d2"
             arguments = capture_arguments(
-                grant["grant_id"], idempotency_key="core-offline-0001"
+                grant["grant_id"], idempotency_key=capture_key
             )
             first = harness.mock.call("capture", arguments)
             replay = harness.mock.call("capture", arguments)
@@ -49,7 +55,22 @@ class CoreStoreIntegrationTests(unittest.TestCase):
             self.assertGreaterEqual(
                 harness.store.core.table_count("lineage_edges"), 4
             )
-            self.assertEqual(1, harness.store.core.table_count("durable_jobs"))
+            feedback_key = "sk_live_FEEDBACK_SECRET_CANARY_b91c04ee"
+            feedback_arguments = {
+                "caller_id": "agent_codex_test",
+                "grant_id": grant["grant_id"],
+                "purpose": "autonomous_memory",
+                "space": "space_work",
+                "memory_type": "event",
+                "target_id": first["event_id"],
+                "action": "context_useful",
+                "idempotency_key": feedback_key,
+            }
+            feedback = harness.mock.call("feedback", feedback_arguments)
+            feedback_replay = harness.mock.call("feedback", feedback_arguments)
+            self.assertEqual(feedback["feedback_id"], feedback_replay["feedback_id"])
+            self.assertTrue(feedback_replay["replayed"])
+            self.assertEqual(2, harness.store.core.table_count("durable_jobs"))
             snapshot_json = json.dumps(
                 harness.store.core.event_revision_snapshots(first["event_id"]),
                 ensure_ascii=False,
@@ -59,8 +80,17 @@ class CoreStoreIntegrationTests(unittest.TestCase):
             self.assertNotIn("autonomous_memory", snapshot_json)
             control_json = (harness.root / "control.json").read_text(encoding="utf-8")
             self.assertNotIn(arguments["content"], control_json)
+            self.assertNotIn(capture_key, control_json)
+            self.assertNotIn(feedback_key, control_json)
+            database_dump = "\n".join(harness.store.core.connection.iterdump())
+            self.assertNotIn(capture_key, database_dump)
+            self.assertNotIn(feedback_key, database_dump)
+            for database_file in harness.root.glob("core.sqlite3*"):
+                database_bytes = database_file.read_bytes()
+                self.assertNotIn(capture_key.encode("utf-8"), database_bytes)
+                self.assertNotIn(feedback_key.encode("utf-8"), database_bytes)
             self.assertEqual(
-                1,
+                2,
                 harness.mock.call(
                     "status",
                     {
@@ -86,7 +116,7 @@ class CoreStoreIntegrationTests(unittest.TestCase):
             self.assertEqual("partial", recall["range_state"])
             self.assertIn("device_not_synced", recall["partial_reasons"])
             self.assertEqual(1, harness.store.core.table_count("event_revisions"))
-            self.assertEqual(1, harness.store.queued_count())
+            self.assertEqual(2, harness.store.queued_count())
         finally:
             harness.close()
 
@@ -267,6 +297,12 @@ class CoreStoreIntegrationTests(unittest.TestCase):
             self.assertEqual(2, revised["revision"])
             self.assertEqual(2, harness.store.core.table_count("event_revisions"))
             self.assertGreaterEqual(harness.store.core.table_count("lineage_edges"), 6)
+            undo_record = harness.store.state["undo"][revised["undo_token"]]
+            self.assertIn("store_lineage", undo_record)
+            self.assertNotIn("previous_event_snapshot", undo_record)
+            control_json = (harness.root / "control.json").read_text(encoding="utf-8")
+            self.assertNotIn("Synthetic original description.", control_json)
+            self.assertNotIn("Synthetic revised description.", control_json)
 
             undo_revision = {
                 "operation": "undo",
@@ -367,9 +403,10 @@ class CoreStoreIntegrationTests(unittest.TestCase):
                     arguments = capture_arguments(grant["grant_id"], idempotency_key=key)
                     with self.assertRaises(InjectedCrash):
                         harness.mock.call("capture", arguments)
-                    self.assertNotIn(key, harness.store.state["idempotency"])
+                    control_slot = idempotency_slot(key, domain="mcp-control")
+                    self.assertNotIn(control_slot, harness.store.state["idempotency"])
                     operation = harness.store.state["event_store_operations"][
-                        f"create_event:{key}"
+                        operation_slot("create_event", key)
                     ]
                     expected_state = (
                         "core_committed"
@@ -387,10 +424,10 @@ class CoreStoreIntegrationTests(unittest.TestCase):
                     self.assertEqual(
                         "core_committed",
                         harness.store.state["event_store_operations"][
-                            f"create_event:{key}"
+                            operation_slot("create_event", key)
                         ]["state"],
                     )
-                    self.assertIn(key, harness.store.state["idempotency"])
+                    self.assertIn(control_slot, harness.store.state["idempotency"])
                 finally:
                     harness.close()
 
@@ -416,7 +453,7 @@ class CoreStoreIntegrationTests(unittest.TestCase):
                 )
             self.assertEqual("IDEMPOTENCY_CONFLICT", changed.exception.code)
             pending = harness.store.state["event_store_operations"][
-                "create_event:core-pending-key-1"
+                operation_slot("create_event", "core-pending-key-1")
             ]
             self.assertEqual("prepared", pending["state"])
             self.assertEqual("prepared", pending["reconciliation_state"])
@@ -436,7 +473,7 @@ class CoreStoreIntegrationTests(unittest.TestCase):
             self.assertEqual(
                 "core_committed",
                 harness.store.state["event_store_operations"][
-                    "create_event:core-pending-key-1"
+                    operation_slot("create_event", "core-pending-key-1")
                 ]["state"],
             )
         finally:
@@ -458,7 +495,7 @@ class CoreStoreIntegrationTests(unittest.TestCase):
             with self.assertRaises(EventNodeStoreError):
                 retry.mock.call("capture", arguments)
             operation = retry.store.state["event_store_operations"][
-                "create_event:core-retry-state-1"
+                operation_slot("create_event", "core-retry-state-1")
             ]
             self.assertEqual("retry_pending", operation["state"])
             self.assertEqual("OperationalError", operation["last_error"])
@@ -486,7 +523,7 @@ class CoreStoreIntegrationTests(unittest.TestCase):
             with self.assertRaises(EventNodeStoreError):
                 failed.mock.call("capture", blocked)
             operation = failed.store.state["event_store_operations"][
-                "create_event:core-failed-state-1"
+                operation_slot("create_event", "core-failed-state-1")
             ]
             self.assertEqual("failed", operation["state"])
             self.assertEqual("InvariantViolation", operation["last_error"])

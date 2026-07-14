@@ -27,6 +27,7 @@ from .event_store import (
     EventNodeNotVisible,
     EventNodeScope,
     EventNodeStoreError,
+    idempotency_slot,
 )
 from .store import JsonStore
 
@@ -94,7 +95,9 @@ class CoreEventNodeStore:
         effective: dict[str, Any],
     ) -> tuple[dict[str, Any] | None, dict[str, Any]]:
         """Persist a content-free reconciliation record before Core mutation."""
-        operation_key = f"{kind}:{idempotency_key}"
+        operation_key = idempotency_slot(
+            idempotency_key, domain=f"event-store-operation:{kind}"
+        )
         payload_hash = _digest(semantic_payload)
         operations = self.state.setdefault("event_store_operations", {})
         operation = operations.get(operation_key)
@@ -217,7 +220,9 @@ class CoreEventNodeStore:
                 "processing_locations": ["device"],
                 "sync_mode": "structured_sync",
             },
-            idempotency_key=f"mcp-contract-{identity}",
+            idempotency_key=idempotency_slot(
+                contract_id, domain="core-command:create-contract"
+            ),
         )
         return contract_id
 
@@ -258,13 +263,20 @@ class CoreEventNodeStore:
                 },
                 "source_locator": {
                     "locator_type": "app_private_object",
-                    "opaque_locator_ref": f"synthetic:mcp:{idempotency_key}",
+                    "opaque_locator_ref": (
+                        "synthetic:mcp:"
+                        + idempotency_slot(
+                            idempotency_key, domain="source-locator"
+                        )
+                    ),
                     "display_label": "Synthetic MCP event source",
                     "state": "available",
                     "last_verified_at": now,
                 },
             },
-            idempotency_key=f"{idempotency_key}:source",
+            idempotency_key=idempotency_slot(
+                idempotency_key, domain="core-command:capture-source"
+            ),
         )
         confidence = 1.0 if evidence_state in {"observed", "user_asserted"} else 0.5
         observation = self.core.create_observation(
@@ -283,7 +295,9 @@ class CoreEventNodeStore:
                 "parser_version": "mcp-core-store-synthetic-v1",
                 "created_at": now,
             },
-            idempotency_key=f"{idempotency_key}:observation",
+            idempotency_key=idempotency_slot(
+                idempotency_key, domain="core-command:create-observation"
+            ),
         )
         return source["source_object_id"], observation["observation_id"]
 
@@ -363,7 +377,9 @@ class CoreEventNodeStore:
                         "status": evidence_state,
                     }
                 ],
-                idempotency_key=f"{idempotency_key}:event",
+                idempotency_key=idempotency_slot(
+                    idempotency_key, domain="core-command:accept-event"
+                ),
             )
         except CoreOracleError as exc:
             self._record_core_failure(operation, exc, retryable=False)
@@ -458,7 +474,9 @@ class CoreEventNodeStore:
                         "status": evidence_state,
                     }
                 ],
-                idempotency_key=f"{idempotency_key}:revision",
+                idempotency_key=idempotency_slot(
+                    idempotency_key, domain="core-command:append-revision"
+                ),
             )
         except RevisionConflict as exc:
             self._record_core_failure(operation, exc, retryable=False)
@@ -509,7 +527,10 @@ class CoreEventNodeStore:
             raise EventNodeNotVisible("undo event is not visible in this space")
         created_object_id = str(undo["created_object_id"])
         created_revision = int(undo.get("created_revision", 0))
-        operation_key = f"undo_{memory_type}:{idempotency_key}"
+        operation_key = idempotency_slot(
+            idempotency_key,
+            domain=f"event-store-operation:undo_{memory_type}",
+        )
         operation_exists = operation_key in self.state.setdefault(
             "event_store_operations", {}
         )
@@ -546,7 +567,10 @@ class CoreEventNodeStore:
                     self.core.delete_source(
                         source_id,
                         reason="capture_undo",
-                        idempotency_key=f"{idempotency_key}:delete:{index}",
+                        idempotency_key=idempotency_slot(
+                            idempotency_key,
+                            domain=f"core-command:delete-source:{index}",
+                        ),
                     )
             except CoreOracleError as exc:
                 self._record_core_failure(operation, exc, retryable=False)
@@ -609,7 +633,9 @@ class CoreEventNodeStore:
                 event_id,
                 base_revision=int(operation["effective"]["base_revision"]),
                 restore_revision=int(operation["effective"]["restore_revision"]),
-                idempotency_key=f"{idempotency_key}:undo",
+                idempotency_key=idempotency_slot(
+                    idempotency_key, domain="core-command:undo-event"
+                ),
             )
         except RevisionConflict as exc:
             self._record_core_failure(operation, exc, retryable=False)
@@ -710,7 +736,9 @@ class CoreEventNodeStore:
                 "sync",
                 {"object_type": object_type, "object_id": object_id},
                 priority=50,
-                idempotency_key=f"{idempotency_key}:sync",
+                idempotency_key=idempotency_slot(
+                    idempotency_key, domain="core-command:enqueue-sync"
+                ),
             )
         except (CoreOracleError, IdempotencyConflict) as exc:
             raise EventNodeStoreError(str(exc)) from exc

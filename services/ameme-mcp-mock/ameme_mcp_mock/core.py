@@ -17,6 +17,7 @@ from .event_store import (
     EventNodeNotVisible,
     EventNodeScope,
     EventNodeStore,
+    idempotency_slot,
 )
 
 
@@ -278,7 +279,10 @@ class AmemeMock:
                 )
             }
         )
-        prior = self.store.state["idempotency"].get(arguments["idempotency_key"])
+        control_slot = idempotency_slot(
+            arguments["idempotency_key"], domain="mcp-control"
+        )
+        prior = self.store.state["idempotency"].get(control_slot)
         if prior:
             if prior["payload_hash"] != payload_hash:
                 self._activity(arguments["caller_id"], arguments["purpose"], [arguments["space"]], [memory_type], "IDEMPOTENCY_CONFLICT")
@@ -336,11 +340,11 @@ class AmemeMock:
             "expires_at": _iso(self.clock() + timedelta(minutes=UNDO_TTL_MINUTES)),
             "used": False,
         }
-        if previous_event_snapshot is not None:
-            undo_record["previous_event_snapshot"] = previous_event_snapshot
         store_lineage = result.pop("_undo_lineage", None)
         if store_lineage is not None:
             undo_record["store_lineage"] = store_lineage
+        elif previous_event_snapshot is not None:
+            undo_record["previous_event_snapshot"] = previous_event_snapshot
         self.store.state["undo"][undo_token] = undo_record
         delivery_state = "queued" if self.offline or arguments.get("simulate_offline") else "local_only"
         if delivery_state == "queued":
@@ -360,7 +364,7 @@ class AmemeMock:
             "undo_token": undo_token,
             "undo_expires_at": self.store.state["undo"][undo_token]["expires_at"],
         }
-        self.store.state["idempotency"][arguments["idempotency_key"]] = {
+        self.store.state["idempotency"][control_slot] = {
             "payload_hash": payload_hash,
             "result": deepcopy(response),
             "created_at": now,
@@ -651,7 +655,10 @@ class AmemeMock:
             [arguments["memory_type"]],
         )
         payload_hash = _digest({key: arguments.get(key) for key in sorted(arguments) if key != "idempotency_key"})
-        prior = self.store.state["idempotency"].get(arguments["idempotency_key"])
+        control_slot = idempotency_slot(
+            arguments["idempotency_key"], domain="mcp-control"
+        )
+        prior = self.store.state["idempotency"].get(control_slot)
         if prior:
             if prior["payload_hash"] != payload_hash:
                 raise MockError("IDEMPOTENCY_CONFLICT", "idempotency_key_payload_changed")
@@ -706,7 +713,7 @@ class AmemeMock:
                 now=_iso(self.clock()),
                 idempotency_key=arguments["idempotency_key"],
             )
-        self.store.state["idempotency"][arguments["idempotency_key"]] = {
+        self.store.state["idempotency"][control_slot] = {
             "payload_hash": payload_hash,
             "result": deepcopy(result),
             "created_at": _iso(self.clock()),

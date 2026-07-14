@@ -8,9 +8,12 @@
 - 每次 Store 调用携带已授权请求范围形成的 `EventNodeScope`，适配器再次核对 owner、space 和 memory type。Scope 不写入 Event/Revision 正文，也不能代替 Mock 的授权判断。
 - `JsonStore` 仅是保留现有行为的 **非生产合成夹具后端**，不是移动端数据库、服务端数据库或发布候选实现。
 - `CoreEventNodeStore` 仅用于合成集成测试。它只调用 `packages/core-reference` 的公开命令，把 capture/revision/undo 映射为 Source → Observation → Event/Revision → Tombstone/Lineage，并让离线交付进入 Core durable sync queue；它不直写 SQLite。
+- Core revision 的 control undo 记录只保存 event/space/revision/source lineage 等最小标识，不复制旧 title/description；只有 `JsonStore` 合成夹具为了兼容原有内存补偿行为保留旧快照。
 - Python `CoreOracle` 仍是非生产语义参考和测试 Oracle，不能作为 Android、iOS、桌面或云端生产 runtime，也不证明 SQLCipher、Keychain/Keystore、真实同步或宿主集成完成。
 
 Core SQLite 与 Mock control JSON 不是同一事务。测试适配器不伪造跨库原子性，而是在 control 中保存不含正文的操作日志：`prepared/retry_pending/failed → core_committed`。日志只含语义哈希、对象 ID、revision/source lineage、尝试次数和对账状态。重启后使用同一 idempotency key 重放 Core 公共命令；Core 成功前不会写最终 MCP 幂等成功记录。永久领域错误标记 `failed`，可重试的 SQLite 运行错误标记 `retry_pending`，且每个 key 独立，不阻塞同一 scope 的其他操作。
+
+调用方传入的 idempotency key 也视为潜在敏感输入：进入 control key、Core 命令键、操作日志或 SourceLocator 前，统一转换为带用途域隔离的 SHA-256 slot，不持久化原值。该摘要只用于稳定重放和冲突检测，**不是身份、授权、签名或防伪凭据**；所有访问仍必须先通过 Grant 和 exact-scope 校验。
 
 ## 能力和安全边界
 
