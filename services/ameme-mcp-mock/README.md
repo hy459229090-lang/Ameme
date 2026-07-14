@@ -9,7 +9,7 @@
 - `JsonStore` 仅是保留现有行为的 **非生产合成夹具后端**，不是移动端数据库、服务端数据库或发布候选实现。
 - `CoreEventNodeStore` 仅用于合成集成测试。它只调用 `packages/core-reference` 的公开命令，把 capture/revision/undo 映射为 Source → Observation → Event/Revision → Tombstone/Lineage，并让离线交付进入 Core durable sync queue；它不直写 SQLite。
 - `CoreOracleHostReferenceStore` 提供首个可运行的进程边界：MCP 进程保留 Grant/Policy/ContextPack/Activity 控制面，显式启动 `core_oracle_host.py` 子进程后，用 `ameme.core-oracle-host.v1` JSONL stdio 访问同一个 `CoreEventNodeStore`。这是公开代码的 developer preview / 集成骨架，不是生产 Native Core。
-- `AndroidLocalNodeStore` 是面向 Android Local Node 的发布候选 **adapter 边界**。它只接受外部注入、已完成设备身份和会话绑定的 channel，并复用共享 `ameme.agent-local-node.v1` 协议；仓库内不提供明文 TCP、设备发现、凭据解析、认证或加密实现，也不会回退到 JSON fixture 或 Python CoreOracle。
+- `AndroidLocalNodeStore` 是面向 Android Local Node 的发布候选 **adapter 边界**。`TlsAndroidLocalNodeChannel` 提供 Host 侧主动发起的 TLS 1.3 客户端：先校验配对时冻结的证书 SHA-256 pin，再以配对密钥完成 HMAC 握手、设备/会话绑定和递增 sequence/nonce 帧校验。它不监听端口、不提供明文 TCP、不会回退到 JSON fixture 或 Python CoreOracle；Android server、设备发现和真机证据仍未实现。
 - Core revision 的 control undo 记录只保存 event/space/revision/source lineage 等最小标识，不复制旧 title/description；只有 `JsonStore` 合成夹具为了兼容原有内存补偿行为保留旧快照。
 - Python `CoreOracle` 仍是非生产语义参考和测试 Oracle，不能作为 Android、iOS、桌面或云端生产 runtime，也不证明 SQLCipher、Keychain/Keystore、真实同步或宿主集成完成。
 
@@ -70,6 +70,32 @@ python services/ameme-mcp-mock/server.py `
 ```
 
 直接执行上面的命令会按设计失败关闭，因为普通 CLI 没有可注入的认证 channel provider。嵌入式宿主必须通过 `server.main(..., android_channel_factory=...)` 注入 provider；provider 返回的会话绑定必须同时匹配 expected device 和 session binding。引用不会写入 MCP control JSON，错误信息和对象诊断也不回显其值。control 中的 caller、Grant、purpose 和 scope 只是已授权请求的声明，不能代替 channel 认证。
+
+真实 Host 客户端入口只接受一个被 Git 忽略的配对材料文件，不接受命令行 host、pin 或明文密钥：
+
+```powershell
+python scripts/dev/agent/start_android_local_node_host.py `
+  --pairing-file .tmp/ameme-pairing/android-local-node.json `
+  --data-dir .tmp/ameme-mcp-android
+```
+
+配对文件必须是 exact-field JSON；它不含密钥，`credential_ref` 当前只允许 `credential-ref:env/NAME`，由启动进程环境解析至少 32 字节的配对密钥：
+
+```json
+{
+  "channel_protocol": "ameme.agent-local-node.channel.v1",
+  "endpoint_ref": "endpoint-ref:paired/android-device",
+  "credential_ref": "credential-ref:env/AMEME_ANDROID_PAIRING_SECRET",
+  "expected_device_id": "device_expected",
+  "session_binding_ref": "session-binding-ref:paired/session",
+  "pairing_id": "pair_expected",
+  "host": "192.0.2.10",
+  "port": 44321,
+  "tls_certificate_sha256": "sha256_<64 lowercase hex>"
+}
+```
+
+证书 pin、pairing/device/session binding 任一不匹配，或 TLS 低于 1.3，Host 都会在发送应用请求前关闭连接。凭据值、证书、endpoint 和记忆正文均不进入异常文本、对象 repr 或 MCP control JSON。
 
 共享协议允许六种 EventNode operation，但具体 adapter 和 channel 都必须声明实际 capability。当前 MCP Android adapter 以 `IMPLEMENTED_OPERATIONS={"create_event"}` 硬限制实现面，capture/create endpoint 也只承诺 `create_event`；即使 channel 多报 append、undo 或 read capability，其他合法 operation 仍稳定返回 `OPERATION_UNSUPPORTED`，不得伪装成已支持。`create_event` 成功响应只接受 `object_type/event_id/revision` 三个控制字段，不接受正文、空间或其他额外字段。超时、畸形响应、request-id/protocol 不匹配、会话绑定错误和非法成功响应均在五秒内失败关闭并毒化当前 channel，后续请求不会继续进入同一失效会话。
 
@@ -136,4 +162,4 @@ python scripts/validation/validate_ameme_skill.py
 
 `packages/contracts/` 当前已有 AccessGrant、Event、Revision、ContextPack 等领域 Schema 和 HTTP OpenAPI，但没有六个 MCP tool 的机器可读输入/输出 Schema。由于本任务冻结 `packages/contracts/**`，本服务暂时在 `server.py` 的 `TOOLS` manifest 内维护实现级 JSON Schema。建议契约任务把这六个 tool schema 纳入共享契约并增加 breaking-change diff；在此之前，Mock manifest 不是新的跨端正本。
 
-ADR-001 与同步协议同时阻止把 Python 或新增的共享 runtime 当成 P0–P2 生产 Core。真实 Codex/Agent → Android SQLCipher Local Node 仍缺设备发现、认证 channel、加密、重放保护、后台生命周期和 LAN 真机证据。Android 已有 `AgentLocalNodeTransport` application port，MCP 服务已有对应的 channel adapter 和共享协议消费方，但仍没有 transport 实现或跨设备证据。生产 Swift/Kotlin Local Node 后续只能实现并注入该端点，不能把当前 Python host 打包进 App 或当 fallback。
+ADR-001 与同步协议同时阻止把 Python 或新增的共享 runtime 当成 P0–P2 生产 Core。Host 侧已有可执行 TLS 1.3/pin/HMAC/session/sequence channel client 和合成 TLS server 证据，但真实 Codex/Agent → Android SQLCipher Local Node 仍缺 Android server、设备发现、配对 UI/材料签发、后台生命周期和 LAN 真机证据。生产 Swift/Kotlin Local Node 后续必须实现同一 channel/app contract；不能把当前 Python Host 打包进 App，也不能把合成 TLS 测试写成 Android 已连通。

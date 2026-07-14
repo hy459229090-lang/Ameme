@@ -1,8 +1,8 @@
 # Agent Local Node protocol v1
 
-> Status: language-neutral contract plus **non-production Python executable specification**. It freezes application RPC semantics only; it is not an Android/iOS runtime or transport security implementation.
+> Status: language-neutral application and paired-channel contract plus **non-production Python executable specification**. It is not an Android/iOS runtime, pairing system or production security certification.
 
-This package defines the replaceable boundary between an Agent adapter and an Ameme Local Node. The normative envelope schema is [`../contracts/schemas/ameme-agent-local-node.schema.json`](../contracts/schemas/ameme-agent-local-node.schema.json); Python exists only to materialize and replay synthetic conformance vectors.
+This package defines the replaceable boundary between an Agent adapter and an Ameme Local Node. The normative application envelope schema is [`../contracts/schemas/ameme-agent-local-node.schema.json`](../contracts/schemas/ameme-agent-local-node.schema.json); Python also freezes the exact paired-channel hello/frame semantics and materializes synthetic conformance tests.
 
 ## Envelope and scope
 
@@ -24,6 +24,19 @@ The v1 public operation set is deliberately limited to the existing EventNode se
 - `set_policy_blocked`
 
 Internal queue/storage methods are not promoted to remote Agent APIs. `undo_capture` carries an opaque undo token, not the store's internal undo record. Raw files and photo/audio bytes never use this JSON line.
+
+## Paired channel envelope
+
+`ameme.agent-local-node.channel.v1` is the authenticated TLS envelope around the unchanged application line. Pairing material has exact fields `channel_protocol/endpoint_ref/credential_ref/expected_device_id/session_binding_ref/pairing_id/host/port/tls_certificate_sha256`; it contains references and a DER SHA-256 pin, never the pairing secret.
+
+The Host requires TLS 1.3 and verifies the pinned certificate before sending `client_hello`. Client/server hello messages are sequence zero and HMAC-bind pairing ID, expected device, session-binding reference, certificate pin, both 256-bit nonces, server session ID and sorted supported operations. Both sides derive a per-session key from the verified hello transcript.
+
+Application frames then carry exact fields plus a session-key HMAC:
+
+- request: `session_id`, strictly increasing positive signed-64-bit `sequence`, fresh 256-bit `nonce`, `application_protocol`, application digest/base64, and the inner request's durable `idempotency_slot` as `idempotency_ref`;
+- response: the same session/sequence/idempotency reference, the request nonce, a fresh response nonce, and the strict `ameme.agent-local-node.v1` response line.
+
+Sequence, nonce, session, application digest, response/request ID or idempotency reference mismatch fails closed. A new TLS connection creates a new session and restarts its sequence; durable retry identity remains the domain-separated inner `idempotency_slot`. This contract does not define plaintext transport or a listening address, and it does not make control fields authentication evidence.
 
 ## Canonical bytes, digests and replay
 
@@ -73,4 +86,4 @@ python -m unittest discover -s packages/agent-local-node-protocol/tests -p "test
 
 ## Explicit non-claims
 
-This protocol and its Python checks provide no evidence for LAN discovery, endpoint reachability, device/channel authentication, Grant issuance, transport encryption, key management, replay-resistant sessions, Android background lifecycle, physical-device behavior or production readiness. Swift/Kotlin implementations must consume the same schema/vectors after those designs are accepted; production Apps must not start or embed this Python package.
+The application/channel contract and synthetic Python checks provide no evidence for LAN discovery, Android endpoint reachability, pairing-material issuance, key storage, Android background lifecycle, physical-device behavior or production readiness. Host-side TLS integration tests prove only the Python client against a synthetic TLS server. Swift/Kotlin implementations must consume the same contract after the Android server design is accepted; production Apps must not start or embed this Python package.

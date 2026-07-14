@@ -466,8 +466,15 @@ def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return value
 
 
+def parse_strict_json_line(line: bytes, *, maximum: int) -> Any:
+    """Parse one bounded JSON line with the protocol's ambiguity checks."""
+    value = _parse_line(line, maximum=maximum)
+    canonical_json_bytes(value)
+    return deepcopy(value)
+
+
 def parse_request_line(line: bytes) -> dict[str, Any]:
-    return validate_request(_parse_line(line, maximum=MAX_REQUEST_BYTES))
+    return validate_request(parse_strict_json_line(line, maximum=MAX_REQUEST_BYTES))
 
 
 def parse_response_line(
@@ -476,7 +483,7 @@ def parse_response_line(
     request: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     return validate_response(
-        _parse_line(line, maximum=MAX_RESPONSE_BYTES), request=request
+        parse_strict_json_line(line, maximum=MAX_RESPONSE_BYTES), request=request
     )
 
 
