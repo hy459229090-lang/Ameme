@@ -19,6 +19,7 @@ enum class ExperienceMode(
 
 enum class FactStatus(val label: String) {
     Confirmed("已记录"),
+    Planned("计划，未确认发生"),
     Inferred("推测"),
     NeedsReview("待核验"),
     Conflict("冲突"),
@@ -31,6 +32,48 @@ enum class CaptureKind(val label: String) {
     Photo("照片"),
     Import("导入"),
 }
+
+enum class SourceKind {
+    PhotoPicker,
+    SharedText,
+    SharedContent,
+    Calendar,
+}
+
+enum class LocatorPermissionState {
+    PersistedRead,
+    SessionRead,
+    NoLocator,
+}
+
+data class SourceLocator(
+    val uri: String,
+    val permissionState: LocatorPermissionState,
+)
+
+data class SourceCaptureRequest(
+    val sourceKind: SourceKind,
+    val title: String,
+    val detail: String,
+    val factStatus: FactStatus,
+    val localDate: LocalDate,
+    val time: LocalTime?,
+    val userWords: String? = null,
+    val locatorUri: String? = null,
+    val mimeType: String? = null,
+    val locatorPermissionState: LocatorPermissionState = LocatorPermissionState.NoLocator,
+)
+
+enum class SearchBackend {
+    Fts5,
+    LikeFallback,
+}
+
+data class MemoryPage(
+    val events: List<MemoryEvent>,
+    val nextCursor: String?,
+    val searchBackend: SearchBackend,
+)
 
 data class MemoryEvent(
     val id: String,

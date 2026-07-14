@@ -1,17 +1,21 @@
 # Ameme Android MVP
 
-Native Android 14+ client skeleton with the first encrypted Local Event Node slice. The UI remains synthetic for system acquisition, while user capture, Today restore, date/keyword recall, and local deletion now use a durable SQLCipher repository.
+Native Android 14+ client skeleton with an encrypted Local Event Node and the first user-initiated acquisition adapters. Text, Photo Picker, accepted ACTION_SEND content, Today restore, paged date/keyword recall, and local deletion use a durable SQLCipher repository.
 
 ## Scope
 
 - `M-ONB / M-TOD / M-SEA / M-CAL / M-CAP / M-EVT / M-SET / M-DEL` navigation and states.
 - A single Today floating record button opening a native Material bottom sheet.
-- Active text captures and explicitly labelled mock references are committed to the encrypted local node before they appear in Today. A failed commit stays visible as an error and does not add the event to UI state.
-- Today reconstructs the active projection from disk; Search reads the repository by date and keyword.
+- Active text, selected-photo references, and accepted shares are committed to the encrypted local node before they appear in Today. Picker cancellation, blank text, invalid shares, unsupported voice, and failed commits create no event.
+- Photo uses Android Photo Picker without media permission. The encrypted SourceLocator stores only a `content://` URI, MIME metadata, and explicit `PersistedRead` or `SessionRead` lifecycle; it does not copy the photo. Persisted grants are released on failed commit and attempted again after user deletion.
+- ACTION_SEND accepts only one `text/plain`, `image/*`, or `application/pdf` item. Content shares require a read grant and `content://`; sender titles, unsupported MIME, blank/oversized text, multiple items, and non-content schemes are rejected. ACTION_SEND locators are deliberately recorded as session-only.
+- Voice is an explicit replaceable contract in `Unsupported` state. The UI says it is unavailable, requests no microphone permission, and never reports or persists a mock success.
+- Calendar has an injectable scoped adapter only: it requires an explicit user action, repository space, non-empty calendar IDs, and a finite window of at most 31 days. Imported synthetic fixtures are `Planned`, never happened/confirmed. No production Calendar Provider connection or calendar permission exists yet.
+- Today reconstructs the active projection from disk; Search uses date + keyword keyset pagination. FTS5 is a derived, rebuildable index when runtime creation succeeds and otherwise falls back to parameterized LIKE with the same space/date/state/order filters.
 - Delete appends a tombstone revision and updates the current projection transactionally. This slice proves durable invisibility after reconstruction, not physical purge or peer deletion proof.
 - `event_revisions` is append-only by database `BEFORE UPDATE/DELETE` abort triggers; `events_current` is the current projection. Repository construction requires an explicit `space_id`, both tables use `(space_id,event_id)` identity, and reads/writes/deletes are space-scoped.
 - Kotlin contract bundle DTO, schema-subset validator, and round-trip tests against `packages/contracts` remain intact.
-- Photo, voice, import, location, health, account, network, analytics, Raw Vault, and real system-source integrations are not implemented.
+- Voice recording, Calendar Provider, location, health, account, network, analytics, Raw Vault, and bulk/background system-source integrations are not implemented.
 - Production starts with an empty repository and never seeds `FakeMemoryRepository`; synthetic seeds are available only through an explicit test/demo flag. Today shows deterministic counts, not a fabricated fixed summary.
 
 The manifest declares no sensitive permissions. All bundled people, events, IDs, locations, and content are synthetic.
@@ -56,13 +60,19 @@ The storage instrumented suite verifies on an API 36 x86_64 AVD:
 - WAL mode;
 - wrong-key rejection and non-plaintext SQLite file header;
 - close/repository reconstruction restore, date + keyword reads, and durable tombstone visibility;
-- explicit non-destructive v1-to-v2 revision backfill followed by v2-to-v3 `space_legacy` isolation migration;
+- explicit non-destructive v1-to-v2 revision backfill, v2-to-v3 `space_legacy` isolation, and v3-to-v4 SourceLocator migration;
 - cross-space same-event-ID read/delete isolation and database-enforced revision immutability;
-- blank text rejection without fabricated user words; empty non-text entries remain explicitly labelled mock references;
+- atomic SourceLocator + Event commit and explicit session-read lifecycle;
+- API 36 SQLCipher FTS5 virtual-table creation, FTS/forced-LIKE result equivalence, keyset date pagination without duplicates, and delete filtering;
+- ACTION_SEND MIME/URI/read-grant validation, injected-title isolation, blank/multiple-item rejection, and session-only fallback;
+- Photo Picker cancellation/no-event behavior and source-lifecycle propagation;
+- user-initiated finite Calendar import scope, calendar ID/space/window negative cases, and `Planned` semantics;
+- blank text and unsupported voice rejection without fabricated events;
+- absence of media, microphone, calendar, and location manifest permissions;
 - compiled cloud-backup/device-transfer exclusions for every application data domain;
 - successful and failed-open key-array clearing;
 - Android Keystore wrapped-key reuse after an initial database-creation failure.
 
-This is emulator evidence only. It does not prove physical-device compatibility, 16 KB page-size readiness, OS process-death recovery, 10k/100k capacity, startup or paging performance, backup/restore, physical deletion, FTS5, Raw Vault, or peer sync. Those remain separate Spike/Gate evidence.
+This is API 36 AVD evidence only. It does not prove physical-device compatibility, 16 KB page-size readiness, OS process-death recovery, 10k/100k capacity, startup or paging performance, backup/restore, physical deletion, Calendar Provider/voice behavior, Raw Vault, or peer sync. FTS5 is verified only for the tested SQLCipher runtime; other runtime/device combinations may use the tested LIKE fallback.
 
 Contract tests expect the Android project to remain at `apps/android` so they can read the frozen repository source at `packages/contracts`.

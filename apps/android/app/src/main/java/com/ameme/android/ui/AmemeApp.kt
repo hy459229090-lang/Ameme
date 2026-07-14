@@ -1,7 +1,11 @@
 package com.ameme.android.ui
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -18,8 +22,15 @@ import com.ameme.android.data.MemoryRepository
 import com.ameme.android.data.UnavailableMemoryRepository
 import com.ameme.android.data.local.LocalEventDatabase
 import com.ameme.android.data.local.LocalMemoryRepository
+import com.ameme.android.data.source.ContentUriGrantResolver
+import com.ameme.android.data.source.PhotoCaptureCoordinator
+import com.ameme.android.data.source.UnsupportedVoiceCaptureContract
+import com.ameme.android.data.source.VoiceCaptureAvailability
 import com.ameme.android.domain.CaptureKind
 import com.ameme.android.domain.ExperienceMode
+import com.ameme.android.domain.SourceCaptureRequest
+import com.ameme.android.domain.LocatorPermissionState
+import android.net.Uri
 import com.ameme.android.ui.screens.DeleteScreen
 import com.ameme.android.ui.screens.EventDetailScreen
 import com.ameme.android.ui.screens.OnboardingScreen
@@ -40,7 +51,11 @@ private object Routes {
 }
 
 @Composable
-fun AmemeApp(repositoryOverride: MemoryRepository? = null) {
+fun AmemeApp(
+    repositoryOverride: MemoryRepository? = null,
+    incomingShare: SourceCaptureRequest? = null,
+    onIncomingShareConsumed: () -> Unit = {},
+) {
     val navController = rememberNavController()
     val appContext = LocalContext.current.applicationContext
     val repositoryResult = remember(repositoryOverride, appContext) {
@@ -75,6 +90,32 @@ fun AmemeApp(repositoryOverride: MemoryRepository? = null) {
         )
     }
     val experienceMode = ExperienceMode.valueOf(experienceModeName)
+    val uriGrantResolver = remember(appContext) { ContentUriGrantResolver(appContext.contentResolver) }
+    val photoCoordinator = remember(repository, uriGrantResolver) {
+        PhotoCaptureCoordinator(repository, uriGrantResolver)
+    }
+    val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) {
+            runCatching { photoCoordinator.capture(uri) }
+                .onSuccess { event ->
+                    if (event != null) events.add(event)
+                    persistenceError = null
+                }
+                .onFailure { persistenceError = "照片引用尚未保存；本机加密节点写入失败，请重试。" }
+        }
+    }
+
+    LaunchedEffect(incomingShare) {
+        if (incomingShare != null) {
+            runCatching { repository.captureSource(incomingShare) }
+                .onSuccess {
+                    events.add(it)
+                    persistenceError = null
+                }
+                .onFailure { persistenceError = "分享内容尚未保存；请返回来源后重新分享。" }
+            onIncomingShareConsumed()
+        }
+    }
 
     NavHost(
         navController = navController,
@@ -97,6 +138,10 @@ fun AmemeApp(repositoryOverride: MemoryRepository? = null) {
                 onSettings = { navController.navigate(Routes.Settings) },
                 onEvent = { navController.navigate(Routes.event(it)) },
                 persistenceError = persistenceError,
+                voiceAvailable = UnsupportedVoiceCaptureContract.availability == VoiceCaptureAvailability.Available,
+                onRequestPhoto = {
+                    photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                },
                 onCapture = { kind: CaptureKind, text: String ->
                     runCatching { repository.capture(kind, text) }
                         .onSuccess {
@@ -146,10 +191,16 @@ fun AmemeApp(repositoryOverride: MemoryRepository? = null) {
                 event = event,
                 onBack = navController::popBackStack,
                 onDeleteLocally = {
+                    val locator = repository.sourceLocator(eventId)
                     val deleted = runCatching { repository.deleteEvent(eventId) }.getOrDefault(false)
                     if (deleted) {
                         events.removeAll { it.id == eventId }
-                        persistenceError = null
+                        val grantReleased = if (locator?.permissionState == LocatorPermissionState.PersistedRead) {
+                            uriGrantResolver.releasePersisted(Uri.parse(locator.uri))
+                        } else {
+                            true
+                        }
+                        persistenceError = if (grantReleased) null else "事件已删除，但系统来源授权未能释放；请在系统设置中检查应用访问。"
                         navController.popBackStack(Routes.Today, false)
                     } else {
                         persistenceError = "删除尚未持久化；本机事件仍保持可见。"

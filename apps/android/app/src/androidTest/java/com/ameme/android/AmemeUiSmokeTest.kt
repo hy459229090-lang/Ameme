@@ -28,7 +28,6 @@ class AmemeUiSmokeTest {
         composeRule.onNodeWithText("文字").assertIsDisplayed()
         composeRule.onNodeWithText("语音").assertIsDisplayed()
         composeRule.onNodeWithText("照片").assertIsDisplayed()
-        composeRule.onNodeWithText("导入").assertIsDisplayed()
     }
 
     @Test
@@ -42,7 +41,7 @@ class AmemeUiSmokeTest {
         composeRule.onNodeWithText("部分范围").assertIsDisplayed()
         composeRule.onNodeWithContentDescription("搜索历史记录").performClick()
         composeRule.onNodeWithText("搜索历史记录").assertIsDisplayed()
-        composeRule.onNodeWithText("从底部开始，向上滑加载更早日期").assertIsDisplayed()
+        composeRule.onNodeWithText("按日期从新到旧浏览，底部可加载更早记录").assertIsDisplayed()
     }
 
     @Test

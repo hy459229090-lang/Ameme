@@ -3,11 +3,18 @@ package com.ameme.android.data.local
 import android.content.ContentValues
 import com.ameme.android.domain.FactStatus
 import com.ameme.android.domain.MemoryEvent
+import com.ameme.android.domain.MemoryPage
+import com.ameme.android.domain.SearchBackend
+import com.ameme.android.domain.SourceCaptureRequest
+import com.ameme.android.domain.SourceLocator
+import com.ameme.android.domain.LocatorPermissionState
+import java.nio.charset.StandardCharsets
 import java.io.Closeable
 import java.io.File
 import java.time.LocalDate
 import java.time.LocalTime
 import java.util.UUID
+import java.util.Base64
 import net.zetetic.database.sqlcipher.SQLiteDatabase
 
 class LocalEventDatabase private constructor(
@@ -16,18 +23,94 @@ class LocalEventDatabase private constructor(
     // This is not a second key copy; it is cleared immediately after SQLCipher closes.
     private val activeKey: ByteArray,
     private val spaceId: String,
+    private val searchBackend: SearchBackend,
 ) : Closeable {
     fun seedIfEmpty(events: List<MemoryEvent>) {
         if (currentRowCount() != 0L) return
         inTransaction {
-            events.forEach { event -> appendRevision(event, reason = "synthetic_seed", state = STATE_ACTIVE) }
+            events.forEach { event ->
+                appendRevision(event, reason = "synthetic_seed", state = STATE_ACTIVE)
+                refreshSearchIndex(event, STATE_ACTIVE)
+            }
         }
     }
 
-    fun insertCaptured(event: MemoryEvent): MemoryEvent = inTransaction {
+    fun insertCaptured(event: MemoryEvent, source: SourceCaptureRequest? = null): MemoryEvent = inTransaction {
         check(findCurrent(event.id, includeDeleted = true) == null) { "Event id already exists" }
         appendRevision(event, reason = "capture", state = STATE_ACTIVE)
+        source?.let { insertSourceLocator(event.id, it) }
+        refreshSearchIndex(event, STATE_ACTIVE)
         event
+    }
+
+    fun readPage(query: String, date: LocalDate?, cursor: String?, pageSize: Int): MemoryPage {
+        require(pageSize in 1..100) { "pageSize must be between 1 and 100" }
+        val decodedCursor = cursor?.let(::decodeCursor)
+        val where = mutableListOf("e.space_id = ?", "e.state = ?")
+        val args = mutableListOf(spaceId, STATE_ACTIVE)
+        if (date != null) {
+            where += "e.local_date = ?"
+            args += date.toString()
+        }
+        val normalized = query.trim()
+        val useFts = normalized.isNotEmpty() && searchBackend == SearchBackend.Fts5
+        if (normalized.isNotEmpty()) {
+            if (useFts) {
+                where += "events_fts MATCH ?"
+                args += toFtsExpression(normalized)
+            } else {
+                where += "(e.title LIKE ? ESCAPE '\\' OR e.detail LIKE ? ESCAPE '\\' OR e.source_label LIKE ? ESCAPE '\\' OR COALESCE(e.user_words, '') LIKE ? ESCAPE '\\')"
+                val pattern = "%${escapeLike(normalized)}%"
+                repeat(4) { args += pattern }
+            }
+        }
+        decodedCursor?.let { position ->
+            where += """
+                (e.local_date < ? OR
+                 (e.local_date = ? AND COALESCE(e.local_time, '') < ?) OR
+                 (e.local_date = ? AND COALESCE(e.local_time, '') = ? AND e.updated_at < ?) OR
+                 (e.local_date = ? AND COALESCE(e.local_time, '') = ? AND e.updated_at = ? AND e.event_id < ?))
+            """.trimIndent()
+            args += listOf(
+                position.date,
+                position.date, position.time,
+                position.date, position.time, position.updatedAt.toString(),
+                position.date, position.time, position.updatedAt.toString(), position.eventId,
+            )
+        }
+        val from = if (useFts) {
+            "events_current e JOIN events_fts ON events_fts.space_id = e.space_id AND events_fts.event_id = e.event_id"
+        } else {
+            "events_current e"
+        }
+        val rows = database.rawQuery(
+            """
+                SELECT e.event_id, e.local_date, e.local_time, e.title, e.detail, e.fact_status,
+                       e.source_label, e.is_local_only, e.user_words, e.updated_at
+                FROM $from
+                WHERE ${where.joinToString(" AND ")}
+                ORDER BY e.local_date DESC, COALESCE(e.local_time, '') DESC, e.updated_at DESC, e.event_id DESC
+                LIMIT ?
+            """.trimIndent(),
+            (args + (pageSize + 1).toString()).toTypedArray(),
+        ).use { cursorResult ->
+            buildList {
+                while (cursorResult.moveToNext()) {
+                    add(
+                        EventRow(
+                            event = cursorResult.toMemoryEvent(),
+                            updatedAt = cursorResult.getLong(9),
+                        ),
+                    )
+                }
+            }
+        }
+        val visible = rows.take(pageSize)
+        return MemoryPage(
+            events = visible.map(EventRow::event),
+            nextCursor = if (rows.size > pageSize) visible.lastOrNull()?.let(::encodeCursor) else null,
+            searchBackend = searchBackend,
+        )
     }
 
     fun readActive(query: String = "", date: LocalDate? = null): List<MemoryEvent> {
@@ -75,7 +158,29 @@ class LocalEventDatabase private constructor(
     fun deleteEvent(eventId: String): Boolean = inTransaction {
         val current = findCurrent(eventId, includeDeleted = false) ?: return@inTransaction false
         appendRevision(current.event, reason = "user_delete", state = STATE_DELETED)
+        if (searchBackend == SearchBackend.Fts5) {
+            database.delete("events_fts", "space_id = ? AND event_id = ?", arrayOf(spaceId, eventId))
+        }
+        database.execSQL(
+            "UPDATE source_locators SET state = ?, updated_at = ? WHERE space_id = ? AND event_id = ?",
+            arrayOf<Any>(STATE_DELETED, System.currentTimeMillis(), spaceId, eventId),
+        )
         true
+    }
+
+    fun sourceLocatorState(eventId: String): String? = database.rawQuery(
+        "SELECT permission_state FROM source_locators WHERE space_id = ? AND event_id = ? AND state = ?",
+        arrayOf(spaceId, eventId, STATE_ACTIVE),
+    ).use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
+
+    fun sourceLocator(eventId: String): SourceLocator? = database.rawQuery(
+        "SELECT locator_uri, permission_state FROM source_locators WHERE space_id = ? AND event_id = ? AND state = ?",
+        arrayOf(spaceId, eventId, STATE_ACTIVE),
+    ).use { cursor ->
+        if (!cursor.moveToFirst()) null else SourceLocator(
+            uri = cursor.getString(0),
+            permissionState = LocatorPermissionState.valueOf(cursor.getString(1)),
+        )
     }
 
     fun revisionCount(eventId: String): Int = database.rawQuery(
@@ -101,6 +206,11 @@ class LocalEventDatabase private constructor(
     fun hasMigration(version: Int): Boolean = database.rawQuery(
         "SELECT 1 FROM schema_migrations WHERE version = ?",
         arrayOf(version.toString()),
+    ).use { it.moveToFirst() }
+
+    fun hasSearchTable(): Boolean = database.rawQuery(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'events_fts'",
+        emptyArray(),
     ).use { it.moveToFirst() }
 
     override fun close() {
@@ -134,7 +244,18 @@ class LocalEventDatabase private constructor(
             put("revision", revision)
             put("updated_at", now)
         }
-        database.replaceOrThrow("events_current", null, currentValues)
+        if (current == null) {
+            database.insertOrThrow("events_current", null, currentValues)
+        } else {
+            check(
+                database.update(
+                    "events_current",
+                    currentValues,
+                    "space_id = ? AND event_id = ?",
+                    arrayOf(spaceId, event.id),
+                ) == 1,
+            ) { "Current event projection update failed" }
+        }
     }
 
     private fun eventValues(event: MemoryEvent, state: String) = ContentValues().apply {
@@ -187,6 +308,78 @@ class LocalEventDatabase private constructor(
         cursor.getLong(0)
     }
 
+    private fun insertSourceLocator(eventId: String, source: SourceCaptureRequest) {
+        if (source.locatorUri == null) return
+        val now = System.currentTimeMillis()
+        database.insertOrThrow(
+            "source_locators",
+            null,
+            ContentValues().apply {
+                put("space_id", spaceId)
+                put("event_id", eventId)
+                put("source_kind", source.sourceKind.name)
+                put("locator_uri", source.locatorUri)
+                if (source.mimeType == null) putNull("mime_type") else put("mime_type", source.mimeType)
+                put("permission_state", source.locatorPermissionState.name)
+                put("state", STATE_ACTIVE)
+                put("created_at", now)
+                put("updated_at", now)
+            },
+        )
+    }
+
+    private fun refreshSearchIndex(event: MemoryEvent, state: String) {
+        if (searchBackend != SearchBackend.Fts5) return
+        database.delete("events_fts", "space_id = ? AND event_id = ?", arrayOf(spaceId, event.id))
+        if (state != STATE_ACTIVE) return
+        database.insertOrThrow(
+            "events_fts",
+            null,
+            ContentValues().apply {
+                put("space_id", spaceId)
+                put("event_id", event.id)
+                put("title", event.title)
+                put("detail", event.detail)
+                put("source_label", event.sourceLabel)
+                put("user_words", event.userWords.orEmpty())
+            },
+        )
+    }
+
+    private fun android.database.Cursor.toMemoryEvent() = MemoryEvent(
+        id = getString(0),
+        localDate = LocalDate.parse(getString(1)),
+        time = getString(2)?.let(LocalTime::parse),
+        title = getString(3),
+        detail = getString(4),
+        factStatus = FactStatus.valueOf(getString(5)),
+        sourceLabel = getString(6),
+        isLocalOnly = getInt(7) == 1,
+        userWords = if (isNull(8)) null else getString(8),
+    )
+
+    private fun encodeCursor(row: EventRow): String {
+        val payload = listOf(
+            row.event.localDate.toString(),
+            row.event.time?.toString().orEmpty(),
+            row.updatedAt.toString(),
+            row.event.id,
+        ).joinToString("\u001f")
+        return Base64.getUrlEncoder().withoutPadding()
+            .encodeToString(payload.toByteArray(StandardCharsets.UTF_8))
+    }
+
+    private fun decodeCursor(cursor: String): CursorPosition {
+        val decoded = runCatching {
+            String(Base64.getUrlDecoder().decode(cursor), StandardCharsets.UTF_8)
+        }.getOrElse { throw IllegalArgumentException("Invalid search cursor") }
+        val parts = decoded.split('\u001f')
+        require(parts.size == 4 && parts[0].isNotBlank() && parts[2].toLongOrNull() != null && parts[3].isNotBlank()) {
+            "Invalid search cursor"
+        }
+        return CursorPosition(parts[0], parts[1], parts[2].toLong(), parts[3])
+    }
+
     private inline fun <T> inTransaction(block: () -> T): T {
         database.beginTransaction()
         return try {
@@ -204,8 +397,17 @@ class LocalEventDatabase private constructor(
         val event: MemoryEvent,
     )
 
+    private data class EventRow(val event: MemoryEvent, val updatedAt: Long)
+
+    private data class CursorPosition(
+        val date: String,
+        val time: String,
+        val updatedAt: Long,
+        val eventId: String,
+    )
+
     companion object {
-        const val SCHEMA_VERSION = 3
+        const val SCHEMA_VERSION = 4
         const val STATE_ACTIVE = "ACTIVE"
         const val STATE_DELETED = "DELETED"
         const val DEFAULT_SPACE_ID = "space_personal"
@@ -215,6 +417,7 @@ class LocalEventDatabase private constructor(
             databaseFile: File,
             keyProvider: DatabaseKeyProvider,
             spaceId: String,
+            enableFts: Boolean = true,
         ): LocalEventDatabase {
             require(spaceId.isNotBlank()) { "spaceId must not be blank" }
             SqlCipherRuntime.initialize()
@@ -231,10 +434,11 @@ class LocalEventDatabase private constructor(
             return try {
                 database.setForeignKeyConstraintsEnabled(true)
                 migrate(database)
+                val backend = configureSearch(database, enableFts)
                 check(database.enableWriteAheadLogging() || database.isWriteAheadLoggingEnabled) {
                     "SQLCipher WAL could not be enabled"
                 }
-                LocalEventDatabase(database, key, spaceId)
+                LocalEventDatabase(database, key, spaceId, backend)
             } catch (error: Throwable) {
                 try {
                     database.close()
@@ -253,14 +457,21 @@ class LocalEventDatabase private constructor(
                     createMigrationTable(database)
                     createIndexes(database)
                     createAppendOnlyTriggers(database)
-                    recordMigration(database, SCHEMA_VERSION, "create_v3")
+                    recordMigration(database, 3, "create_v3")
+                    createSourceLocatorTable(database)
+                    recordMigration(database, SCHEMA_VERSION, "create_v4_source_locators")
                     database.version = SCHEMA_VERSION
                 }
                 1 -> {
                     migrateV1ToV2(database)
                     migrateV2ToV3(database)
+                    migrateV3ToV4(database)
                 }
-                2 -> migrateV2ToV3(database)
+                2 -> {
+                    migrateV2ToV3(database)
+                    migrateV3ToV4(database)
+                }
+                3 -> migrateV3ToV4(database)
                 SCHEMA_VERSION -> Unit
                 else -> error("Unsupported local event schema version ${database.version}")
             }
@@ -332,7 +543,13 @@ class LocalEventDatabase private constructor(
             database.execSQL("ALTER TABLE event_revisions_v3 RENAME TO event_revisions")
             createIndexes(database)
             createAppendOnlyTriggers(database)
-            recordMigration(database, SCHEMA_VERSION, "migrate_v2_to_v3_space_isolation")
+            recordMigration(database, 3, "migrate_v2_to_v3_space_isolation")
+            database.version = 3
+        }
+
+        private fun migrateV3ToV4(database: SQLiteDatabase) = inMigration(database) {
+            createSourceLocatorTable(database)
+            recordMigration(database, SCHEMA_VERSION, "migrate_v3_to_v4_source_locators")
             database.version = SCHEMA_VERSION
         }
 
@@ -421,6 +638,63 @@ class LocalEventDatabase private constructor(
             """.trimIndent(),
         )
 
+        private fun createSourceLocatorTable(database: SQLiteDatabase) {
+            database.execSQL(
+                """
+                    CREATE TABLE IF NOT EXISTS source_locators (
+                        space_id TEXT NOT NULL,
+                        event_id TEXT NOT NULL,
+                        source_kind TEXT NOT NULL,
+                        locator_uri TEXT NOT NULL,
+                        mime_type TEXT,
+                        permission_state TEXT NOT NULL,
+                        state TEXT NOT NULL,
+                        created_at INTEGER NOT NULL,
+                        updated_at INTEGER NOT NULL,
+                        PRIMARY KEY(space_id, event_id),
+                        FOREIGN KEY(space_id, event_id) REFERENCES events_current(space_id, event_id)
+                    )
+                """.trimIndent(),
+            )
+            database.execSQL(
+                "CREATE INDEX IF NOT EXISTS idx_source_locators_space_state ON source_locators(space_id, state)",
+            )
+        }
+
+        private fun configureSearch(database: SQLiteDatabase, enableFts: Boolean): SearchBackend {
+            if (!enableFts) return SearchBackend.LikeFallback
+            return runCatching {
+                database.execSQL(
+                    """
+                        CREATE VIRTUAL TABLE IF NOT EXISTS events_fts USING fts5(
+                            space_id UNINDEXED,
+                            event_id UNINDEXED,
+                            title,
+                            detail,
+                            source_label,
+                            user_words,
+                            tokenize = 'unicode61'
+                        )
+                    """.trimIndent(),
+                )
+                database.beginTransaction()
+                try {
+                    database.delete("events_fts", null, null)
+                    database.execSQL(
+                        """
+                            INSERT INTO events_fts(space_id, event_id, title, detail, source_label, user_words)
+                            SELECT space_id, event_id, title, detail, source_label, COALESCE(user_words, '')
+                            FROM events_current WHERE state = '$STATE_ACTIVE'
+                        """.trimIndent(),
+                    )
+                    database.setTransactionSuccessful()
+                } finally {
+                    database.endTransaction()
+                }
+                SearchBackend.Fts5
+            }.getOrElse { SearchBackend.LikeFallback }
+        }
+
         private fun createIndexes(database: SQLiteDatabase) {
             database.execSQL(
                 "CREATE INDEX IF NOT EXISTS idx_events_current_space_date_state ON events_current(space_id, local_date, state)",
@@ -481,6 +755,11 @@ class LocalEventDatabase private constructor(
             .replace("\\", "\\\\")
             .replace("%", "\\%")
             .replace("_", "\\_")
+
+        private fun toFtsExpression(value: String): String = value
+            .split(Regex("\\s+"))
+            .filter(String::isNotBlank)
+            .joinToString(" AND ") { token -> "\"${token.replace("\"", "\"\"")}\"" }
 
     }
 }

@@ -7,6 +7,10 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.ameme.android.domain.CaptureKind
 import com.ameme.android.domain.FactStatus
 import com.ameme.android.domain.MemoryEvent
+import com.ameme.android.domain.LocatorPermissionState
+import com.ameme.android.domain.SearchBackend
+import com.ameme.android.domain.SourceCaptureRequest
+import com.ameme.android.domain.SourceKind
 import java.io.File
 import java.time.Clock
 import java.time.Instant
@@ -147,7 +151,7 @@ class LocalEventDatabaseInstrumentedTest {
     }
 
     @Test
-    fun blankTextIsRejectedWithoutPersistingPlaceholderAndBlankMockHasNoUserWords() {
+    fun blankTextAndUnsupportedVoiceAreRejectedWithoutPersistingPlaceholders() {
         val file = newDatabaseFile()
         LocalMemoryRepository.open(
             context = context,
@@ -160,15 +164,13 @@ class LocalEventDatabaseInstrumentedTest {
             assertTrue(runCatching { repository.capture(CaptureKind.Text, "   ") }.isFailure)
             assertTrue(repository.loadActiveEvents().isEmpty())
 
-            val mockVoice = repository.capture(CaptureKind.Voice, "   ")
-            assertEquals("模拟语音引用", mockVoice.title)
-            assertEquals(null, mockVoice.userWords)
-            assertTrue(mockVoice.detail.contains("mock 引用"))
+            assertTrue(runCatching { repository.capture(CaptureKind.Voice, "   ") }.isFailure)
+            assertTrue(repository.loadActiveEvents().isEmpty())
         }
     }
 
     @Test
-    fun v1ToV2ToV3Migration_preservesRowAndBackfillsLegacySpace() {
+    fun v1ToV2ToV3ToV4Migration_preservesRowAndBackfillsLegacySpace() {
         val file = newDatabaseFile()
         createVersionOneDatabase(file)
 
@@ -180,11 +182,90 @@ class LocalEventDatabaseInstrumentedTest {
             assertEquals(LocalEventDatabase.SCHEMA_VERSION, database.schemaVersion())
             assertTrue(database.hasMigration(2))
             assertTrue(database.hasMigration(3))
+            assertTrue(database.hasMigration(4))
             val restored = database.readActive().single()
             assertEquals("evt_v1_synthetic", restored.id)
             assertEquals("v1 synthetic title", restored.title)
             assertEquals(1, database.revisionCount(restored.id))
             assertNotEquals(null, database.currentState(restored.id))
+        }
+    }
+
+    @Test
+    fun sourceLocatorCommitsWithEventAndRetainsExplicitSessionLifecycle() {
+        val file = newDatabaseFile()
+        val request = SourceCaptureRequest(
+            sourceKind = SourceKind.PhotoPicker,
+            title = "合成照片引用",
+            detail = "合成测试，不访问真实媒体",
+            factStatus = FactStatus.Processing,
+            localDate = LocalDate.of(2026, 7, 14),
+            time = null,
+            locatorUri = "content://synthetic.provider/photo/1",
+            mimeType = "image/png",
+            locatorPermissionState = LocatorPermissionState.SessionRead,
+        )
+        val captured = LocalMemoryRepository.open(
+            context, SPACE_A, SyntheticDatabaseKeyProvider(key), file, clock, seedSyntheticEvents = false,
+        ).use { it.captureSource(request) }
+
+        LocalEventDatabase.open(file, SyntheticDatabaseKeyProvider(key), SPACE_A).use { database ->
+            assertEquals(captured.id, database.readActive().single().id)
+            assertEquals(LocatorPermissionState.SessionRead.name, database.sourceLocatorState(captured.id))
+            assertEquals(1, database.revisionCount(captured.id))
+        }
+    }
+
+    @Test
+    fun api36SqlCipherCreatesFts5AndFtsAndLikeFallbackReturnEquivalentScopedResults() {
+        val ftsFile = newDatabaseFile()
+        val likeFile = newDatabaseFile()
+        val fixtures = listOf(
+            syntheticEvent("evt_search_a", "alpha shared keyword"),
+            syntheticEvent("evt_search_b", "beta hidden"),
+        )
+        LocalEventDatabase.open(ftsFile, SyntheticDatabaseKeyProvider(key), SPACE_A, enableFts = true).use { fts ->
+            fixtures.forEach(fts::insertCaptured)
+            assertTrue("FTS5 virtual table must be created on the API 36 SQLCipher runtime", fts.hasSearchTable())
+            assertEquals(SearchBackend.Fts5, fts.readPage("shared", null, null, 20).searchBackend)
+        }
+        LocalEventDatabase.open(likeFile, SyntheticDatabaseKeyProvider(key), SPACE_A, enableFts = false).use { like ->
+            fixtures.forEach(like::insertCaptured)
+            assertEquals(SearchBackend.LikeFallback, like.readPage("shared", null, null, 20).searchBackend)
+        }
+
+        val ftsIds = LocalEventDatabase.open(ftsFile, SyntheticDatabaseKeyProvider(key), SPACE_A, true).use {
+            it.readPage("shared", LocalDate.of(2026, 7, 14), null, 20).events.map(MemoryEvent::id)
+        }
+        val likeIds = LocalEventDatabase.open(likeFile, SyntheticDatabaseKeyProvider(key), SPACE_A, false).use {
+            it.readPage("shared", LocalDate.of(2026, 7, 14), null, 20).events.map(MemoryEvent::id)
+        }
+        assertEquals(likeIds, ftsIds)
+    }
+
+    @Test
+    fun keysetDatePaginationHasStableOrderNoDuplicatesAndHonorsDelete() {
+        val file = newDatabaseFile()
+        LocalEventDatabase.open(file, SyntheticDatabaseKeyProvider(key), SPACE_A).use { database ->
+            (0 until 5).forEach { offset ->
+                database.insertCaptured(
+                    syntheticEvent("evt_page_$offset", "page fixture $offset").copy(
+                        localDate = LocalDate.of(2026, 7, 14).minusDays(offset.toLong()),
+                    ),
+                )
+            }
+            val first = database.readPage("page", null, null, 2)
+            val second = database.readPage("page", null, requireNotNull(first.nextCursor), 2)
+            val third = database.readPage("page", null, requireNotNull(second.nextCursor), 2)
+            val combined = first.events + second.events + third.events
+
+            assertEquals(5, combined.size)
+            assertEquals(5, combined.map(MemoryEvent::id).toSet().size)
+            assertEquals(combined.map(MemoryEvent::localDate).sortedDescending(), combined.map(MemoryEvent::localDate))
+            assertEquals(null, third.nextCursor)
+
+            assertTrue(database.deleteEvent("evt_page_2"))
+            assertTrue(database.readPage("page", null, null, 20).events.none { it.id == "evt_page_2" })
         }
     }
 

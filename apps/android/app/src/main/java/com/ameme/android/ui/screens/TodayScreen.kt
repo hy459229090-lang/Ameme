@@ -2,7 +2,6 @@ package com.ameme.android.ui.screens
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -16,7 +15,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.EditNote
-import androidx.compose.material.icons.outlined.FileOpen
 import androidx.compose.material.icons.outlined.Menu
 import androidx.compose.material.icons.outlined.MicNone
 import androidx.compose.material.icons.outlined.PhotoCamera
@@ -68,6 +66,8 @@ fun TodayScreen(
     onSearch: () -> Unit,
     onSettings: () -> Unit,
     onEvent: (String) -> Unit,
+    voiceAvailable: Boolean,
+    onRequestPhoto: () -> Unit,
     onCapture: (CaptureKind, String) -> Boolean,
 ) {
     var showCapture by remember { mutableStateOf(false) }
@@ -172,6 +172,11 @@ fun TodayScreen(
     if (showCapture) {
         CaptureBottomSheet(
             onDismiss = { showCapture = false },
+            voiceAvailable = voiceAvailable,
+            onRequestPhoto = {
+                showCapture = false
+                onRequestPhoto()
+            },
             onSave = { kind, text ->
                 val saved = onCapture(kind, text)
                 if (saved) showCapture = false
@@ -216,11 +221,12 @@ private fun DeterministicDayStatus(events: List<MemoryEvent>) {
 @Composable
 private fun CaptureBottomSheet(
     onDismiss: () -> Unit,
+    voiceAvailable: Boolean,
+    onRequestPhoto: () -> Unit,
     onSave: (CaptureKind, String) -> Boolean,
 ) {
     var selectedKind by remember { mutableStateOf<CaptureKind?>(null) }
     var text by remember { mutableStateOf("") }
-    var voiceActive by remember { mutableStateOf(false) }
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
@@ -231,16 +237,21 @@ private fun CaptureBottomSheet(
         ) {
             Text("记录一件事", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
             Text(
-                "内容会先写入本机加密节点；系统来源能力仍是 mock，不会申请权限。",
+                "文字会直接写入本机加密节点；照片只通过系统选择器读取你本次选择的内容。",
                 modifier = Modifier.padding(top = 4.dp, bottom = 12.dp),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             if (selectedKind == null) {
                 CaptureChoice(Icons.Outlined.EditNote, CaptureKind.Text, "输入一句话") { selectedKind = it }
-                CaptureChoice(Icons.Outlined.MicNone, CaptureKind.Voice, "模拟点击开始与结束") { selectedKind = it }
-                CaptureChoice(Icons.Outlined.PhotoCamera, CaptureKind.Photo, "模拟选择当前照片") { selectedKind = it }
-                CaptureChoice(Icons.Outlined.FileOpen, CaptureKind.Import, "模拟导入当前文件") { selectedKind = it }
+                CaptureChoice(
+                    Icons.Outlined.MicNone,
+                    CaptureKind.Voice,
+                    if (voiceAvailable) "使用系统语音记录" else "当前版本尚未连接系统语音能力",
+                ) { selectedKind = it }
+                CaptureChoice(Icons.Outlined.PhotoCamera, CaptureKind.Photo, "从系统照片选择器选择一张") {
+                    onRequestPhoto()
+                }
             } else {
                 val kind = requireNotNull(selectedKind)
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -248,38 +259,34 @@ private fun CaptureBottomSheet(
                     Text(kind.label, modifier = Modifier.padding(start = 10.dp), style = MaterialTheme.typography.titleMedium)
                 }
                 if (kind == CaptureKind.Voice) {
-                    Box(Modifier.fillMaxWidth().padding(vertical = 18.dp), contentAlignment = Alignment.Center) {
-                        OutlinedButton(onClick = { voiceActive = !voiceActive }) {
-                            Text(if (voiceActive) "结束模拟录音 · 00:08" else "开始模拟录音")
-                        }
-                    }
-                }
-                if (kind == CaptureKind.Photo || kind == CaptureKind.Import) {
                     Card(Modifier.fillMaxWidth().padding(vertical = 14.dp)) {
                         Text(
-                            if (kind == CaptureKind.Photo) "已选择 synthetic-photo-01（合成占位）" else "已选择 synthetic-note.txt（合成占位）",
+                            if (voiceAvailable) "系统语音入口可用。" else "当前版本不支持语音记录，不会申请麦克风权限，也不会创建占位事件。",
                             modifier = Modifier.padding(16.dp),
                         )
                     }
                 }
-                OutlinedTextField(
-                    value = text,
-                    onValueChange = { text = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text(if (kind == CaptureKind.Text) "写下一句话" else "补充描述（可选）") },
-                    minLines = 2,
-                )
+                if (kind == CaptureKind.Text) {
+                    OutlinedTextField(
+                        value = text,
+                        onValueChange = { text = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("写下一句话") },
+                        minLines = 2,
+                    )
+                }
                 Spacer(Modifier.height(16.dp))
-                Button(
-                    onClick = { onSave(kind, text) },
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = (kind != CaptureKind.Voice || !voiceActive) &&
-                        (kind != CaptureKind.Text || text.isNotBlank()),
-                ) {
-                    Text("保存到本机")
+                if (kind == CaptureKind.Text || voiceAvailable) {
+                    Button(
+                        onClick = { onSave(kind, text) },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = kind != CaptureKind.Text || text.isNotBlank(),
+                    ) {
+                        Text("保存到本机")
+                    }
                 }
                 OutlinedButton(
-                    onClick = { selectedKind = null; voiceActive = false },
+                    onClick = { selectedKind = null },
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text("返回记录方式")

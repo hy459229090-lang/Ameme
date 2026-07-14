@@ -44,7 +44,7 @@ class FakeMemoryRepositoryTest {
     }
 
     @Test
-    fun blankTextIsRejectedAndBlankMockDescriptionIsNotInventedAsUserWords() {
+    fun blankTextAndUnsupportedVoiceAreRejectedWithoutPlaceholderEvents() {
         try {
             repository.capture(CaptureKind.Text, "   ")
             fail("Blank text capture must be rejected")
@@ -52,9 +52,6 @@ class FakeMemoryRepositoryTest {
             // Expected: no placeholder sentence may be persisted as user input.
         }
 
-        val mockVoice = repository.capture(CaptureKind.Voice, "   ")
-        assertEquals("模拟语音引用", mockVoice.title)
-        assertNull(mockVoice.userWords)
-        assertTrue(mockVoice.detail.contains("mock 引用"))
+        assertTrue(runCatching { repository.capture(CaptureKind.Voice, "   ") }.isFailure)
     }
 }

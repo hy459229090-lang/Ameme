@@ -36,6 +36,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.ameme.android.data.MemoryRepository
 import com.ameme.android.domain.ExperienceMode
+import com.ameme.android.domain.DayGroup
+import com.ameme.android.domain.MemoryEvent
 import com.ameme.android.ui.components.EmptyMessage
 import com.ameme.android.ui.components.EventRow
 import com.ameme.android.ui.components.StateNotice
@@ -55,7 +57,13 @@ fun SearchScreen(
     var query by remember { mutableStateOf("") }
     var selectedDate by remember { mutableStateOf<LocalDate?>(null) }
     var showCalendar by remember { mutableStateOf(false) }
-    val rawGroups = repository.search(query, selectedDate)
+    var page by remember(query, selectedDate, repository) {
+        mutableStateOf(repository.searchPage(query, selectedDate, cursor = null, pageSize = PAGE_SIZE))
+    }
+    val rawGroups = page.events
+        .groupBy(MemoryEvent::localDate)
+        .toSortedMap(compareByDescending { it })
+        .map { (date, events) -> DayGroup(date, events) }
     val groups = when (experienceMode) {
         ExperienceMode.Empty -> emptyList()
         ExperienceMode.Sparse -> rawGroups.take(1).map { it.copy(events = it.events.take(1)) }
@@ -128,14 +136,13 @@ fun SearchScreen(
                 )
             } else {
                 Text(
-                    "从底部开始，向上滑加载更早日期",
+                    "按日期从新到旧浏览，底部可加载更早记录",
                     modifier = Modifier.padding(top = 10.dp),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.primary,
                 )
                 LazyColumn(
                     modifier = Modifier.fillMaxWidth().weight(1f),
-                    reverseLayout = true,
                     contentPadding = PaddingValues(vertical = 12.dp),
                 ) {
                     groups.forEach { group ->
@@ -153,13 +160,27 @@ fun SearchScreen(
                             }
                         }
                     }
-                    item {
-                        Text(
-                            "更早的合成日期已加载完毕",
-                            modifier = Modifier.fillMaxWidth().padding(24.dp),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                    item(key = "load-more") {
+                        if (page.nextCursor != null) {
+                            OutlinedButton(
+                                onClick = {
+                                    val next = repository.searchPage(query, selectedDate, page.nextCursor, PAGE_SIZE)
+                                    page = page.copy(
+                                        events = page.events + next.events,
+                                        nextCursor = next.nextCursor,
+                                        searchBackend = next.searchBackend,
+                                    )
+                                },
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
+                            ) { Text("加载更早") }
+                        } else {
+                            Text(
+                                "当前范围已加载完毕",
+                                modifier = Modifier.fillMaxWidth().padding(24.dp),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
                 }
             }
@@ -177,6 +198,8 @@ fun SearchScreen(
         )
     }
 }
+
+private const val PAGE_SIZE = 20
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
