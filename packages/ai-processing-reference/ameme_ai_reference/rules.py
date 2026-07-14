@@ -166,7 +166,7 @@ def build_event_draft(
 
     selected: dict[str, tuple[Any, list[str], float, str]] = {}
     superseded: set[str] = set()
-    conflict = False
+    fact_conflict = False
     for field in FIELD_ORDER:
         choices: list[tuple[int, str, Any, Mapping[str, Any]]] = []
         for item in items:
@@ -194,7 +194,8 @@ def build_event_draft(
         confidence = max(float(choice[3]["confidence"]) for choice in top)
         statuses = {str(choice[3]["fact_status"]) for choice in top}
         if len(values) > 1:
-            conflict = True
+            if field in FACT_FIELDS:
+                fact_conflict = True
             status = "conflict"
             value = [choice[2] for choice in sorted(top, key=lambda choice: choice[1])]
         else:
@@ -215,14 +216,16 @@ def build_event_draft(
         for field in FIELD_ORDER
         if field in selected
     ]
-    statuses = {item["fact_status"] for item in items}
-    if conflict:
+    factual_statuses = {
+        selected[field][3] for field in FACT_FIELDS if field in selected
+    }
+    if fact_conflict or "conflict" in factual_statuses:
         fact_status = "conflict"
         candidate_status = "conflict"
-    elif statuses == {"planned"}:
+    elif factual_statuses == {"planned"}:
         fact_status = "planned"
         candidate_status = "candidate"
-    elif "user_asserted" in statuses:
+    elif "user_asserted" in factual_statuses:
         fact_status = "user_asserted"
         candidate_status = "candidate"
     else:
@@ -230,12 +233,24 @@ def build_event_draft(
         candidate_status = "candidate"
 
     semantic_fields = {field: selected[field][0] for field in selected}
+    selected_fact_ids = {
+        observation_id
+        for field in FACT_FIELDS
+        if field in selected
+        for observation_id in selected[field][1]
+    }
     explicit_types = [
-        item["value"].get("event_type")
+        (
+            STATUS_PRIORITY[item["fact_status"]]
+            + (1 if item["value"].get("correction") is True else 0),
+            str(item["observation_id"]),
+            str(item["value"]["event_type"]),
+        )
         for item in items
-        if item["value"].get("event_type") in EVENT_TYPES
+        if item["observation_id"] in selected_fact_ids
+        and item["value"].get("event_type") in EVENT_TYPES
     ]
-    event_type = str(explicit_types[-1]) if explicit_types else "activity"
+    event_type = max(explicit_types)[2] if explicit_types else "activity"
     candidate_seed = {
         "space_id": next(iter(spaces)),
         "observation_ids": [item["observation_id"] for item in items],
@@ -259,21 +274,17 @@ def build_event_draft(
         float(selected[field][2]) for field in FACT_FIELDS if field in selected
     ]
     fact_confidence = round(sum(factual_confidences) / len(factual_confidences), 6)
-    title = str(
-        next(
-            (
-                item["value"].get("title")
-                or item["value"].get("action")
-                or item["value"].get("description")
-                for item in reversed(items)
-                if item["value"].get("title")
-                or item["value"].get("action")
-                or item["value"].get("description")
-            ),
-            "待整理事件",
-        )
-    )[:200]
-    description = str(selected["description"][0])[:4000] if "description" in selected else None
+    selected_title = selected.get("action", selected.get("description"))
+    title = (
+        str(selected_title[0])[:200]
+        if selected_title is not None and isinstance(selected_title[0], str)
+        else "待整理事件"
+    )
+    description = (
+        str(selected["description"][0])[:4000]
+        if "description" in selected and isinstance(selected["description"][0], str)
+        else None
+    )
     salience = {
         "importance": max(float(item["value"].get("importance", 0.0)) for item in items),
         "emotional": max(float(item["value"].get("emotional_salience", 0.0)) for item in items),
@@ -291,6 +302,102 @@ def build_event_draft(
         semantic_fields=semantic_fields,
         source_object_ids=tuple(sorted({str(item["source_object_id"]) for item in items})),
         superseded_evidence_ids=tuple(sorted(superseded)),
+    )
+
+
+def draft_from_provider_candidate(
+    candidate: Mapping[str, Any],
+    observations: Iterable[Mapping[str, Any]],
+    *,
+    contract: MachineContract,
+    r0_draft: EventDraft,
+) -> EventDraft:
+    """Rebuild internal metadata solely from a validated provider candidate."""
+
+    items = [dict(item) for item in observations]
+    contract.validate_event_candidate(
+        candidate,
+        items,
+        provider_output=True,
+        r0_candidate=r0_draft.candidate,
+    )
+    known = {str(item["observation_id"]): item for item in items}
+    semantic_fields: dict[str, Any] = {}
+    referenced_ids: set[str] = set()
+    factual_confidences: list[float] = []
+    for evidence in candidate["field_evidence"]:
+        field = str(evidence["field"])
+        observation_ids = [str(item) for item in evidence["observation_ids"]]
+        referenced_ids.update(observation_ids)
+        if field in FACT_FIELDS:
+            factual_confidences.append(float(evidence["confidence"]))
+        if field == "time":
+            semantic_fields[field] = candidate["time_range"]
+            continue
+        values: dict[str, Any] = {}
+        for observation_id in observation_ids:
+            observation = known[observation_id]
+            if field == "description":
+                value = observation["value"].get("description")
+            else:
+                value = observation["value"].get(field)
+            values[canonical_json(value)] = value
+        semantic_fields[field] = (
+            next(iter(values.values()))
+            if len(values) == 1
+            else [values[key] for key in sorted(values)]
+        )
+
+    factual_statuses = {
+        str(evidence["status"])
+        for evidence in candidate["field_evidence"]
+        if evidence["field"] in FACT_FIELDS
+    }
+    if "conflict" in factual_statuses:
+        fact_status = "conflict"
+    elif factual_statuses == {"planned"}:
+        fact_status = "planned"
+    elif "user_asserted" in factual_statuses:
+        fact_status = "user_asserted"
+    else:
+        fact_status = "low_confidence_candidate"
+
+    selected_title = semantic_fields.get("action", semantic_fields.get("description"))
+    title = str(selected_title)[:200] if isinstance(selected_title, str) else "待整理事件"
+    description_value = semantic_fields.get("description")
+    description = (
+        str(description_value)[:4000] if isinstance(description_value, str) else None
+    )
+    referenced = [known[item] for item in sorted(referenced_ids)]
+    salience = {
+        "importance": max(
+            (float(item["value"].get("importance", 0.0)) for item in referenced),
+            default=0.0,
+        ),
+        "emotional": max(
+            (float(item["value"].get("emotional_salience", 0.0)) for item in referenced),
+            default=0.0,
+        ),
+        "relationship": max(
+            (float(item["value"].get("relationship_salience", 0.0)) for item in referenced),
+            default=0.0,
+        ),
+    }
+    return EventDraft(
+        candidate=candidate,
+        title=title,
+        description=description,
+        fact_status=fact_status,
+        fact_confidence=round(
+            sum(factual_confidences) / len(factual_confidences), 6
+        ),
+        salience=salience,
+        semantic_fields=semantic_fields,
+        source_object_ids=tuple(
+            sorted({str(item["source_object_id"]) for item in referenced})
+        ),
+        superseded_evidence_ids=(),
+        fallback_reason=None,
     )
 
 

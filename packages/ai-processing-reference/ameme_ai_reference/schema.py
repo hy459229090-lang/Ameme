@@ -8,6 +8,7 @@ import sys
 from typing import Any, Iterable, Mapping
 
 from .errors import ErrorCode, ProcessingError
+from .model import canonical_json
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -27,7 +28,7 @@ FIELD_VALUE_KEYS = {
     "intent": {"intent"},
     "emotion": {"emotion"},
     "relationship": {"relationship"},
-    "description": {"description", "title"},
+    "description": {"description"},
 }
 
 
@@ -66,6 +67,7 @@ class MachineContract:
         observations: Iterable[Mapping[str, Any]],
         *,
         provider_output: bool = False,
+        r0_candidate: Mapping[str, Any] | None = None,
     ) -> None:
         observation_list = [dict(item) for item in observations]
         for item in observation_list:
@@ -128,4 +130,74 @@ class MachineContract:
                 raise ProcessingError(
                     ErrorCode.SCHEMA_MISMATCH,
                     safe_context={"reason": "confidence_exceeds_evidence"},
+                )
+            if provider_output:
+                source_statuses = {str(item["fact_status"]) for item in typed}
+                evidence_status = str(evidence.get("status"))
+                if evidence_status == "conflict":
+                    status_supported = len(typed) > 1
+                else:
+                    status_supported = evidence_status in source_statuses
+                if not status_supported:
+                    raise ProcessingError(
+                        ErrorCode.SCHEMA_MISMATCH,
+                        safe_context={"reason": "fact_status_not_supported"},
+                    )
+
+        if provider_output:
+            factual_evidence = [
+                evidence
+                for evidence in candidate.get("field_evidence", [])
+                if evidence.get("field")
+                in {"time", "place", "people", "action", "result", "intent", "description"}
+            ]
+            has_fact_conflict = any(
+                evidence.get("status") == "conflict" for evidence in factual_evidence
+            )
+            if (candidate.get("status") == "conflict") != has_fact_conflict:
+                raise ProcessingError(
+                    ErrorCode.SCHEMA_MISMATCH,
+                    safe_context={"reason": "candidate_conflict_state_mismatch"},
+                )
+            time_evidence = [
+                evidence
+                for evidence in candidate.get("field_evidence", [])
+                if evidence.get("field") == "time"
+            ]
+            if bool(candidate.get("time_range")) != bool(time_evidence):
+                raise ProcessingError(
+                    ErrorCode.SCHEMA_MISMATCH,
+                    safe_context={"reason": "time_evidence_range_mismatch"},
+                )
+            if time_evidence:
+                supported_ranges = {
+                    canonical_json(known[observation_id]["time_range"])
+                    for evidence in time_evidence
+                    for observation_id in evidence["observation_ids"]
+                }
+                if canonical_json(candidate["time_range"]) not in supported_ranges:
+                    raise ProcessingError(
+                        ErrorCode.SCHEMA_MISMATCH,
+                        safe_context={"reason": "time_range_not_supported"},
+                    )
+
+            referenced_fact_ids = {
+                str(observation_id)
+                for evidence in candidate.get("field_evidence", [])
+                if evidence.get("field")
+                in {"time", "place", "people", "action", "result", "intent", "description"}
+                for observation_id in evidence.get("observation_ids", [])
+            }
+            explicit_types = {
+                str(known[observation_id]["value"]["event_type"])
+                for observation_id in referenced_fact_ids
+                if known[observation_id]["value"].get("event_type") is not None
+            }
+            safe_types = set(explicit_types)
+            if r0_candidate is not None:
+                safe_types.add(str(r0_candidate["event_type"]))
+            if str(candidate.get("event_type")) not in safe_types:
+                raise ProcessingError(
+                    ErrorCode.SCHEMA_MISMATCH,
+                    safe_context={"reason": "event_type_not_supported"},
                 )

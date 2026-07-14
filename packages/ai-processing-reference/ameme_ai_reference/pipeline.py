@@ -11,7 +11,7 @@ from .observability import SafeObserver
 from .policy import PrivacyPolicyGate
 from .provider import ProviderAdapter
 from .registry import TaskRegistry, default_registry
-from .rules import FACT_FIELDS, build_event_draft
+from .rules import build_event_draft, draft_from_provider_candidate
 from .schema import MachineContract
 
 
@@ -71,13 +71,11 @@ class AIProcessingReference:
         try:
             self.gate.authorize(envelope, spec, context, provider)
             response = dict(provider.generate(envelope))
-            self.contract.validate_event_candidate(response, items, provider_output=True)
-            fact_confidence = self._candidate_fact_confidence(response)
-            provider_draft = replace(
-                draft,
-                candidate=response,
-                fact_confidence=fact_confidence,
-                fallback_reason=None,
+            provider_draft = draft_from_provider_candidate(
+                response,
+                items,
+                contract=self.contract,
+                r0_draft=draft,
             )
             self._observe(envelope, "candidate", "PROVIDER_CANDIDATE_VALID", provider)
             return provider_draft
@@ -142,16 +140,6 @@ class AIProcessingReference:
             constraints={"no_unreferenced_facts": True, "max_candidates": 3},
             synthetic_fixture_id=synthetic_fixture_id,
         )
-
-    def _candidate_fact_confidence(self, candidate: Mapping[str, Any]) -> float:
-        values = [
-            float(evidence["confidence"])
-            for evidence in candidate["field_evidence"]
-            if evidence["field"] in FACT_FIELDS
-        ]
-        if not values:
-            raise ProcessingError(ErrorCode.DATA_INSUFFICIENT)
-        return round(sum(values) / len(values), 6)
 
     def _observe(
         self,
