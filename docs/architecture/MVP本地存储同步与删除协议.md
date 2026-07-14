@@ -1,9 +1,9 @@
-# Ameme MVP 本地存储、同步与删除协议 v0.4
+# Ameme MVP 本地存储、同步与删除协议 v0.5
 
 > 文档状态：已接受；MVP 存储/同步/删除实现正本，达成情况待 Spike\
 > 更新日期：2026-07-14\
 > 上游：`MVP领域契约与状态机.md`、`../../packages/contracts/schemas/ameme-domain.schema.json`、`../decisions/ADR-005-MVP技术实现默认栈.md`\
-> 实现基线：Android 固定官方 `net.zetetic:sqlcipher-android:4.15.0` + SQLite WAL；SourceLocator v4 和可回退 FTS5 已形成 API 36 x86_64 AVD 证据，应用私有 Raw Vault AES-256-GCM、iOS、LAN append-only peer sync、真机、16 KB、安全和性能仍待验证。官方来源：<https://github.com/sqlcipher/sqlcipher-android>、<https://central.sonatype.com/artifact/net.zetetic/sqlcipher-android/4.15.0>。
+> 实现基线：Android 固定官方 `net.zetetic:sqlcipher-android:4.15.0` + SQLite WAL；SourceLocator v5、可回退 FTS5、异步 I/O、Calendar/Voice 显式来源和 10k/100k 已形成 API 36 x86_64 AVD 证据。应用私有 Raw Vault AES-256-GCM、iOS、LAN append-only peer sync、真机、16 KB 与 UI 性能仍待验证。官方来源：<https://github.com/sqlcipher/sqlcipher-android>、<https://central.sonatype.com/artifact/net.zetetic/sqlcipher-android/4.15.0>。
 
 ## 1. 设备内逻辑分区
 
@@ -158,9 +158,11 @@ Deletion planner 从 target 沿 lineage 计算：Raw、SourceObject、Observatio
 
 ## 9. Android 本地 Event 最小切片达成边界
 
-2026-07-14 的 Android 切片已经实现并在 API 36 x86_64 AVD 验证：注入式 `DatabaseKeyProvider`、Keystore AES-256-GCM 包裹随机数据库 key、SQLCipher WAL、数据库 trigger 强制 `event_revisions` 禁止 UPDATE/DELETE、`events_current` 投影、Repository 显式绑定 `space_id`、commit 后再展示、tombstone 后重建仍不可见，以及 v1→v2 Revision backfill、v2→v3 `space_legacy` 隔离和 v3→v4 `source_locators` 迁移。跨空间相同 Event ID 可共存且不可互读/互删。错误密钥被拒绝，主库文件头不是明文 SQLite header；SQLCipher/应用日志不输出正文或 key。
+2026-07-14 的 Android 切片已经实现并在 API 36 x86_64 AVD 验证：注入式 `DatabaseKeyProvider`、Keystore AES-256-GCM 包裹随机数据库 key、SQLCipher WAL、数据库 trigger 强制 `event_revisions` 禁止 UPDATE/DELETE、`events_current` 投影、Repository 显式绑定 `space_id`、commit 后再展示、tombstone 后重建仍不可见，以及 v1→v2 Revision backfill、v2→v3 `space_legacy` 隔离、v3→v4 `source_locators` 和 v4→v5 来源实例迁移。跨空间相同 Event ID 可共存且不可互读/互删。错误密钥被拒绝，主库文件头不是明文 SQLite header；SQLCipher/应用日志不输出正文或 key。Compose 的 open/read/write/search/来源访问和授权清理由统一 I/O 边界执行，取消后的 open 不泄漏 repository，重组也不会提前关闭当前实例。
 
-`source_locators` 只在 SQLCipher 内保存 `content://` URI、MIME、来源、访问模式和生命周期状态，不复制照片/PDF 原始内容。Event revision、current projection 和 locator 在同一事务写入；用户取消 Photo Picker、空输入、无读取授权、非 `content://`、多项或非白名单 ACTION_SEND 不产生 Event。语音契约保持 `Unsupported`，不申请麦克风权限，也不生成 mock 成功。Calendar 当前只有显式用户触发、非空 calendar IDs、匹配 space、最长 31 天窗口的可注入适配器；合成输入固定写为 `Planned`，不等于实际发生，且未连接 Calendar Provider/权限。
+`source_locators` 只在 SQLCipher 内保存 `content://` URI、MIME、来源、访问模式、生命周期和可选来源实例键，不复制照片/PDF/音频原始内容。Event revision、current projection 和 locator 在同一事务写入；用户取消 Photo Picker/系统录音/音频选择、空输入、无读取授权、非 `content://`、多项或非白名单 ACTION_SEND 不产生 Event。语音只接受系统返回的音频引用，不申请麦克风权限，也不生成转写或占位正文。Calendar 只在用户显式选择可见 calendar IDs 和 1/7/31 日窗口后读取 Provider；物理游标行数有硬限，全天日期不受本地时区漂移，同一 active instance 跨批次/重启幂等，且始终写为 `Planned` 而不是已发生事实。
+
+DB-01 在 `c8fc128` 上形成有效 [`10k/100k API 36 AVD 报告`](../../tests/results/performance/android-db01-api36.json)：100k FTS 关键词页 P95 177.72 ms、单次提交 P95 215.67 ms，分别通过 700 ms 和 300 ms 的预注册数据库门；加密数据库 95,227,904 bytes，v3→v5 10k 迁移 P95 892.51 ms。日期筛选 P95 734.56 ms 仍是观察项；所有数字都不是物理设备或 UI 首帧证据。
 
 持久 URI 授权删除使用可恢复两阶段状态：Event tombstone 事务只把同空间 `PersistedRead` locator 改为 `RELEASE_PENDING`，普通 `sourceLocator` 立即不可见；`SessionRead` 可直接进入 `DELETED`。事务外、按 repository space 注入的 cleanup coordinator 在生产 App 打开 repository 后和 UI 删除后运行；OS release 成功或确认授权已不存在后写 `RELEASED`，返回 false、抛异常或无法确认时保持 pending。即使删除由 Agent/API 直接调用、commit 后进程崩溃或首次 release 失败，重启仍可枚举并重试；其他 space 不能读取或完成该任务。数据库事务内禁止调用 `ContentResolver`。
 
@@ -171,17 +173,17 @@ Android 清单同时保持 `allowBackup=false`，`data-extraction-rules` 对 clo
 该证据仅关闭“最小本地 Event 闭环可运行”的实现问题，没有关闭完整协议或 DB-01：
 
 - 重建测试是关闭数据库并重新构造 repository，不等于操作系统杀进程/崩溃恢复；
-- 未验证真机、iOS、16 KB page size、10k/100k 数据量、首帧、分页性能、后台锁、电量或体积；
+- 未验证真机、iOS、16 KB page size、真实 Today 首帧/搜索端到端、后台锁、电量或峰值内存；10k/100k 仅形成单台 API 36 x86_64 AVD 数据库基线；
 - 当前删除是追加 tombstone 并更新本机投影，尚未实现物理清除、影响图、peer ack 和删除证明；
-- SourceLocator 目前只覆盖 Photo Picker/ACTION_SEND 元数据和授权生命周期，未覆盖可用性复核、fingerprint、Raw Vault 或跨设备行为；
+- SourceLocator 目前覆盖 Photo Picker/ACTION_SEND/Calendar/Voice 元数据、实例幂等和授权生命周期，未覆盖可用性复核、fingerprint、Raw Vault 或跨设备行为；
 - Raw Vault、durable job/outbox、完整 lineage/审计和 LAN sync 尚未进入该切片；
-- v1→v2→v3→v4 已验证成功迁移与 legacy space 回填，但故障注入、加密快照和失败回滚仍属于 MIG-01。
+- v1→v2→v3→v4→v5 已验证成功迁移与 legacy space 回填，但故障注入、加密快照和失败回滚仍属于 MIG-01。
 
 ## 10. 必须执行的 Spike
 
 | Spike | 环境/输入 | 指标 | 通过/否决 | 证据 |
 |---|---|---|---|---|
-| DB-01 SQLite/加密 | 双端最低候选设备、10k/100k Event 合成库 | 首帧、分页、事务、迁移、体积 | 不阻塞本地首帧；迁移失败可恢复 | `tests/results/storage/` |
+| DB-01 SQLite/加密 | 双端最低候选设备、10k/100k Event 合成库 | 首帧、分页、事务、迁移、体积 | AVD 数据库门已过；仍需物理设备/16 KB/UI | `tests/results/performance/android-db01-api36.json` |
 | SYNC-01 离线冲突 | 两设备模拟器、乱序/重复/断网 envelopes | 丢失、重复、冲突、收敛 | 无静默丢失；tombstone 不复活 | `tests/results/sync/` |
 | LAN-SYNC-01 发现/权限/会话 | 双端真机、同网/热点/隔离 Wi-Fi/恶意 peer | 发现率、授权、连接、后台窗口、吞吐、资源 | 无明文广播/越权；拒权可单机；可恢复同步 | `tests/results/lan-sync/` |
 | DEL-01 删除证明 | 单/多来源、Summary、索引、离线设备夹具 | 残留、ack、重算、时间 | 不假完成；恢复后收敛 | `tests/results/deletion/` |

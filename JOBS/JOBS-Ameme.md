@@ -179,12 +179,19 @@
 - [x] SKILL-01/AG-003 Windows 测试段：MCP Mock 接 EventNodeStore/Core Oracle 测试适配，覆盖授权/撤权/离线/injection/undo、双存储三崩溃窗口和内容安全控制面；Python Core 与 Mock 均非真实宿主或生产 Local Node。
 - [x] 合并后全链 Review：143 项 Python 测试、AI Eval 12/12、2,715/2,709 契约检查、14-case/14-risk Skill、32 个链接、129 项治理、Android JVM/lint/assemble 与 API 36 AVD 25 项设备测试通过。
 
+### 已集成第四批切片
+
+- [x] DB-01 性能段：Compose 数据库打开、写入、检索、来源读取和授权清理统一移到 `MemoryIoExecutor`；Search 以 request generation 隔离旧分页结果，修复 repository 在重组时被提前关闭的生命周期缺陷。
+- [x] DB-01 10k/100k：批量路径改为分块存在性预检和新记录快速插入；API 36 AVD 有效报告覆盖容量、FTS/LIKE、keyset、单次提交、磁盘、粗内存和 v3→v5 迁移。100k FTS P95 177.72 ms、单次提交 P95 215.67 ms，两项预注册 DB 门通过。
+- [x] AND-003/004 第二段：用户触发的 Calendar Provider 只读导入和系统录音/音频选择引用落地；READ_CALENDAR 仅在显式操作请求，无 WRITE_CALENDAR/RECORD_AUDIO。物理游标限流、全天日期、提交终态和来源实例幂等已覆盖。
+- [x] CORE/AG 参考宿主边界：MCP 可显式启动独立 `ameme.core-oracle-host.v1` JSONL stdio 参考进程，挂起/畸形/崩溃有界失败；Android 仅冻结 transport port，不冒充真实 LAN Local Node。
+- [x] 合并后全链 Review：147 项 Python、28 项 Android JVM、34 项普通 AVD 设备测试、1 项 DB-01 性能测试、AI Eval 12/12、2,715/2,709 契约、14-case/14-risk Skill、35 个链接和 130 项治理检查通过。
+
 ### 下一执行批次
 
-- [ ] DB-01 性能段：移除 Android Compose/主线程上的同步 SQLCipher 打开、写入、检索和授权清理；用 10k/100k 合成库记录启动、分页、FTS/LIKE、迁移、内存和磁盘指标。16 KB 与物理真机继续保留给设备矩阵。
-- [ ] AND-003/004 第二段：用户触发的真实语音 recording contract 与 Calendar Provider scoped adapter；权限拒绝/撤销、取消、后台限制和 `Planned` 不升级均需真机证据。
 - [ ] CORE/AG 原生接合：把已验证 Store/对账语义映射到 Android SQLCipher Local Node，再接真实 Codex/Claude Code/Cursor host；Python CoreStore 只保留 Oracle。
 - [ ] SYNC-002/003：Android NSD/未来 iOS Network.framework 的发现、同账户设备认证、加密会话和冻结向量 conformance；iOS 部分等待 Mac。
+- [ ] Android 设备矩阵：物理设备、16 KB page-size、OEM Calendar、系统录音结果授权、权限撤销、进程死亡、真实 Today/Search UI 性能与日期筛选优化。
 
 ### 当前门禁
 

@@ -5,6 +5,7 @@
 | 证据 | 路径 | Verdict |
 |---|---|---|
 | Windows 信息源低风险实测 | `../../research/windows/windows-feasibility-report.md` | 部分通过 |
+| Android DB-01 10k/100k AVD 报告 | `../../tests/results/performance/android-db01-api36.json` | 有效基线；两项预注册 DB 延迟门通过 |
 
 ## 当前正本
 
@@ -12,7 +13,7 @@
 |---|---|---|
 | MVP 测试与 AI 评测 | `MVP测试与AI评测策略.md` | v0.1，层级/夹具/旅程/环境/Gate 候选 |
 | 验证报告模板 | `MVP验证报告模板.md` | 当前有效，强制前五行 verdict 与可复现证据 |
-| Android DB-01 性能探针 | `Android-DB01性能探针说明.md` | 实现已完成，串行 API 36 AVD 基线待验证 |
+| Android DB-01 性能探针 | `Android-DB01性能探针说明.md` | API 36 AVD 有效基线；物理设备/16 KB/UI 仍待验证 |
 
 ## 后续范围
 
@@ -25,3 +26,4 @@
 | 2026-07-13 | 建立 | 创建质量与验证正式文档域 |
 | 2026-07-13 | 新增 | 形成 MVP 测试/AI Eval/性能/安全/环境/Gate 正本和验证报告模板 |
 | 2026-07-14 | 新增 | 登记 Android DB-01 10k/100k 性能探针、判定门与待验证边界 |
+| 2026-07-14 | 验证 | 固化 API 36 AVD 10k/100k 报告；100k FTS P95 177.72 ms、单次提交 P95 215.67 ms，两项硬门通过 |

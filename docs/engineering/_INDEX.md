@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-MVP 工程实现进行中。已集成契约质量基线、非生产 Core/Raw/队列 Oracle、同步协议模拟器、Agent MCP Mock↔Core 测试适配、R0 AI/12-case 固定评测与 Android SQLCipher 加密 Local Event Node；Android 后续切片在 API 36 AVD 通过 25 项设备测试，覆盖 v4 SourceLocator、持久 URI 两阶段清理、Photo Picker/ACTION_SEND 边界、Calendar planned 适配器、FTS5/LIKE 多词共同语义和 keyset 日期分页。生产 Raw/LAN、Calendar Provider/语音、真实模型/宿主、双端真机、16 KB、异步 I/O 和性能容量仍待实现或验证。
+MVP 工程实现进行中。已集成契约质量基线、非生产 Core/Raw/队列 Oracle、独立 CoreOracle 参考宿主进程、同步模拟器、Agent MCP Mock↔Core 测试适配、R0 AI/12-case 固定评测与 Android SQLCipher Local Event Node。Android 主线程 I/O 已移出 Compose，真实 Calendar Provider/系统语音引用、v5 来源实例幂等、FTS/LIKE/keyset 和 10k/100k AVD 性能基线已落地；34 项普通设备测试与独立性能探针通过。生产 Raw/LAN、真实 Agent→Android transport、物理设备/16 KB、真实模型/宿主和 iOS Mac 构建仍待实现或验证。
 
 ## 当前正本
 
@@ -30,3 +30,4 @@ MVP 工程实现进行中。已集成契约质量基线、非生产 Core/Raw/队
 | 2026-07-14 | 决策 | 接受 LAN/账户/SourceLocator/Agent 自动记忆技术基线与 M1–M6 全面研发；新增 Skill 运行契约、SKILL-01 和仓库内分发包 |
 | 2026-07-14 | 开工 | 集成 C-001、M2 Core Oracle、SYNC-01、Agent Mock、AND-001 与 Review 修复；启动 Android Local Node、Raw Vault/队列和 R0 AI 批次 |
 | 2026-07-14 | Android 后续 | AND-003/004 与 DB-01 子切片形成 API 36 AVD 证据；真实设备、容量和性能仍未关闭 |
+| 2026-07-14 | Android 基线 | 完成异步 I/O、Calendar/Voice、v5 幂等、批量快路径和 10k/100k AVD 报告；物理设备/16 KB/UI 性能仍保留 |
