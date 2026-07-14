@@ -9,6 +9,7 @@
 - `JsonStore` 仅是保留现有行为的 **非生产合成夹具后端**，不是移动端数据库、服务端数据库或发布候选实现。
 - `CoreEventNodeStore` 仅用于合成集成测试。它只调用 `packages/core-reference` 的公开命令，把 capture/revision/undo 映射为 Source → Observation → Event/Revision → Tombstone/Lineage，并让离线交付进入 Core durable sync queue；它不直写 SQLite。
 - `CoreOracleHostReferenceStore` 提供首个可运行的进程边界：MCP 进程保留 Grant/Policy/ContextPack/Activity 控制面，显式启动 `core_oracle_host.py` 子进程后，用 `ameme.core-oracle-host.v1` JSONL stdio 访问同一个 `CoreEventNodeStore`。这是公开代码的 developer preview / 集成骨架，不是生产 Native Core。
+- `AndroidLocalNodeStore` 是面向 Android Local Node 的发布候选 **adapter 边界**。它只接受外部注入、已完成设备身份和会话绑定的 channel，并复用共享 `ameme.agent-local-node.v1` 协议；仓库内不提供明文 TCP、设备发现、凭据解析、认证或加密实现，也不会回退到 JSON fixture 或 Python CoreOracle。
 - Core revision 的 control undo 记录只保存 event/space/revision/source lineage 等最小标识，不复制旧 title/description；只有 `JsonStore` 合成夹具为了兼容原有内存补偿行为保留旧快照。
 - Python `CoreOracle` 仍是非生产语义参考和测试 Oracle，不能作为 Android、iOS、桌面或云端生产 runtime，也不证明 SQLCipher、Keychain/Keystore、真实同步或宿主集成完成。
 
@@ -56,6 +57,22 @@ python services/ameme-mcp-mock/server.py `
 
 此模式的 MCP 控制面在 `mcp-control.json`，Oracle 参考数据在 `core-oracle-host/`。它适合验证 Agent/MCP → policy → IPC → Core 公共命令的纵向闭环；不得载入真实个人数据，也不得作为公开发布的移动端存储实现。
 
+Android adapter 的显式 CLI 形态如下。四个值都是交给宿主 channel provider 解析的引用或身份期望，不是端点地址、凭据或会话密钥本身：
+
+```powershell
+python services/ameme-mcp-mock/server.py `
+  --data-dir .tmp/ameme-mcp-android `
+  --store-backend android-local-node `
+  --android-endpoint-ref endpoint-ref:android-local-node `
+  --android-credential-ref credential-ref:android-local-node `
+  --android-expected-device-id device_expected `
+  --android-session-binding-ref session-binding-ref:android-local-node
+```
+
+直接执行上面的命令会按设计失败关闭，因为普通 CLI 没有可注入的认证 channel provider。嵌入式宿主必须通过 `server.main(..., android_channel_factory=...)` 注入 provider；provider 返回的会话绑定必须同时匹配 expected device 和 session binding。引用不会写入 MCP control JSON，错误信息和对象诊断也不回显其值。control 中的 caller、Grant、purpose 和 scope 只是已授权请求的声明，不能代替 channel 认证。
+
+共享协议允许六种 EventNode operation，但具体 channel 必须声明实际 capability。当前 Android capture/create endpoint 只承诺 `create_event`；其他合法 operation 必须稳定返回 `OPERATION_UNSUPPORTED`，不得伪装成已支持。超时、畸形响应、request-id/protocol 不匹配、会话绑定错误和 scope 越界均在五秒内失败关闭并毒化当前 channel，后续请求不会继续进入同一失效会话。
+
 离线队列语义可使用 `--offline` 或 `AMEME_MCP_MOCK_OFFLINE=true`。服务按一行一个 JSON-RPC 消息读写 stdio，stdout 不输出诊断文本。
 
 MCP 宿主的最小配置语义如下；具体配置键由宿主 adapter 决定：
@@ -80,6 +97,7 @@ MCP 宿主的最小配置语义如下；具体配置键由宿主 adapter 决定�
 ```powershell
 python scripts/dev/agent/smoke_mcp_mock.py
 python scripts/dev/agent/smoke_mcp_mock.py --store-backend core-oracle-host-reference
+python -m unittest discover -s services/ameme-mcp-mock/tests -p "test_*.py" -v
 python -m unittest discover -s tests/agent -p "test_*.py" -v
 python -m unittest discover -s tests/agent -p "test_core_store_integration.py" -v
 python scripts/validation/validate_ameme_skill.py
@@ -93,4 +111,4 @@ python scripts/validation/validate_ameme_skill.py
 
 `packages/contracts/` 当前已有 AccessGrant、Event、Revision、ContextPack 等领域 Schema 和 HTTP OpenAPI，但没有六个 MCP tool 的机器可读输入/输出 Schema。由于本任务冻结 `packages/contracts/**`，本服务暂时在 `server.py` 的 `TOOLS` manifest 内维护实现级 JSON Schema。建议契约任务把这六个 tool schema 纳入共享契约并增加 breaking-change diff；在此之前，Mock manifest 不是新的跨端正本。
 
-ADR-001 与同步协议同时阻止把 Python 或新增的共享 runtime 当成 P0–P2 生产 Core。真实 Codex/Agent → Android SQLCipher Local Node 仍缺设备发现、身份/Grant 绑定、加密、重放保护、后台生命周期和 LAN 真机证据。Android 当前仅提供 `AgentLocalNodeTransport` application port；它要求协议版本、请求/响应 ID 绑定、exact scope、内容无关控制元数据与可清零 opaque payload，但没有 transport 实现或新 wire protocol。生产 Swift/Kotlin Local Node 后续只能替换 adapter 端点，不能把当前 Python host 打包进 App 或当 fallback。
+ADR-001 与同步协议同时阻止把 Python 或新增的共享 runtime 当成 P0–P2 生产 Core。真实 Codex/Agent → Android SQLCipher Local Node 仍缺设备发现、认证 channel、加密、重放保护、后台生命周期和 LAN 真机证据。Android 已有 `AgentLocalNodeTransport` application port，MCP 服务已有对应的 channel adapter 和共享协议消费方，但仍没有 transport 实现或跨设备证据。生产 Swift/Kotlin Local Node 后续只能实现并注入该端点，不能把当前 Python host 打包进 App 或当 fallback。
