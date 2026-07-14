@@ -41,6 +41,8 @@ class AgentLocalNodeProtocolTests(unittest.TestCase):
             canonical_json_bytes({"z": 1, "a": "记忆"}),
         )
         self.assert_code("INVALID_REQUEST", lambda: canonical_json_bytes({"x": 1.0}))
+        self.assert_code("INVALID_REQUEST", lambda: canonical_json_bytes({"x": "a\x00b"}))
+        self.assert_code("INVALID_REQUEST", lambda: canonical_json_bytes({"x": "\ud800"}))
 
     def test_line_parser_rejects_duplicate_keys_bom_nan_and_oversize(self) -> None:
         self.assert_code(
@@ -51,6 +53,11 @@ class AgentLocalNodeProtocolTests(unittest.TestCase):
         self.assert_code("INVALID_REQUEST", lambda: parse_request_line(b"\xef\xbb\xbf" + encoded))
         nan_line = encoded.replace(b'"content":"Synthetic milestone was verified by a tool."', b'"content":NaN')
         self.assert_code("INVALID_REQUEST", lambda: parse_request_line(nan_line))
+        escaped_nul = encoded.replace(
+            b'"content":"Synthetic milestone was verified by a tool."',
+            b'"content":"synthetic\\u0000content"',
+        )
+        self.assert_code("INVALID_REQUEST", lambda: parse_request_line(escaped_nul))
         self.assert_code(
             "PAYLOAD_TOO_LARGE",
             lambda: parse_request_line(b" " * (MAX_REQUEST_BYTES + 1)),
@@ -78,6 +85,9 @@ class AgentLocalNodeProtocolTests(unittest.TestCase):
                 error,
                 lambda case=cases[case_id]: authorize_request(self.request, case["grant"]),
             )
+        malformed = deepcopy(self.request)
+        malformed["control"]["spaces"] = ["space_work", 1]
+        self.assert_code("INVALID_REQUEST", lambda: validate_request(malformed))
 
     def test_same_slot_replays_only_same_semantics(self) -> None:
         ledger = ReplayLedger()
@@ -103,6 +113,15 @@ class AgentLocalNodeProtocolTests(unittest.TestCase):
         self.assertEqual(
             {"code": "OPERATION_UNSUPPORTED", "retryable": False},
             unsupported["error"],
+        )
+        wrong_retryability = deepcopy(unsupported)
+        wrong_retryability["error"]["retryable"] = True
+        self.assert_code(
+            "INVALID_REQUEST",
+            lambda: validate_response(
+                wrong_retryability,
+                request=self.document["positive_requests"][1]["request"],
+            ),
         )
         negative = self.document["responses"]["negative"]
         for item in negative:

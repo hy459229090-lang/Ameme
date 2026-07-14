@@ -53,6 +53,28 @@ ERROR_CODES = frozenset(
     }
 )
 
+ERROR_RETRYABLE = {
+    "AUTH_REQUIRED": False,
+    "GRANT_REVOKED": False,
+    "GRANT_EXPIRED": False,
+    "PURPOSE_DENIED": False,
+    "SPACE_DENIED": False,
+    "DATA_TYPE_DENIED": False,
+    "SCHEMA_UNSUPPORTED": False,
+    "INVALID_REQUEST": False,
+    "PAYLOAD_TOO_LARGE": False,
+    "PAYLOAD_DIGEST_MISMATCH": False,
+    "RESULT_DIGEST_MISMATCH": False,
+    "SCOPE_MISMATCH": False,
+    "NOT_VISIBLE": False,
+    "OPERATION_UNSUPPORTED": False,
+    "REVISION_CONFLICT": False,
+    "IDEMPOTENCY_CONFLICT": False,
+    "TEMPORARILY_UNAVAILABLE": True,
+    "INTERNAL_ERROR": True,
+    "RESPONSE_REQUEST_MISMATCH": False,
+}
+
 ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 HEX_64_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 REQUEST_KEYS = {"protocol_version", "request_id", "control", "payload"}
@@ -87,7 +109,11 @@ class ProtocolViolation(ValueError):
 
 
 def _walk_json(value: Any, *, path: str = "$") -> None:
-    if value is None or isinstance(value, (str, bool)):
+    if value is None or isinstance(value, bool):
+        return
+    if isinstance(value, str):
+        if "\x00" in value or any(0xD800 <= ord(character) <= 0xDFFF for character in value):
+            raise ProtocolViolation("INVALID_REQUEST")
         return
     if isinstance(value, int):
         if abs(value) > MAX_SAFE_INTEGER:
@@ -171,13 +197,7 @@ def _enum(value: Any, allowed: set[str] | frozenset[str]) -> str:
 
 
 def _scope_list(value: Any, *, memory_types: bool = False) -> list[str]:
-    if (
-        not isinstance(value, list)
-        or not value
-        or len(value) > MAX_SCOPE_ITEMS
-        or value != sorted(value)
-        or len(set(value)) != len(value)
-    ):
+    if not isinstance(value, list) or not value or len(value) > MAX_SCOPE_ITEMS:
         raise ProtocolViolation("INVALID_REQUEST")
     if memory_types:
         for item in value:
@@ -185,6 +205,8 @@ def _scope_list(value: Any, *, memory_types: bool = False) -> list[str]:
     else:
         for item in value:
             _identifier(item)
+    if value != sorted(value) or len(set(value)) != len(value):
+        raise ProtocolViolation("INVALID_REQUEST")
     return value
 
 
@@ -409,8 +431,10 @@ def validate_response(
         if response["result"] is not None or response["result_digest"] is not None:
             raise ProtocolViolation("INVALID_REQUEST")
         error = _exact_keys(response["error"], {"code", "retryable"})
-        _enum(error["code"], ERROR_CODES)
+        code = _enum(error["code"], ERROR_CODES)
         if not isinstance(error["retryable"], bool):
+            raise ProtocolViolation("INVALID_REQUEST")
+        if error["retryable"] is not ERROR_RETRYABLE[code]:
             raise ProtocolViolation("INVALID_REQUEST")
     if len(canonical_json_bytes(response)) > MAX_RESPONSE_BYTES:
         raise ProtocolViolation("PAYLOAD_TOO_LARGE")

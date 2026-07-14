@@ -3,6 +3,7 @@
 from .conformance import build_conformance_document, validate_conformance_document
 from .protocol import (
     ERROR_CODES,
+    ERROR_RETRYABLE,
     MAX_PAYLOAD_BYTES,
     MAX_REQUEST_BYTES,
     MAX_RESPONSE_BYTES,
@@ -22,6 +23,7 @@ from .protocol import (
 
 __all__ = [
     "ERROR_CODES",
+    "ERROR_RETRYABLE",
     "MAX_PAYLOAD_BYTES",
     "MAX_REQUEST_BYTES",
     "MAX_RESPONSE_BYTES",
