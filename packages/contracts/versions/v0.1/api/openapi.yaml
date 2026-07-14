@@ -1,0 +1,340 @@
+openapi: 3.1.0
+info:
+  title: Ameme MVP Core API
+  version: 0.1.0
+  description: Local-first Mobile/Core/Agent transport contract. Authorization, space and purpose checks are mandatory even for local callers.
+servers:
+  - url: https://api.invalid.ameme.local
+    description: Placeholder only; no production endpoint is selected.
+security:
+  - bearerAuth: []
+paths:
+  /v1/today:
+    get:
+      operationId: getToday
+      parameters:
+        - {name: date, in: query, required: true, schema: {type: string, format: date}}
+        - {name: space_id, in: query, required: true, schema: {type: string}}
+      responses:
+        '200': {description: Local-first ledger, current events/episodes and optional summary, content: {application/json: {schema: {$ref: '../schemas/ameme-domain.schema.json#/$defs/TodayView'}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /v1/source-contracts:
+    get:
+      operationId: listSourceContracts
+      parameters:
+        - {name: space_id, in: query, required: false, schema: {type: string}}
+      responses:
+        '200':
+          description: Contracts visible to the caller
+          content: {application/json: {schema: {type: array, items: {$ref: '../schemas/ameme-domain.schema.json#/$defs/AcquisitionContract'}}}}
+        default: {$ref: '#/components/responses/Error'}
+    post:
+      operationId: createSourceContract
+      parameters: [{$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '../schemas/ameme-domain.schema.json#/$defs/AcquisitionContractRequest'}}}
+      responses:
+        '201': {description: Contract created, content: {application/json: {schema: {$ref: '../schemas/ameme-domain.schema.json#/$defs/AcquisitionContract'}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /v1/source-contracts/{contract_id}:
+    parameters:
+      - {name: contract_id, in: path, required: true, schema: {type: string}}
+    get:
+      operationId: getSourceContract
+      responses:
+        '200': {description: Contract metadata, content: {application/json: {schema: {$ref: '../schemas/ameme-domain.schema.json#/$defs/AcquisitionContract'}}}}
+        default: {$ref: '#/components/responses/Error'}
+    patch:
+      operationId: updateSourceContractState
+      parameters: [{$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [revocation_state]
+              properties:
+                revocation_state: {type: string, enum: [active, paused, revoked]}
+      responses:
+        '200': {description: Updated contract, content: {application/json: {schema: {$ref: '../schemas/ameme-domain.schema.json#/$defs/AcquisitionContract'}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /v1/captures:
+    post:
+      operationId: createCapture
+      parameters: [{$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '../schemas/ameme-domain.schema.json#/$defs/SourceObjectEnvelope'}}}
+      responses:
+        '202': {description: Persisted locally and queued, content: {application/json: {schema: {$ref: '../schemas/ameme-domain.schema.json#/$defs/SourceObjectEnvelope'}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /v1/addenda:
+    post:
+      operationId: createUserAddendum
+      parameters: [{$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '../schemas/ameme-domain.schema.json#/$defs/UserAddendum'}}}
+      responses:
+        '202': {description: User addendum durably appended, content: {application/json: {schema: {$ref: '../schemas/ameme-domain.schema.json#/$defs/UserAddendum'}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /v1/events/{event_id}:
+    parameters:
+      - {name: event_id, in: path, required: true, schema: {type: string}}
+    get:
+      operationId: getEvent
+      responses:
+        '200': {description: Current event revision, content: {application/json: {schema: {$ref: '../schemas/ameme-domain.schema.json#/$defs/Event'}}}}
+        default: {$ref: '#/components/responses/Error'}
+    patch:
+      operationId: reviseEvent
+      parameters: [{$ref: '#/components/parameters/IdempotencyKey'}, {$ref: '#/components/parameters/IfMatchRevision'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '../schemas/ameme-domain.schema.json#/$defs/EventRevision'}}}
+      responses:
+        '200': {description: Appended revision, content: {application/json: {schema: {$ref: '../schemas/ameme-domain.schema.json#/$defs/Event'}}}}
+        '409': {$ref: '#/components/responses/Error'}
+        default: {$ref: '#/components/responses/Error'}
+    delete:
+      operationId: requestEventDeletion
+      description: Convenience shortcut with fixed delete_event_and_dependents scope; use POST /v1/deletion-jobs for any other explicit scope.
+      parameters: [{$ref: '#/components/parameters/IdempotencyKey'}]
+      responses:
+        '202': {description: Deletion job created, content: {application/json: {schema: {$ref: '../schemas/ameme-domain.schema.json#/$defs/DeletionJob'}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /v1/events/{event_id}/lineage:
+    get:
+      operationId: getEventLineage
+      parameters:
+        - {name: event_id, in: path, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: Authorized non-raw lineage for source explanation
+          content: {application/json: {schema: {type: array, items: {$ref: '../schemas/ameme-domain.schema.json#/$defs/LineageEdge'}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /v1/recall:
+    post:
+      operationId: recall
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '../schemas/ameme-domain.schema.json#/$defs/RecallQuery'}}}
+      responses:
+        '200': {description: Scope-filtered day-grouped page, content: {application/json: {schema: {$ref: '../schemas/ameme-domain.schema.json#/$defs/RecallPage'}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /v1/context-packs:
+    post:
+      operationId: createContextPack
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '../schemas/ameme-domain.schema.json#/$defs/RecallQuery'}}}
+      responses:
+        '200': {description: Minimal grant-bound pack, content: {application/json: {schema: {$ref: '../schemas/ameme-domain.schema.json#/$defs/ContextPack'}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /v1/feedback:
+    post:
+      operationId: submitFeedback
+      parameters: [{$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '../schemas/ameme-domain.schema.json#/$defs/FeedbackEvent'}}}
+      responses:
+        '202': {description: Feedback appended}
+        default: {$ref: '#/components/responses/Error'}
+  /v1/agent-grants:
+    get:
+      operationId: listAgentGrants
+      parameters:
+        - {name: status, in: query, required: false, schema: {type: string, enum: [active, revoked, expired]}}
+      responses:
+        '200':
+          description: Grant metadata visible to the owner
+          content: {application/json: {schema: {type: array, items: {$ref: '../schemas/ameme-domain.schema.json#/$defs/AccessGrant'}}}}
+        default: {$ref: '#/components/responses/Error'}
+    post:
+      operationId: createAgentGrant
+      parameters: [{$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '../schemas/ameme-domain.schema.json#/$defs/AccessGrantRequest'}}}
+      responses:
+        '201': {description: Grant created, content: {application/json: {schema: {$ref: '../schemas/ameme-domain.schema.json#/$defs/AccessGrant'}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /v1/agent-grants/{grant_id}:
+    parameters:
+      - {name: grant_id, in: path, required: true, schema: {type: string}}
+    get:
+      operationId: getAgentGrant
+      responses:
+        '200': {description: Grant metadata, content: {application/json: {schema: {$ref: '../schemas/ameme-domain.schema.json#/$defs/AccessGrant'}}}}
+        default: {$ref: '#/components/responses/Error'}
+    delete:
+      operationId: revokeAgentGrant
+      parameters: [{$ref: '#/components/parameters/IdempotencyKey'}]
+      responses:
+        '202': {description: Revocation durably queued}
+        default: {$ref: '#/components/responses/Error'}
+  /v1/deletion-jobs:
+    post:
+      operationId: createDeletionJob
+      parameters: [{$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '../schemas/ameme-domain.schema.json#/$defs/DeletionRequest'}}}
+      responses:
+        '202': {description: Job created, content: {application/json: {schema: {$ref: '../schemas/ameme-domain.schema.json#/$defs/DeletionJob'}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /v1/deletion-jobs/{job_id}:
+    get:
+      operationId: getDeletionJob
+      parameters:
+        - {name: job_id, in: path, required: true, schema: {type: string}}
+      responses:
+        '200': {description: Job and pending proof, content: {application/json: {schema: {$ref: '../schemas/ameme-domain.schema.json#/$defs/DeletionJob'}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /v1/export-jobs:
+    post:
+      operationId: createExportJob
+      parameters: [{$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '../schemas/ameme-domain.schema.json#/$defs/ExportRequest'}}}
+      responses:
+        '202': {description: Local export queued, content: {application/json: {schema: {$ref: '../schemas/ameme-domain.schema.json#/$defs/ExportJob'}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /v1/export-jobs/{job_id}:
+    get:
+      operationId: getExportJob
+      parameters:
+        - {name: job_id, in: path, required: true, schema: {type: string}}
+      responses:
+        '200': {description: Export status and local output reference, content: {application/json: {schema: {$ref: '../schemas/ameme-domain.schema.json#/$defs/ExportJob'}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /v1/devices:
+    get:
+      operationId: listDevices
+      responses:
+        '200':
+          description: Owner-visible device and last sync metadata
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [device_id, platform, status]
+                  properties:
+                    device_id: {type: string}
+                    platform: {type: string, enum: [ios, android, agent, service]}
+                    status: {type: string, enum: [active, revoked, stale]}
+                    last_sync_at: {type: string, format: date-time}
+        default: {$ref: '#/components/responses/Error'}
+  /v1/sync/status:
+    get:
+      operationId: getSyncStatus
+      parameters:
+        - {name: space_id, in: query, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: Non-content device, cursor, queue and range metadata
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [range_state, pending_count_bucket]
+                properties:
+                  range_state: {type: string, enum: [complete, partial, offline, disabled]}
+                  partial_reasons: {type: array, items: {type: string}}
+                  pending_count_bucket: {type: string}
+        default: {$ref: '#/components/responses/Error'}
+  /v1/access-audit:
+    get:
+      operationId: listAccessAudit
+      parameters:
+        - {name: cursor, in: query, required: false, schema: {type: string}}
+      responses:
+        '200':
+          description: Owner-visible content-free access records
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required: [audit_id, caller_id, purpose, result_code, occurred_at]
+                      properties:
+                        audit_id: {type: string}
+                        caller_id: {type: string}
+                        purpose: {type: string}
+                        result_code: {type: string}
+                        occurred_at: {type: string, format: date-time}
+                  next_cursor: {type: string}
+        default: {$ref: '#/components/responses/Error'}
+  /v1/sync/push:
+    post:
+      operationId: pushSyncEnvelope
+      parameters: [{$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '../schemas/ameme-domain.schema.json#/$defs/SyncEnvelope'}}}
+      responses:
+        '202': {description: Envelope durably accepted}
+        '409': {$ref: '#/components/responses/Error'}
+        default: {$ref: '#/components/responses/Error'}
+  /v1/sync/pull:
+    get:
+      operationId: pullSyncEnvelopes
+      parameters:
+        - {name: space_id, in: query, required: true, schema: {type: string}}
+        - {name: cursor, in: query, required: false, schema: {type: string}}
+      responses:
+        '200':
+          description: Ordered authorized envelopes and next cursor
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, range_state]
+                properties:
+                  items: {type: array, items: {$ref: '../schemas/ameme-domain.schema.json#/$defs/SyncEnvelope'}}
+                  next_cursor: {type: string}
+                  range_state: {type: string, enum: [complete, partial]}
+        default: {$ref: '#/components/responses/Error'}
+components:
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer}
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: {type: string, minLength: 8, maxLength: 128}
+    IfMatchRevision:
+      name: If-Match-Revision
+      in: header
+      required: true
+      schema: {type: integer, minimum: 1}
+  responses:
+    Error:
+      description: Stable non-content error
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Error'
+  schemas:
+    Error:
+      type: object
+      required: [code, message_key, retryable, trace_id]
+      properties:
+        code: {type: string}
+        message_key: {type: string}
+        retryable: {type: boolean}
+        retry_after_seconds: {type: integer, minimum: 0}
+        trace_id: {type: string}
+        details: {type: object, description: Must not contain user content or provider raw text.}

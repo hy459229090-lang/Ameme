@@ -14,6 +14,8 @@ from typing import Any
 
 import yaml
 
+from contract_semantics import validate_bundle
+
 
 ROOT = Path(__file__).resolve().parents[2]
 SCHEMA_PATH = ROOT / "packages" / "contracts" / "schemas" / "ameme-domain.schema.json"
@@ -140,6 +142,8 @@ class ContractValidator:
         if isinstance(instance, list):
             if "minItems" in schema:
                 self.check(len(instance) >= schema["minItems"], f"{path}: fewer than {schema['minItems']} items")
+            if "maxItems" in schema:
+                self.check(len(instance) <= schema["maxItems"], f"{path}: more than {schema['maxItems']} items")
             if schema.get("uniqueItems"):
                 canonical = [json.dumps(item, sort_keys=True, ensure_ascii=False) for item in instance]
                 self.check(len(canonical) == len(set(canonical)), f"{path}: duplicate array items")
@@ -157,7 +161,8 @@ class ContractValidator:
                 self.check(re.search(schema["pattern"], instance) is not None, f"{path}: does not match pattern")
             if schema.get("format") == "date-time":
                 try:
-                    datetime.fromisoformat(instance.replace("Z", "+00:00"))
+                    parsed = datetime.fromisoformat(instance.replace("Z", "+00:00"))
+                    self.check(parsed.tzinfo is not None, f"{path}: date-time must include an offset")
                 except ValueError:
                     self.check(False, f"{path}: invalid date-time")
             if schema.get("format") == "date":
@@ -195,24 +200,35 @@ def validate_openapi(validator: ContractValidator, api: dict[str, Any]) -> None:
                 has_idempotency = any(isinstance(item, dict) and item.get("$ref") == "#/components/parameters/IdempotencyKey" for item in params)
                 validator.check(has_idempotency or operation_id in {"recall", "createContextPack"}, f"{method.upper()} {path} missing Idempotency-Key")
     validator.check(len(operation_ids) == len(set(operation_ids)), "OpenAPI operationId values must be unique")
-    walk_openapi_refs(validator, api, OPENAPI_PATH.parent)
+    walk_openapi_refs(validator, api, OPENAPI_PATH.parent, api)
 
 
-def walk_openapi_refs(validator: ContractValidator, node: Any, base: Path) -> None:
+def walk_openapi_refs(validator: ContractValidator, node: Any, base: Path, root_api: dict[str, Any]) -> None:
     if isinstance(node, dict):
         ref = node.get("$ref")
-        if isinstance(ref, str) and not ref.startswith("#/"):
+        if isinstance(ref, str) and ref.startswith("#/"):
+            target: Any = root_api
+            for part in ref.removeprefix("#/").split("/"):
+                key = part.replace("~1", "/").replace("~0", "~")
+                if not isinstance(target, dict) or key not in target:
+                    validator.check(False, f"OpenAPI internal ref missing: {ref}")
+                    break
+                target = target[key]
+            else:
+                validator.check(True, f"OpenAPI internal ref resolved: {ref}")
+        elif isinstance(ref, str):
             file_part, _, fragment = ref.partition("#")
             target_path = (base / file_part).resolve()
+            validator.check(target_path.is_relative_to(ROOT / "packages" / "contracts"), f"OpenAPI external ref escapes contract root: {ref}")
             validator.check(target_path.exists(), f"OpenAPI external ref file missing: {ref}")
             if target_path.exists() and fragment.startswith("/$defs/"):
                 definition = fragment.removeprefix("/$defs/")
                 validator.check(definition in validator.root_schema.get("$defs", {}), f"OpenAPI ref definition missing: {definition}")
         for value in node.values():
-            walk_openapi_refs(validator, value, base)
+            walk_openapi_refs(validator, value, base, root_api)
     elif isinstance(node, list):
         for value in node:
-            walk_openapi_refs(validator, value, base)
+            walk_openapi_refs(validator, value, base, root_api)
 
 
 def main() -> int:
@@ -245,6 +261,10 @@ def main() -> int:
             seen_types.add(object_type)
             validator.validate_instance(payload, schema["$defs"][TYPE_TO_DEF[object_type]], f"objects[{index}].object")
     validator.check(seen_types == set(TYPE_TO_DEF), f"synthetic bundle missing object types: {sorted(set(TYPE_TO_DEF) - seen_types)}")
+
+    semantic = validate_bundle(objects or [])
+    validator.checks += semantic.checks
+    validator.errors.extend(semantic.errors)
 
     valid_by_type = {wrapper["object_type"]: wrapper["object"] for wrapper in objects or [] if isinstance(wrapper, dict) and wrapper.get("object_type") in TYPE_TO_DEF}
     validator.check(invalid.get("example_version") == 1, "invalid fixture example_version must be 1")

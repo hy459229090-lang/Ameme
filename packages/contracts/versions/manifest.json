@@ -1,0 +1,34 @@
+{
+  "manifest_version": 1,
+  "current_contract_version": "0.1.0",
+  "versions": [
+    {
+      "version": "0.1.0",
+      "schema_major": 1,
+      "status": "baseline",
+      "baseline_date": "2026-07-14",
+      "artifacts": {
+        "domain_schema": {
+          "current_path": "schemas/ameme-domain.schema.json",
+          "snapshot_path": "versions/v0.1/schemas/ameme-domain.schema.json",
+          "sha256": "1707efe2bcfb980e28383125a22bb02ecefb07d328da8c139223796a1f695ac1"
+        },
+        "openapi": {
+          "current_path": "api/openapi.yaml",
+          "snapshot_path": "versions/v0.1/api/openapi.yaml",
+          "sha256": "230885f3e39e42474a558a09311748464757836b7ba4b29098e88b870b9835a3"
+        }
+      },
+      "compatibility_policy": {
+        "additive_optional_property": "compatible",
+        "enum_value_addition": "review_required",
+        "required_property_addition": "breaking",
+        "required_property_removal": "breaking",
+        "property_or_operation_removal": "breaking",
+        "enum_value_removal": "breaking",
+        "constraint_tightening": "breaking",
+        "schema_major_change": "requires_new_baseline_and_migration"
+      }
+    }
+  ]
+}
