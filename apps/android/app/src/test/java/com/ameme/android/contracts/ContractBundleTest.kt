@@ -3,6 +3,7 @@ package com.ameme.android.contracts
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -58,6 +59,34 @@ class ContractBundleTest {
 
             assertTrue("Negative case ${case.getValue("name")} was accepted", issues.isNotEmpty())
         }
+    }
+
+    @Test
+    fun repositoryIntegerBounds_areRejectedOutsideMinimumAndMaximum() {
+        val bundle = ContractCodec.decodeBundle(bundleText)
+        val validator = ContractValidator(schemaText)
+
+        val event = bundle.objects.first { it.objectType == "event" }
+        val invalidRevision = event.copy(
+            payload = JsonObject(event.payload.toMutableMap().apply {
+                set("revision", JsonPrimitive(0))
+            }),
+        )
+        assertTrue(
+            "Event revision below the schema minimum was accepted",
+            validator.validate(invalidRevision).any { it.path.endsWith(".revision") && it.message.startsWith("below minimum") },
+        )
+
+        val recallQuery = bundle.objects.first { it.objectType == "recall_query" }
+        val invalidPageSize = recallQuery.copy(
+            payload = JsonObject(recallQuery.payload.toMutableMap().apply {
+                set("page_size", JsonPrimitive(101))
+            }),
+        )
+        assertTrue(
+            "Recall page size above the schema maximum was accepted",
+            validator.validate(invalidPageSize).any { it.path.endsWith(".page_size") && it.message.startsWith("above maximum") },
+        )
     }
 
     private fun locateContractsDirectory(): Path {

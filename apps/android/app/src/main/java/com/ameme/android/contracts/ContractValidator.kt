@@ -61,21 +61,31 @@ class ContractValidator(schemaText: String) {
             "string" -> validateString(value, node, path, issues)
             "integer" -> if (value !is JsonPrimitive || value.intOrNull == null) {
                 issues += ValidationIssue(path, "expected integer")
+            } else {
+                validateNumericBounds(value.intOrNull!!.toDouble(), node, path, issues)
             }
             "number" -> if (value !is JsonPrimitive || value.doubleOrNull == null) {
                 issues += ValidationIssue(path, "expected number")
             } else {
-                val number = value.doubleOrNull ?: 0.0
-                val minimum = node["minimum"]?.jsonPrimitive?.doubleOrNull
-                val maximum = node["maximum"]?.jsonPrimitive?.doubleOrNull
-                if (minimum != null && number < minimum) issues += ValidationIssue(path, "below minimum $minimum")
-                if (maximum != null && number > maximum) issues += ValidationIssue(path, "above maximum $maximum")
+                validateNumericBounds(value.doubleOrNull!!, node, path, issues)
             }
             "boolean" -> if (value !is JsonPrimitive || value.booleanOrNull == null) {
                 issues += ValidationIssue(path, "expected boolean")
             }
         }
         return issues
+    }
+
+    private fun validateNumericBounds(
+        number: Double,
+        node: JsonObject,
+        path: String,
+        issues: MutableList<ValidationIssue>,
+    ) {
+        val minimum = node["minimum"]?.jsonPrimitive?.doubleOrNull
+        val maximum = node["maximum"]?.jsonPrimitive?.doubleOrNull
+        if (minimum != null && number < minimum) issues += ValidationIssue(path, "below minimum $minimum")
+        if (maximum != null && number > maximum) issues += ValidationIssue(path, "above maximum $maximum")
     }
 
     private fun validateObject(
