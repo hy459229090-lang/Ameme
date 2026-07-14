@@ -90,6 +90,31 @@ MCP 宿主的最小配置语义如下；具体配置键由宿主 adapter 决定�
 }
 ```
 
+## 本地 Codex 任务的一次性 Android 体验
+
+开发者可以把一个**明确授权、人工筛选、仅含结构化事件**的本地 Codex 任务导出先经过 `ameme-memory` Skill/MCP Mock，再用 Android instrumentation-only seam 写入 Debug APK 的正式 SQLCipher 仓库。该路径用于本机体验和纵向验证，不是生产 Agent 传输、导入 API 或后台采集能力。
+
+输入 JSON 只允许顶层 `thread_id` 与 `events`。每条事件必须提供 `source_turn_id`、`content`、带时区的 `event_time`、`event_type`、`evidence_kind`、`sensitivity` 和 `data_class`；其中 `data_class` 必须为 `structured`，敏感度仅允许 `public|personal`。直接工具证据、用户陈述和推断分别保持为 `direct_evidence`、`user_statement`、`inference`，不得互相升级。
+
+真实源文件、Skill 状态和 Android seed 必须放在 Git 工作区之外的本机私有目录，例如：
+
+```powershell
+$demoRoot = Join-Path $env:TEMP "ameme-codex-demo"
+python scripts/dev/agent/build_codex_demo_seed.py `
+  --source "$demoRoot/source.json" `
+  --output "$demoRoot/android-seed.json" `
+  --state-dir "$demoRoot/skill-state" `
+  --confirm-local-private-data
+
+powershell -ExecutionPolicy Bypass -File scripts/dev/agent/inject_codex_demo_android.ps1 `
+  -SeedFile "$demoRoot/android-seed.json" `
+  -AndroidSdk $env:ANDROID_HOME `
+  -Serial emulator-5554 `
+  -ResetAppData
+```
+
+构建器限定最多 12 条、64 KiB、`structured` 且 `public|personal` 的事件，并输出不含正文的计数摘要。注入脚本要求工作区外 seed，使用测试 APK 启动显式 instrumentation，完成后删除设备上的一次性明文副本并打开 Ameme。生产 APK 不暴露 seed/import endpoint；本机源文件和生成物仍需由操作者按授权保留期删除。
+
 ## 调用与验证
 
 完整 stdio 调用示例由 smoke 脚本实际执行：

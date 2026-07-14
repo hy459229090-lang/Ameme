@@ -193,6 +193,8 @@
 - [x] MCP→Android 适配边界：默认后端仍为 JSON Mock；`android-local-node` 只能显式启用，必须注入已认证 channel provider 和凭据引用。当前仅实现 `create_event`，其余操作稳定返回 `OPERATION_UNSUPPORTED`，超时、绑定错误和畸形响应会关闭并毒化 channel；没有 Python socket/LAN fallback。
 - [x] Android `create_event`：经 separately verified session、Grant/space/type/sensitivity/data-class 检查和注入式原子幂等 registry 后写入真实 `MemoryRepository`；SQLCipher 关闭重开后仍可读。生产工厂默认关闭，当前 registry 仅测试进程内实现，不能声明跨重启幂等。
 - [x] 合并后全链 Review：167 项 Python、Android 37 项 JVM、lint/assemble、API 36 AVD 普通回归 35 项（34 通过、1 项 DB-01 性能用例按设计跳过）、AI Eval 12/12、2,715/2,709 契约、Agent Local Node 68 项校验、14-case/14-risk Skill、37 个链接和 132 项治理检查通过。
+- [x] 本机 Codex 体验辅助：当前任务 7 条人工筛选结构化事件经 `ameme-memory` Skill/MCP Mock 形成一次性 seed，再由显式 androidTest seam 经 Agent Local Node 写入正式 SQLCipher；API 36 AVD 目标测试 1/1，Today 显示 7 条。真实内容未进入 Git，设备临时明文由测试/runner 删除；这不是生产传输或后台采集证据。
+- [x] 体验辅助回归：Agent Python 回归由 28 增至 30，全仓 Python 由 167 增至 169；workspace validation、Android JVM/lint/debug APK/test APK 通过。普通设备基线未重跑，仍沿用 35 项基线并单列本次目标设备测试。
 
 ### 下一执行批次
 
