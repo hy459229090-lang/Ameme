@@ -38,11 +38,14 @@ enum class SourceKind {
     SharedText,
     SharedContent,
     Calendar,
+    VoiceRecorder,
+    VoicePicker,
 }
 
 enum class LocatorPermissionState {
     PersistedRead,
     SessionRead,
+    ProviderRead,
     NoLocator,
 }
 

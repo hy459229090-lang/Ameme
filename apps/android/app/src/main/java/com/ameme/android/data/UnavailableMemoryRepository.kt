@@ -20,6 +20,9 @@ class UnavailableMemoryRepository : MemoryRepository {
     override fun captureSource(request: SourceCaptureRequest): MemoryEvent =
         throw IllegalStateException("Encrypted local repository is unavailable")
 
+    override fun captureSources(requests: List<SourceCaptureRequest>): List<MemoryEvent> =
+        throw IllegalStateException("Encrypted local repository is unavailable")
+
     override fun search(query: String, date: LocalDate?): List<DayGroup> = emptyList()
 
     override fun searchPage(query: String, date: LocalDate?, cursor: String?, pageSize: Int): MemoryPage =

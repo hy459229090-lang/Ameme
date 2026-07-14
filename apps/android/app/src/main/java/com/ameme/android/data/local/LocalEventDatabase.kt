@@ -53,6 +53,18 @@ class LocalEventDatabase private constructor(
         events.size
     }
 
+    fun insertCapturedSourceBatch(
+        entries: List<Pair<MemoryEvent, SourceCaptureRequest>>,
+    ): List<MemoryEvent> = inTransaction {
+        entries.forEach { (event, source) ->
+            check(findCurrent(event.id, includeDeleted = true) == null) { "Event id already exists" }
+            appendRevision(event, reason = "source_batch_capture", state = STATE_ACTIVE)
+            insertSourceLocator(event.id, source)
+            refreshSearchIndex(event, STATE_ACTIVE)
+        }
+        entries.map { it.first }
+    }
+
     fun readPage(query: String, date: LocalDate?, cursor: String?, pageSize: Int): MemoryPage {
         require(pageSize in 1..100) { "pageSize must be between 1 and 100" }
         val decodedCursor = cursor?.let(::decodeCursor)

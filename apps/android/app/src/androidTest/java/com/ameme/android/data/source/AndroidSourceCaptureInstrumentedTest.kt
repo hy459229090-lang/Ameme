@@ -13,6 +13,7 @@ import java.time.Clock
 import java.time.Instant
 import java.time.ZoneId
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -110,5 +111,76 @@ class AndroidSourceCaptureInstrumentedTest {
 
         assertTrue(runCatching { coordinator.capture(Uri.parse("content://synthetic.provider/photo/fail")) }.isFailure)
         assertEquals(1, releases)
+    }
+
+    @Test
+    fun voiceUsesOnlyExplicitSystemResultAndNeverInventsTranscript() {
+        val repository = FakeMemoryRepository(clock)
+        var grants = 0
+        val coordinator = VoiceCaptureCoordinator(
+            repository = repository,
+            grantResolver = UriGrantResolver { _, flags ->
+                grants++
+                assertTrue(flags and Intent.FLAG_GRANT_READ_URI_PERMISSION != 0)
+                LocatorPermissionState.SessionRead
+            },
+            clock = clock,
+        )
+        val before = repository.loadActiveEvents().size
+
+        assertNull(
+            coordinator.capture(
+                uri = null,
+                grantFlags = 0,
+                origin = VoiceCaptureOrigin.SystemRecorder,
+            ),
+        )
+        assertEquals(before, repository.loadActiveEvents().size)
+        assertEquals(0, grants)
+
+        val captured = coordinator.capture(
+            uri = Uri.parse("content://synthetic.recorder/audio/1"),
+            grantFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION,
+            origin = VoiceCaptureOrigin.SystemRecorder,
+            mimeType = "audio/ogg",
+        )
+        assertEquals(SourceKind.VoiceRecorder, captured?.sourceLabel?.let(SourceKind::valueOf))
+        assertNull(captured?.userWords)
+        assertTrue(captured?.detail?.contains("未转写、未推断") == true)
+        assertFalse(captured?.detail?.contains("合成语音内容") == true)
+        assertEquals(1, grants)
+    }
+
+    @Test
+    fun voiceRejectsMissingReadGrantAndNonContentUriWithoutCreatingEvent() {
+        val repository = FakeMemoryRepository(clock)
+        val coordinator = VoiceCaptureCoordinator(
+            repository = repository,
+            grantResolver = ContentUriGrantResolver(
+                androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>().contentResolver,
+            ),
+            clock = clock,
+        )
+        val before = repository.loadActiveEvents().size
+
+        assertTrue(
+            runCatching {
+                coordinator.capture(
+                    Uri.parse("content://synthetic.recorder/audio/2"),
+                    grantFlags = 0,
+                    origin = VoiceCaptureOrigin.SystemPicker,
+                )
+            }.isFailure,
+        )
+        assertTrue(
+            runCatching {
+                coordinator.capture(
+                    Uri.parse("file:///sdcard/voice.m4a"),
+                    grantFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                    origin = VoiceCaptureOrigin.SystemPicker,
+                )
+            }.isFailure,
+        )
+        assertEquals(before, repository.loadActiveEvents().size)
     }
 }

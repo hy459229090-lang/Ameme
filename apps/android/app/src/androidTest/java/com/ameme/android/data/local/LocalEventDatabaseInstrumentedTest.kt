@@ -220,6 +220,42 @@ class LocalEventDatabaseInstrumentedTest {
     }
 
     @Test
+    fun sourceBatchFailureRollsBackEveryEventAndLocator() {
+        val file = newDatabaseFile()
+        LocalEventDatabase.open(file, SyntheticDatabaseKeyProvider(key), SPACE_A).use { database ->
+            val duplicate = syntheticEvent("evt_batch_duplicate", "合成批量回滚")
+            val entries = listOf(
+                duplicate to sourceRequest(LocatorPermissionState.ProviderRead),
+                duplicate to sourceRequest(LocatorPermissionState.ProviderRead),
+            )
+
+            assertTrue(runCatching { database.insertCapturedSourceBatch(entries) }.isFailure)
+            assertTrue(database.readActive().isEmpty())
+            assertEquals(null, database.currentState(duplicate.id))
+            assertEquals(null, database.sourceLocator(duplicate.id))
+        }
+    }
+
+    @Test
+    fun providerReadLocatorDeletesDirectlyAndNeverEntersPersistedGrantCleanup() {
+        val file = newDatabaseFile()
+        val eventId = LocalMemoryRepository.open(
+            context, SPACE_A, SyntheticDatabaseKeyProvider(key), file, clock, seedSyntheticEvents = false,
+        ).use { repository ->
+            val captured = repository.captureSource(sourceRequest(LocatorPermissionState.ProviderRead))
+            assertEquals(LocatorPermissionState.ProviderRead, repository.sourceLocator(captured.id)?.permissionState)
+            assertTrue(repository.deleteEvent(captured.id))
+            assertTrue(repository.pendingSourceLocatorReleases().isEmpty())
+            captured.id
+        }
+
+        LocalEventDatabase.open(file, SyntheticDatabaseKeyProvider(key), SPACE_A).use { database ->
+            assertEquals(LocalEventDatabase.LOCATOR_STATE_DELETED, database.sourceLocatorLifecycleState(eventId))
+            assertEquals(null, database.sourceLocator(eventId))
+        }
+    }
+
+    @Test
     fun persistedLocatorDeleteSurvivesCrashAndDirectNonUiDeleteCreatesPendingRelease() {
         val file = newDatabaseFile()
         val first = LocalMemoryRepository.open(

@@ -110,23 +110,35 @@ class FakeMemoryRepository(
     }
 
     override fun captureSource(request: SourceCaptureRequest): MemoryEvent {
-        require(request.title.isNotBlank()) { "Source capture title must not be blank" }
-        return MemoryEvent(
-            id = "evt_synth_source_${captureCounter.incrementAndGet()}",
-            localDate = request.localDate,
-            time = request.time,
-            title = request.title.trim(),
-            detail = request.detail.trim(),
-            factStatus = request.factStatus,
-            sourceLabel = request.sourceKind.name,
-            isLocalOnly = true,
-            userWords = request.userWords?.trim()?.ifEmpty { null },
-        ).also { event ->
+        return captureSources(listOf(request)).single()
+    }
+
+    override fun captureSources(requests: List<SourceCaptureRequest>): List<MemoryEvent> {
+        require(requests.isNotEmpty()) { "Source capture batch must not be empty" }
+        requests.forEach { request ->
+            require(request.title.isNotBlank()) { "Source capture title must not be blank" }
+            require(request.detail.isNotBlank()) { "Source capture detail must not be blank" }
+        }
+        val captured = requests.map { request ->
+            MemoryEvent(
+                id = "evt_synth_source_${captureCounter.incrementAndGet()}",
+                localDate = request.localDate,
+                time = request.time,
+                title = request.title.trim(),
+                detail = request.detail.trim(),
+                factStatus = request.factStatus,
+                sourceLabel = request.sourceKind.name,
+                isLocalOnly = true,
+                userWords = request.userWords?.trim()?.ifEmpty { null },
+            ) to request
+        }
+        captured.forEach { (event, request) ->
             events.add(event)
             request.locatorUri?.let { uri ->
                 locators[event.id] = SourceLocator(uri, request.locatorPermissionState)
             }
         }
+        return captured.map { it.first }
     }
 
     override fun search(query: String, date: LocalDate?): List<DayGroup> = search(events, query, date)

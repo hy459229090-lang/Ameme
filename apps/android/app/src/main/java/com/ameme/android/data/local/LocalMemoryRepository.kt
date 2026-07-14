@@ -43,6 +43,17 @@ class LocalMemoryRepository(
     }
 
     override fun captureSource(request: SourceCaptureRequest): MemoryEvent {
+        val event = eventFromSource(request)
+        return database.insertCaptured(event, request)
+    }
+
+    override fun captureSources(requests: List<SourceCaptureRequest>): List<MemoryEvent> {
+        require(requests.isNotEmpty()) { "Source capture batch must not be empty" }
+        val entries = requests.map { request -> eventFromSource(request) to request }
+        return database.insertCapturedSourceBatch(entries)
+    }
+
+    private fun eventFromSource(request: SourceCaptureRequest): MemoryEvent {
         require(request.title.isNotBlank()) { "Source capture title must not be blank" }
         require(request.detail.isNotBlank()) { "Source capture detail must not be blank" }
         request.locatorUri?.let { locator ->
@@ -50,7 +61,7 @@ class LocalMemoryRepository(
             require(URI.create(locator).scheme == "content") { "Only content URI locators are accepted" }
         }
         request.mimeType?.let { require(it.length <= 128) { "MIME type is too long" } }
-        val event = MemoryEvent(
+        return MemoryEvent(
             id = "evt_${UUID.randomUUID()}",
             localDate = request.localDate,
             time = request.time,
@@ -61,7 +72,6 @@ class LocalMemoryRepository(
             isLocalOnly = true,
             userWords = request.userWords?.trim()?.take(16_384)?.ifEmpty { null },
         )
-        return database.insertCaptured(event, request)
     }
 
     override fun search(query: String, date: LocalDate?): List<DayGroup> = database

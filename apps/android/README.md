@@ -1,6 +1,6 @@
 # Ameme Android MVP
 
-Native Android 14+ client skeleton with an encrypted Local Event Node and the first user-initiated acquisition adapters. Text, Photo Picker, accepted ACTION_SEND content, Today restore, paged date/keyword recall, and local deletion use a durable SQLCipher repository. Compose routes all repository open/read/write/search and source-grant cleanup through an injected I/O dispatcher; cancellation during open cannot orphan an already-created repository.
+Native Android 14+ client skeleton with an encrypted Local Event Node and user-initiated acquisition adapters. Text, Photo Picker, accepted ACTION_SEND content, scoped Calendar Provider import, explicit system voice results, Today restore, paged date/keyword recall, and local deletion use a durable SQLCipher repository. Compose routes repository and platform-source I/O through an injected dispatcher; cancellation during open cannot orphan an already-created repository.
 
 ## Scope
 
@@ -10,17 +10,18 @@ Native Android 14+ client skeleton with an encrypted Local Event Node and the fi
 - Photo uses Android Photo Picker without media permission. The encrypted SourceLocator stores only a `content://` URI, MIME metadata, and explicit `PersistedRead` or `SessionRead` lifecycle; it does not copy the photo.
 - Deleting a persisted locator is crash-safe and two-phase: the Event tombstone transaction changes the locator to `RELEASE_PENDING`, ordinary source reads can no longer use it, and a space-scoped coordinator releases the OS grant outside the database transaction. The coordinator runs after repository open and after UI deletion; false/exception remains pending, restart retries, and success or a verified already-absent grant moves to `RELEASED`. Session-only locators terminate directly. Agent/API repository deletion gets the same pending state even when no UI is involved.
 - ACTION_SEND accepts only one `text/plain`, `image/*`, or `application/pdf` item. Content shares require a read grant and `content://`; sender titles, unsupported MIME, blank/oversized text, multiple items, and non-content schemes are rejected. ACTION_SEND locators are deliberately recorded as session-only.
-- Voice is an explicit replaceable contract in `Unsupported` state. The UI says it is unavailable, requests no microphone permission, and never reports or persists a mock success.
-- Calendar has an injectable scoped adapter only: it requires an explicit user action, repository space, non-empty calendar IDs, and a finite window of at most 31 days. Imported synthetic fixtures are `Planned`, never happened/confirmed. No production Calendar Provider connection or calendar permission exists yet.
+- Voice is initiated only by `MediaStore.Audio.Media.RECORD_SOUND_ACTION` or the system `OpenDocument` picker. Ameme requests no microphone permission, accepts only a returned readable `content://` audio URI, stores no fabricated transcript/user words, and creates no event on cancel, empty URI, missing read grant, duplicate callback, or launcher failure. Repository work runs off the main thread and uses a single-flight result gate.
+- Calendar import starts only from `记录 -> 导入日历`. The app asks for `READ_CALENDAR` at that moment, lists visible calendars, and requires the user to select calendar IDs plus a 1/7/31-day range before confirmation. Provider queries bind the selected IDs, exact window, and a 200-item limit; the adapter rejects background/non-user calls, wrong spaces, scope escapes, overflow, permission denial, and cancellation. It never requests `WRITE_CALENDAR`, schedules background scans, or upgrades a calendar plan into a happened/confirmed fact.
+- A Calendar import batch is committed to Event + `ProviderRead` SourceLocator rows in one SQLCipher transaction. Cancellation remains available through provider read/validation; after the atomic commit starts it is no longer presented as cancelled, and repository closure waits for the owned I/O job. User deletion tombstones the Event and directly terminates `ProviderRead`; persisted picker grants continue through the existing crash-safe release state machine.
 - Today reconstructs the active projection from disk; Search uses date + keyword keyset pagination. FTS5 is a derived, rebuildable index when runtime creation succeeds and otherwise falls back to parameterized LIKE. Both paths implement the tested common query contract: up to 16 whitespace-separated terms, every term must match somewhere in the Event fields, with identical space/date/state/order/delete filters. This does not claim every FTS tokenizer edge case equals substring matching.
 - Delete appends a tombstone revision and updates the current projection transactionally. This slice proves durable invisibility after reconstruction, not physical purge or peer deletion proof.
 - `event_revisions` is append-only by database `BEFORE UPDATE/DELETE` abort triggers; `events_current` is the current projection. Repository construction requires an explicit `space_id`, both tables use `(space_id,event_id)` identity, and reads/writes/deletes are space-scoped.
 - Kotlin contract bundle DTO, schema-subset validator, and round-trip tests against `packages/contracts` remain intact.
-- Voice recording, Calendar Provider, location, health, account, network, analytics, Raw Vault, and bulk/background system-source integrations are not implemented.
+- Location, health, account, network, analytics, Raw Vault, and bulk/background system-source integrations are not implemented.
 - Production starts with an empty repository and never seeds `FakeMemoryRepository`; synthetic seeds are available only through an explicit test/demo flag. Today shows deterministic counts, not a fabricated fixed summary.
 - `AgentLocalNodeTransport` now freezes the application-layer port needed by a future authenticated Agent-to-Android path: exact space/type scope, content-free retry/audit metadata, domain-separated idempotency slot, payload digest, and redacted opaque payload. It intentionally has no implementation and defines no LAN wire format. Real Codex/Agent access to the Android SQLCipher Local Node remains blocked on approved device discovery, authentication, encryption, replay protection, background lifecycle, and transport evidence; Android never starts or falls back to the Python Oracle host.
 
-The manifest declares no sensitive permissions. All bundled people, events, IDs, locations, and content are synthetic.
+The manifest declares only `READ_CALENDAR` among the acquisition-sensitive permissions. It declares no calendar write, microphone, camera, media-library, location, or health permission. All bundled people, events, IDs, locations, and content are synthetic.
 
 ## Storage and key boundary
 
@@ -78,13 +79,14 @@ The storage instrumented suite verifies on an API 36 x86_64 AVD:
 - ACTION_SEND MIME/URI/read-grant validation, injected-title isolation, blank/multiple-item rejection, and session-only fallback;
 - Photo Picker cancellation/no-event behavior and source-lifecycle propagation;
 - user-initiated finite Calendar import scope, calendar ID/space/window negative cases, and `Planned` semantics;
-- blank text and unsupported voice rejection without fabricated events;
-- absence of media, microphone, calendar, and location manifest permissions;
+- atomic Calendar batch rollback, permission denial/cancel behavior, provider query scope/limit, and `ProviderRead` deletion without persisted-grant cleanup;
+- explicit voice cancel/read-grant/content-URI/single-flight behavior without fabricated transcript or event;
+- presence of calendar read permission and absence of media, microphone, calendar write, and location permissions;
 - compiled cloud-backup/device-transfer exclusions for every application data domain;
 - successful and failed-open key-array clearing;
 - Android Keystore wrapped-key reuse after an initial database-creation failure.
 - Agent Local Node port exact-scope rejection, strict protocol/request-response binding, opaque payload defensive copy/redaction, and explicit payload clearing.
 
-This is API 36 AVD evidence only. It does not prove physical-device compatibility, 16 KB page-size readiness, OS process-death recovery, 10k/100k capacity, startup or paging performance, backup/restore, physical deletion, Calendar Provider/voice behavior, Raw Vault, or peer sync. FTS5 is verified only for the tested SQLCipher runtime; other runtime/device combinations may use the tested LIKE fallback.
+The existing device baseline is API 36 AVD evidence only. The new Calendar/voice production paths still require a clean, serialized API 36 run after integration plus physical-device checks for OEM calendar providers, recurring/all-day/timezone behavior, system recorder availability/result grants, process recreation, and permission revocation. Nothing here proves 16 KB page-size readiness, 10k/100k capacity, startup/paging performance, backup/restore, physical deletion, Raw Vault, or peer sync. FTS5 is verified only for the tested SQLCipher runtime; other runtime/device combinations may use the tested LIKE fallback.
 
 Contract tests expect the Android project to remain at `apps/android` so they can read the frozen repository source at `packages/contracts`.

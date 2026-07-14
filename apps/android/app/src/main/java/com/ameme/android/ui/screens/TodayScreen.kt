@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.EditNote
 import androidx.compose.material.icons.outlined.Menu
 import androidx.compose.material.icons.outlined.MicNone
@@ -68,8 +69,12 @@ fun TodayScreen(
     onSearch: () -> Unit,
     onSettings: () -> Unit,
     onEvent: (String) -> Unit,
-    voiceAvailable: Boolean,
+    canRecordVoice: Boolean,
+    voiceCaptureInFlight: Boolean,
     onRequestPhoto: () -> Unit,
+    onRequestVoiceRecording: () -> Unit,
+    onRequestVoiceSelection: () -> Unit,
+    onRequestCalendar: () -> Unit,
     onCapture: suspend (CaptureKind, String) -> Boolean,
 ) {
     var showCapture by remember { mutableStateOf(false) }
@@ -174,12 +179,29 @@ fun TodayScreen(
     if (showCapture) {
         CaptureBottomSheet(
             onDismiss = { showCapture = false },
-            voiceAvailable = voiceAvailable,
+            canRecordVoice = canRecordVoice,
+            voiceCaptureInFlight = voiceCaptureInFlight,
             onRequestPhoto = {
                 showCapture = false
                 onRequestPhoto()
             },
-            onSave = { kind, text -> onCapture(kind, text).also { saved -> if (saved) showCapture = false } },
+            onRequestVoiceRecording = {
+                showCapture = false
+                onRequestVoiceRecording()
+            },
+            onRequestVoiceSelection = {
+                showCapture = false
+                onRequestVoiceSelection()
+            },
+            onRequestCalendar = {
+                showCapture = false
+                onRequestCalendar()
+            },
+            onSave = { kind, text ->
+                val saved = onCapture(kind, text)
+                if (saved) showCapture = false
+                saved
+            },
         )
     }
 }
@@ -219,8 +241,12 @@ private fun DeterministicDayStatus(events: List<MemoryEvent>) {
 @Composable
 private fun CaptureBottomSheet(
     onDismiss: () -> Unit,
-    voiceAvailable: Boolean,
+    canRecordVoice: Boolean,
+    voiceCaptureInFlight: Boolean,
     onRequestPhoto: () -> Unit,
+    onRequestVoiceRecording: () -> Unit,
+    onRequestVoiceSelection: () -> Unit,
+    onRequestCalendar: () -> Unit,
     onSave: suspend (CaptureKind, String) -> Boolean,
 ) {
     var selectedKind by remember { mutableStateOf<CaptureKind?>(null) }
@@ -247,10 +273,13 @@ private fun CaptureBottomSheet(
                 CaptureChoice(
                     Icons.Outlined.MicNone,
                     CaptureKind.Voice,
-                    if (voiceAvailable) "使用系统语音记录" else "当前版本尚未连接系统语音能力",
+                    "调用系统录音，或选择已有音频",
                 ) { selectedKind = it }
                 CaptureChoice(Icons.Outlined.PhotoCamera, CaptureKind.Photo, "从系统照片选择器选择一张") {
                     onRequestPhoto()
+                }
+                CaptureChoice(Icons.Outlined.CalendarMonth, CaptureKind.Import, "选择日历和最多 31 天的日期范围") {
+                    onRequestCalendar()
                 }
             } else {
                 val kind = requireNotNull(selectedKind)
@@ -261,10 +290,22 @@ private fun CaptureBottomSheet(
                 if (kind == CaptureKind.Voice) {
                     Card(Modifier.fillMaxWidth().padding(vertical = 14.dp)) {
                         Text(
-                            if (voiceAvailable) "系统语音入口可用。" else "当前版本不支持语音记录，不会申请麦克风权限，也不会创建占位事件。",
+                            "Ameme 不申请麦克风权限。系统返回或你选择音频后，只保存来源引用，不生成转写或占位内容。",
                             modifier = Modifier.padding(16.dp),
                         )
                     }
+                    if (canRecordVoice) {
+                        Button(
+                            onClick = onRequestVoiceRecording,
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = !voiceCaptureInFlight,
+                        ) { Text("调用系统录音") }
+                    }
+                    OutlinedButton(
+                        onClick = onRequestVoiceSelection,
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !voiceCaptureInFlight,
+                    ) { Text(if (voiceCaptureInFlight) "正在处理音频" else "选择已有音频") }
                 }
                 if (kind == CaptureKind.Text) {
                     OutlinedTextField(
@@ -276,7 +317,7 @@ private fun CaptureBottomSheet(
                     )
                 }
                 Spacer(Modifier.height(16.dp))
-                if (kind == CaptureKind.Text || voiceAvailable) {
+                if (kind == CaptureKind.Text) {
                     Button(
                         onClick = {
                             if (!isSaving) {

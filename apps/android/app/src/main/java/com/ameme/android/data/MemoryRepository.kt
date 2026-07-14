@@ -17,6 +17,8 @@ interface MemoryRepository : Closeable {
 
     fun captureSource(request: SourceCaptureRequest): MemoryEvent
 
+    fun captureSources(requests: List<SourceCaptureRequest>): List<MemoryEvent>
+
     fun search(query: String, date: LocalDate?): List<DayGroup>
 
     fun searchPage(

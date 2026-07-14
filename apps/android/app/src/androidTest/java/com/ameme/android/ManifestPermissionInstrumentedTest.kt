@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -14,7 +15,7 @@ class ManifestPermissionInstrumentedTest {
     private val context: Context = ApplicationProvider.getApplicationContext()
 
     @Test
-    fun userInitiatedAcquisitionAddsNoSensitiveManifestPermissions() {
+    fun userInitiatedAcquisitionDeclaresOnlyReadCalendarAmongSensitivePermissions() {
         @Suppress("DEPRECATION")
         val requested = context.packageManager
             .getPackageInfo(context.packageName, PackageManager.GET_PERMISSIONS)
@@ -24,12 +25,12 @@ class ManifestPermissionInstrumentedTest {
 
         val forbidden = setOf(
             Manifest.permission.READ_MEDIA_IMAGES,
-            Manifest.permission.READ_CALENDAR,
             Manifest.permission.WRITE_CALENDAR,
             Manifest.permission.RECORD_AUDIO,
             Manifest.permission.ACCESS_FINE_LOCATION,
             Manifest.permission.ACCESS_COARSE_LOCATION,
         )
+        assertTrue(Manifest.permission.READ_CALENDAR in requested)
         assertFalse(requested.any { it in forbidden })
     }
 }

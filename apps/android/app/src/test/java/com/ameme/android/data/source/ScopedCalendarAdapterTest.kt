@@ -1,7 +1,10 @@
 package com.ameme.android.data.source
 
 import com.ameme.android.data.FakeMemoryRepository
+import com.ameme.android.data.MemoryRepository
+import com.ameme.android.domain.SourceCaptureRequest
 import com.ameme.android.domain.FactStatus
+import com.ameme.android.domain.LocatorPermissionState
 import java.time.Instant
 import java.time.ZoneId
 import org.junit.Assert.assertEquals
@@ -18,8 +21,8 @@ class ScopedCalendarAdapterTest {
         val adapter = ScopedCalendarAdapter(
             expectedSpaceId = SPACE,
             repository = repository,
-            dataSource = CalendarDataSource {
-                listOf(CalendarSourceRecord("cal-work", start.plusSeconds(3_600), "合成评审", "只表示计划"))
+            dataSource = CalendarDataSource { _, _ ->
+                listOf(record(calendarId = "cal-work", start = start.plusSeconds(3_600)))
             },
             zoneId = ZoneId.of("Asia/Shanghai"),
         )
@@ -29,6 +32,10 @@ class ScopedCalendarAdapterTest {
         assertEquals(1, imported.size)
         assertEquals(FactStatus.Planned, imported.single().factStatus)
         assertEquals("Calendar", imported.single().sourceLabel)
+        assertEquals(
+            LocatorPermissionState.ProviderRead,
+            repository.sourceLocator(imported.single().id)?.permissionState,
+        )
     }
 
     @Test
@@ -37,7 +44,7 @@ class ScopedCalendarAdapterTest {
         val adapter = ScopedCalendarAdapter(
             expectedSpaceId = SPACE,
             repository = repository,
-            dataSource = CalendarDataSource { reads++; emptyList() },
+            dataSource = CalendarDataSource { _, _ -> reads++; emptyList() },
             zoneId = ZoneId.of("UTC"),
         )
         val invalid = listOf(
@@ -54,19 +61,111 @@ class ScopedCalendarAdapterTest {
     @Test
     fun sourceCannotEscapeSelectedCalendarOrTimeWindow() {
         val invalidRecords = listOf(
-            CalendarSourceRecord("cal-other", start.plusSeconds(60), "合成越界", "wrong calendar"),
-            CalendarSourceRecord("cal-work", end, "合成越界", "wrong time"),
+            record(calendarId = "cal-other", start = start.plusSeconds(60)),
+            record(calendarId = "cal-work", start = end),
         )
         invalidRecords.forEach { record ->
             val adapter = ScopedCalendarAdapter(
                 expectedSpaceId = SPACE,
                 repository = repository,
-                dataSource = CalendarDataSource { listOf(record) },
+                dataSource = CalendarDataSource { _, _ -> listOf(record) },
                 zoneId = ZoneId.of("UTC"),
             )
             assertTrue(runCatching { adapter.import(request()) }.isFailure)
         }
     }
+
+    @Test
+    fun cancellationAndPermissionDenialCreateNoEvents() {
+        val before = repository.loadActiveEvents().size
+        var reads = 0
+        val cancelledSource = CalendarDataSource { _, cancellation ->
+            reads++
+            cancellation.throwIfCancelled()
+            listOf(record())
+        }
+        val cancelledAdapter = ScopedCalendarAdapter(
+            expectedSpaceId = SPACE,
+            repository = repository,
+            dataSource = cancelledSource,
+            zoneId = ZoneId.of("UTC"),
+        )
+        val cancellation = CalendarImportCancellation().apply { cancel() }
+
+        assertTrue(runCatching { cancelledAdapter.import(request(), cancellation) }.isFailure)
+        assertEquals(0, reads)
+        assertEquals(before, repository.loadActiveEvents().size)
+
+        val deniedAdapter = ScopedCalendarAdapter(
+            expectedSpaceId = SPACE,
+            repository = repository,
+            dataSource = CalendarDataSource { _, _ -> throw SecurityException("synthetic denied") },
+            zoneId = ZoneId.of("UTC"),
+        )
+        assertTrue(runCatching { deniedAdapter.import(request()) }.isFailure)
+        assertEquals(before, repository.loadActiveEvents().size)
+    }
+
+    @Test
+    fun itemLimitIsExplicitAndValidatedBeforeReading() {
+        var reads = 0
+        val adapter = ScopedCalendarAdapter(
+            expectedSpaceId = SPACE,
+            repository = repository,
+            dataSource = CalendarDataSource { _, _ -> reads++; emptyList() },
+            zoneId = ZoneId.of("UTC"),
+        )
+
+        assertTrue(runCatching { adapter.import(request().copy(maxItems = 0)) }.isFailure)
+        assertTrue(runCatching { adapter.import(request().copy(maxItems = 501)) }.isFailure)
+        assertEquals(0, reads)
+    }
+
+    @Test
+    fun cancellationAfterProviderReadAndBatchFailureNeverExposePartialEvents() {
+        val before = repository.loadActiveEvents().size
+        val cancellation = CalendarImportCancellation()
+        val cancelledAdapter = ScopedCalendarAdapter(
+            expectedSpaceId = SPACE,
+            repository = repository,
+            dataSource = CalendarDataSource { _, _ ->
+                cancellation.cancel()
+                listOf(record())
+            },
+            zoneId = ZoneId.of("UTC"),
+        )
+        assertTrue(runCatching { cancelledAdapter.import(request(), cancellation) }.isFailure)
+        assertEquals(before, repository.loadActiveEvents().size)
+
+        var batchCalls = 0
+        val failingBatchRepository = object : MemoryRepository by repository {
+            override fun captureSources(requests: List<SourceCaptureRequest>): List<com.ameme.android.domain.MemoryEvent> {
+                batchCalls++
+                error("synthetic atomic batch failure")
+            }
+        }
+        val failingAdapter = ScopedCalendarAdapter(
+            expectedSpaceId = SPACE,
+            repository = failingBatchRepository,
+            dataSource = CalendarDataSource { _, _ -> listOf(record()) },
+            zoneId = ZoneId.of("UTC"),
+        )
+        assertTrue(runCatching { failingAdapter.import(request()) }.isFailure)
+        assertEquals(1, batchCalls)
+        assertEquals(before, repository.loadActiveEvents().size)
+    }
+
+    private fun record(
+        calendarId: String = "cal-work",
+        start: Instant = this.start.plusSeconds(60),
+    ) = CalendarSourceRecord(
+        eventId = "42",
+        calendarId = calendarId,
+        start = start,
+        title = "合成评审",
+        detail = "只表示计划",
+        locatorUri = "content://com.android.calendar/events/42",
+    )
 
     private fun request() = CalendarImportRequest(
         spaceId = SPACE,

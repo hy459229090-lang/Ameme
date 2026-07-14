@@ -26,6 +26,7 @@ class ContentUriGrantResolver(private val contentResolver: ContentResolver) : Ur
         require(uri.scheme == ContentResolver.SCHEME_CONTENT) { "Only content URIs are accepted" }
         val mayPersist = grantFlags and Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION != 0
         val hasRead = grantFlags and Intent.FLAG_GRANT_READ_URI_PERMISSION != 0
+        require(hasRead) { "A read grant is required for content URI capture" }
         if (mayPersist && hasRead) {
             val persisted = runCatching {
                 contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
@@ -44,6 +45,58 @@ class ContentUriGrantResolver(private val contentResolver: ContentResolver) : Ur
     }
 }
 
+enum class VoiceCaptureOrigin {
+    SystemRecorder,
+    SystemPicker,
+}
+
+class VoiceCaptureCoordinator(
+    private val repository: MemoryRepository,
+    private val grantResolver: UriGrantResolver,
+    private val clock: Clock = Clock.systemDefaultZone(),
+) {
+    fun capture(
+        uri: Uri?,
+        grantFlags: Int,
+        origin: VoiceCaptureOrigin,
+        mimeType: String = "audio/*",
+    ): MemoryEvent? {
+        if (uri == null) return null
+        require(uri.scheme == ContentResolver.SCHEME_CONTENT) { "Voice source must be a content URI" }
+        require(mimeType.startsWith("audio/") && mimeType.length <= MAX_MIME_LENGTH) {
+            "Voice source must use a bounded audio MIME type"
+        }
+        val permission = grantResolver.resolve(uri, grantFlags)
+        return try {
+            repository.captureSource(
+                SourceCaptureRequest(
+                    sourceKind = when (origin) {
+                        VoiceCaptureOrigin.SystemRecorder -> SourceKind.VoiceRecorder
+                        VoiceCaptureOrigin.SystemPicker -> SourceKind.VoicePicker
+                    },
+                    title = when (origin) {
+                        VoiceCaptureOrigin.SystemRecorder -> "录制了一段语音"
+                        VoiceCaptureOrigin.SystemPicker -> "选择了一段语音"
+                    },
+                    detail = "仅保存用户明确录制或选择的系统音频引用；未转写、未推断音频内容。",
+                    factStatus = FactStatus.Processing,
+                    localDate = LocalDate.now(clock),
+                    time = LocalTime.now(clock).withSecond(0).withNano(0),
+                    locatorUri = uri.toString(),
+                    mimeType = mimeType,
+                    locatorPermissionState = permission,
+                ),
+            )
+        } catch (error: Throwable) {
+            if (permission == LocatorPermissionState.PersistedRead) grantResolver.releasePersisted(uri)
+            throw error
+        }
+    }
+
+    private companion object {
+        const val MAX_MIME_LENGTH = 128
+    }
+}
 data class SourceGrantCleanupResult(
     val attempted: Int,
     val completed: Int,
@@ -157,14 +210,4 @@ class PhotoCaptureCoordinator(
             throw error
         }
     }
-}
-
-enum class VoiceCaptureAvailability { Unsupported, Available }
-
-interface VoiceCaptureContract {
-    val availability: VoiceCaptureAvailability
-}
-
-object UnsupportedVoiceCaptureContract : VoiceCaptureContract {
-    override val availability = VoiceCaptureAvailability.Unsupported
 }
