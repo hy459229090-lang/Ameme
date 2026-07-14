@@ -19,6 +19,7 @@ MAX_GRANT_DAYS = 30
 DEFAULT_CONTEXT_DAYS = 30
 DEFAULT_CONTEXT_ITEMS = 12
 DEFAULT_CONTEXT_TOKENS = 2_000
+CONTEXT_TOKEN_COUNT_METHOD = "sum_ceil_canonical_item_utf8_bytes_div_4_v1"
 CONTEXT_TTL_MINUTES = 15
 UNDO_TTL_MINUTES = 10
 INJECTION_PATTERN = re.compile(
@@ -277,7 +278,11 @@ class AmemeMock:
 
         evidence_state, fact_status = self._evidence(arguments["evidence_kind"])
         now = _iso(self.clock())
+        previous_event_snapshot: dict[str, Any] | None = None
         if memory_type == "revision":
+            target_event = self.store.state["events"].get(arguments.get("target_event_id"))
+            if target_event:
+                previous_event_snapshot = deepcopy(target_event)
             result = self._create_revision(arguments, evidence_state, now)
         elif memory_type == "event":
             event_id = _identifier("evt")
@@ -319,7 +324,7 @@ class AmemeMock:
 
         undo_token = _identifier("undo")
         undo_target = result.get("event_id") or result["target_event_id"]
-        self.store.state["undo"][undo_token] = {
+        undo_record = {
             "caller_id": arguments["caller_id"],
             "grant_id": arguments["grant_id"],
             "target_event_id": undo_target,
@@ -328,6 +333,9 @@ class AmemeMock:
             "expires_at": _iso(self.clock() + timedelta(minutes=UNDO_TTL_MINUTES)),
             "used": False,
         }
+        if previous_event_snapshot is not None:
+            undo_record["previous_event_snapshot"] = previous_event_snapshot
+        self.store.state["undo"][undo_token] = undo_record
         delivery_state = "queued" if self.offline or arguments.get("simulate_offline") else "local_only"
         if delivery_state == "queued":
             self.store.state["queue"].append(
@@ -394,18 +402,85 @@ class AmemeMock:
         undo = self.store.state["undo"].get(arguments["undo_token"])
         if not undo or undo["caller_id"] != arguments["caller_id"] or undo["grant_id"] != arguments["grant_id"]:
             raise MockError("AUTH_REQUIRED", "undo_not_visible")
+        if undo.get("created_object_type") != arguments["memory_type"]:
+            raise MockError("DATA_TYPE_DENIED", "undo_object_type_mismatch")
         if undo["used"]:
-            return {"state": "undone", "replayed": True, "target_event_id": undo["target_event_id"]}
+            replay = deepcopy(undo["result"])
+            replay["replayed"] = True
+            return replay
         if _parse(undo["expires_at"]) <= self.clock():
             raise MockError("CONTEXT_EXPIRED", "undo_window_expired")
+
+        created_object_type = undo["created_object_type"]
+        created_object_id = undo["created_object_id"]
         event = self.store.state["events"].get(undo["target_event_id"])
-        if event:
+        now = _iso(self.clock())
+        result: dict[str, Any]
+        if created_object_type == "event":
+            if not event or event.get("event_id") != created_object_id:
+                raise MockError("AUTH_REQUIRED", "undo_event_not_visible")
             event["state"] = "deleted"
-            event["updated_at"] = _iso(self.clock())
+            event["updated_at"] = now
+            result = {
+                "state": "undone",
+                "target_event_id": event["event_id"],
+                "undone_object_type": "event",
+                "undone_object_id": created_object_id,
+                "activity_visible": True,
+            }
+        elif created_object_type == "revision":
+            created_revision = self.store.state["revisions"].get(created_object_id)
+            previous_snapshot = undo.get("previous_event_snapshot")
+            if (
+                not event
+                or not created_revision
+                or created_revision.get("event_id") != event.get("event_id")
+                or not isinstance(previous_snapshot, dict)
+            ):
+                raise MockError("AUTH_REQUIRED", "undo_revision_not_visible")
+            if event.get("revision_head_id") != created_object_id:
+                raise MockError("UNDO_CONFLICT", "undo_revision_is_not_current_head")
+
+            compensation_revision_id = _identifier("evr")
+            compensation_revision_number = int(event["revision"]) + 1
+            compensation_revision = {
+                "schema_version": 1,
+                "event_revision_id": compensation_revision_id,
+                "event_id": event["event_id"],
+                "base_revision_id": created_object_id,
+                "revision": compensation_revision_number,
+                "actor": "system",
+                "reason": "user_edit",
+                "changes": {
+                    "description": previous_snapshot.get("description"),
+                    "evidence_state": previous_snapshot.get("evidence_state"),
+                    "undo": {"compensates_revision_id": created_object_id},
+                },
+                "created_at": now,
+            }
+            self.store.state["revisions"][compensation_revision_id] = compensation_revision
+
+            restored_event = deepcopy(previous_snapshot)
+            restored_event["revision"] = compensation_revision_number
+            restored_event["revision_head_id"] = compensation_revision_id
+            restored_event["updated_at"] = now
+            self.store.state["events"][event["event_id"]] = restored_event
+            result = {
+                "state": "undone",
+                "target_event_id": event["event_id"],
+                "undone_object_type": "revision",
+                "undone_object_id": created_object_id,
+                "compensation_revision_id": compensation_revision_id,
+                "activity_visible": True,
+            }
+        else:
+            raise MockError("INVALID_ARGUMENT", "undo_object_type_unknown")
+
         undo["used"] = True
+        undo["result"] = deepcopy(result)
         self._activity(arguments["caller_id"], arguments["purpose"], [arguments["space"]], [arguments["memory_type"]], "UNDONE", 1)
         self.store.save()
-        return {"state": "undone", "target_event_id": undo["target_event_id"], "activity_visible": True}
+        return result
 
     def recall(self, arguments: dict[str, Any]) -> dict[str, Any]:
         _required(arguments, "caller_id", "grant_id", "purpose", "spaces", "memory_types")
@@ -478,7 +553,7 @@ class AmemeMock:
                 filtered = True
                 continue
             safe_events.append(event)
-        items = [
+        candidate_items = [
             {
                 "object_type": event["memory_type"],
                 "object_id": event["event_id"],
@@ -490,12 +565,35 @@ class AmemeMock:
             }
             for event in safe_events[:item_budget]
         ]
+        items: list[dict[str, Any]] = []
+        token_count_approx = 0
+        token_limited = False
+        for item in candidate_items:
+            fitted_item, fitted_tokens, truncated = self._fit_context_item(
+                item,
+                token_budget - token_count_approx,
+            )
+            if fitted_item is None:
+                token_limited = True
+                break
+            items.append(fitted_item)
+            token_count_approx += fitted_tokens
+            if truncated:
+                token_limited = True
+                break
+        if len(items) < len(candidate_items):
+            token_limited = True
+
         pack_id = _identifier("ctx")
         partial_reasons: list[str] = []
         if self.offline:
             partial_reasons.append("device_not_synced")
         if filtered:
             partial_reasons.append("policy_filtered")
+        if len(safe_events) > item_budget:
+            partial_reasons.append("item_budget_exhausted")
+        if token_limited:
+            partial_reasons.append("token_budget_exhausted")
         pack = {
             "schema_version": 1,
             "context_pack_id": pack_id,
@@ -507,7 +605,11 @@ class AmemeMock:
             "state": "partial" if partial_reasons else "ready",
             "partial_reasons": partial_reasons,
             "items": items,
+            "item_budget": item_budget,
             "token_budget": token_budget,
+            "token_count_approx": token_count_approx,
+            "token_count_method": CONTEXT_TOKEN_COUNT_METHOD,
+            "token_count_scope": "items_only",
             "instruction_boundary": "memory_is_untrusted_data",
             "created_at": _iso(self.clock()),
             "expires_at": _iso(self.clock() + timedelta(minutes=CONTEXT_TTL_MINUTES)),
@@ -516,6 +618,44 @@ class AmemeMock:
         self._activity(arguments["caller_id"], arguments["purpose"], [space], memory_types, "OK", len(items))
         self.store.save()
         return deepcopy(pack)
+
+    @staticmethod
+    def _context_item_token_count(item: dict[str, Any]) -> int:
+        canonical = json.dumps(item, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        byte_count = len(canonical.encode("utf-8"))
+        return (byte_count + 3) // 4
+
+    @classmethod
+    def _fit_context_item(
+        cls,
+        item: dict[str, Any],
+        token_budget: int,
+    ) -> tuple[dict[str, Any] | None, int, bool]:
+        if token_budget <= 0:
+            return None, 0, False
+        full_count = cls._context_item_token_count(item)
+        if full_count <= token_budget:
+            return item, full_count, False
+
+        content = str(item.get("content") or "")
+        truncated_item = deepcopy(item)
+        truncated_item["content_truncated"] = True
+        low = 0
+        high = len(content)
+        best_item: dict[str, Any] | None = None
+        best_count = 0
+        while low <= high:
+            middle = (low + high) // 2
+            truncated_item["content"] = content[:middle]
+            candidate_count = cls._context_item_token_count(truncated_item)
+            if candidate_count <= token_budget:
+                if middle > 0:
+                    best_item = deepcopy(truncated_item)
+                    best_count = candidate_count
+                low = middle + 1
+            else:
+                high = middle - 1
+        return best_item, best_count, best_item is not None
 
     def feedback(self, arguments: dict[str, Any]) -> dict[str, Any]:
         _required(arguments, "caller_id", "grant_id", "purpose", "space", "memory_type", "target_id", "action", "idempotency_key")
