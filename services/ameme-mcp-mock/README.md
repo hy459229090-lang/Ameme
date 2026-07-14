@@ -71,7 +71,7 @@ python services/ameme-mcp-mock/server.py `
 
 直接执行上面的命令会按设计失败关闭，因为普通 CLI 没有可注入的认证 channel provider。嵌入式宿主必须通过 `server.main(..., android_channel_factory=...)` 注入 provider；provider 返回的会话绑定必须同时匹配 expected device 和 session binding。引用不会写入 MCP control JSON，错误信息和对象诊断也不回显其值。control 中的 caller、Grant、purpose 和 scope 只是已授权请求的声明，不能代替 channel 认证。
 
-共享协议允许六种 EventNode operation，但具体 channel 必须声明实际 capability。当前 Android capture/create endpoint 只承诺 `create_event`；其他合法 operation 必须稳定返回 `OPERATION_UNSUPPORTED`，不得伪装成已支持。超时、畸形响应、request-id/protocol 不匹配、会话绑定错误和 scope 越界均在五秒内失败关闭并毒化当前 channel，后续请求不会继续进入同一失效会话。
+共享协议允许六种 EventNode operation，但具体 adapter 和 channel 都必须声明实际 capability。当前 MCP Android adapter 以 `IMPLEMENTED_OPERATIONS={"create_event"}` 硬限制实现面，capture/create endpoint 也只承诺 `create_event`；即使 channel 多报 append、undo 或 read capability，其他合法 operation 仍稳定返回 `OPERATION_UNSUPPORTED`，不得伪装成已支持。`create_event` 成功响应只接受 `object_type/event_id/revision` 三个控制字段，不接受正文、空间或其他额外字段。超时、畸形响应、request-id/protocol 不匹配、会话绑定错误和非法成功响应均在五秒内失败关闭并毒化当前 channel，后续请求不会继续进入同一失效会话。
 
 离线队列语义可使用 `--offline` 或 `AMEME_MCP_MOCK_OFFLINE=true`。服务按一行一个 JSON-RPC 消息读写 stdio，stdout 不输出诊断文本。
 

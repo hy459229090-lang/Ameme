@@ -25,6 +25,7 @@ from ameme_mcp_mock.android_local_node_store import (  # noqa: E402
     AndroidLocalNodeSessionBinding,
     AndroidLocalNodeStore,
     AndroidLocalNodeUnavailable,
+    IMPLEMENTED_OPERATIONS,
 )
 from ameme_mcp_mock import AmemeMock  # noqa: E402
 from ameme_agent_local_node_protocol import (  # noqa: E402
@@ -57,17 +58,9 @@ class FakeChannel:
 
     def _default_handler(self, request):
         operation = parse_request_line(request.wire_copy())["control"]["operation"]
-        if operation == "create_event":
-            result = {"object_type": "event", "event_id": "evt_synthetic", "revision": 1}
-        elif operation == "append_revision":
-            result = {
-                "object_type": "revision",
-                "event_revision_id": "evr_synthetic",
-                "target_event_id": "evt_synthetic",
-                "revision": 2,
-            }
-        else:
-            result = None
+        if operation != "create_event":
+            raise AssertionError("fake channel only implements create_event")
+        result = {"object_type": "event", "event_id": "evt_synthetic", "revision": 1}
         return AndroidLocalNodeResponse.for_request(request, result=result)
 
     def exchange(self, request):
@@ -128,7 +121,7 @@ class AndroidLocalNodeStoreTest(unittest.TestCase):
         return store.create_event(**arguments)
 
     def test_grant_superset_emits_minimal_request_scope_and_redacted_control(self) -> None:
-        channel = FakeChannel(supported_operations={"create_event", "append_revision"})
+        channel = FakeChannel()
         store = self.store(channel)
 
         result = self.create(store)
@@ -237,9 +230,19 @@ class AndroidLocalNodeStoreTest(unittest.TestCase):
         self.assertEqual(1, len(channel.calls))
         store.close()
 
-    def test_undeclared_channel_operation_is_stably_rejected_without_exchange(self) -> None:
-        channel = FakeChannel()
+    def test_channel_overreporting_capabilities_does_not_expand_store_surface(self) -> None:
+        channel = FakeChannel(
+            supported_operations={
+                "create_event",
+                "get_event",
+                "append_revision",
+                "undo_capture",
+            }
+        )
         store = self.store(channel)
+        self.assertEqual({"create_event"}, IMPLEMENTED_OPERATIONS)
+        self.assertEqual(frozenset({"create_event"}), store.supported_operations)
+        self.assertIn("append_revision", store.channel_operations)
         with self.assertRaisesRegex(
             AndroidLocalNodeOperationUnsupported,
             "^android_local_node_operation_unsupported$",
@@ -250,28 +253,36 @@ class AndroidLocalNodeStoreTest(unittest.TestCase):
                 space="space_work",
                 memory_type="event",
             )
+        with self.assertRaisesRegex(
+            AndroidLocalNodeOperationUnsupported,
+            "^android_local_node_operation_unsupported$",
+        ):
+            store.append_revision(
+                scope=self.scope,
+                space="space_work",
+                event_id="evt_synthetic",
+                content="Synthetic revision",
+                evidence_state="user_asserted",
+                fact_status="user_asserted",
+                now="2026-07-14T08:02:00+00:00",
+                idempotency_key="RAW_IDEMPOTENCY_KEY_SYNTHETIC",
+            )
+        with self.assertRaisesRegex(
+            AndroidLocalNodeOperationUnsupported,
+            "^android_local_node_operation_unsupported$",
+        ):
+            store.undo_capture(
+                {"internal": "must-not-cross-wire"},
+                scope=self.scope,
+                space="space_work",
+                memory_type="event",
+                now="2026-07-14T08:03:00+00:00",
+                idempotency_key="undo_synthetic_001",
+            )
         self.assertEqual([], channel.calls)
-        store.close()
-
-    def test_idempotency_slot_is_operation_domain_separated(self) -> None:
-        channel = FakeChannel(supported_operations={"create_event", "append_revision"})
-        store = self.store(channel)
         self.create(store)
-        store.append_revision(
-            scope=self.scope,
-            space="space_work",
-            event_id="evt_synthetic",
-            content="Synthetic revision",
-            evidence_state="user_asserted",
-            fact_status="user_asserted",
-            now="2026-07-14T08:02:00+00:00",
-            idempotency_key="RAW_IDEMPOTENCY_KEY_SYNTHETIC",
-        )
-
-        self.assertNotEqual(
-            channel.calls[0][0]["control"]["idempotency_slot"],
-            channel.calls[1][0]["control"]["idempotency_slot"],
-        )
+        self.assertEqual(1, len(channel.calls))
+        self.assertNotIn(b"must-not-cross-wire", channel.calls[0][1])
         store.close()
 
     def test_scope_excess_fails_before_channel_use(self) -> None:
@@ -325,7 +336,7 @@ class AndroidLocalNodeStoreTest(unittest.TestCase):
                     self.create(store)
                 store.close()
 
-    def test_response_binding_and_scope_mismatch_fail_closed(self) -> None:
+    def test_response_binding_mismatch_fails_closed(self) -> None:
         def wrong_request_id(request):
             result = {"object_type": "event", "event_id": "evt_other", "revision": 1}
             return AndroidLocalNodeResponse(
@@ -380,31 +391,51 @@ class AndroidLocalNodeStoreTest(unittest.TestCase):
                 self.assertEqual(1, len(channel.calls))
                 store.close()
 
-    def test_overscoped_success_result_poisons_channel(self) -> None:
-        def cross_space_event(request):
-            return AndroidLocalNodeResponse.for_request(
-                request,
-                result={
-                    "event_id": "evt_cross_space",
-                    "owner_id": self.scope.owner_id,
-                    "space_id": "space_secret",
-                    "memory_type": "event",
-                },
-            )
+    def test_malicious_create_results_are_rejected_and_poison_channel(self) -> None:
+        cases = (
+            {
+                "object_type": "event",
+                "event_id": "evt_extra",
+                "revision": 1,
+                "content": "MALICIOUS_RESPONSE_CONTENT",
+                "space_id": "space_secret",
+            },
+            {"object_type": "revision", "event_id": "evt_wrong", "revision": 1},
+            {"object_type": "event", "event_id": "../bad", "revision": 1},
+            {"object_type": "event", "event_id": "evt_bool", "revision": True},
+            {"object_type": "event", "event_id": "evt_zero", "revision": 0},
+            {"object_type": "event", "event_id": "evt_string", "revision": "1"},
+        )
+        for result in cases:
+            with self.subTest(result=result):
+                responses = []
 
-        channel = FakeChannel(cross_space_event, supported_operations={"create_event", "get_event"})
-        store = self.store(channel)
-        with self.assertRaisesRegex(
-            AndroidLocalNodeProtocolError,
-            "^android_local_node_result_scope_mismatch$",
-        ):
-            store.get_event(
-                "evt_cross_space",
-                scope=self.scope,
-                space="space_work",
-                memory_type="event",
-            )
-        store.close()
+                def malicious(request, value=result):
+                    response = AndroidLocalNodeResponse.for_request(
+                        request,
+                        result=value,
+                    )
+                    responses.append(response)
+                    return response
+
+                channel = FakeChannel(malicious)
+                store = self.store(channel)
+                with self.assertRaisesRegex(
+                    AndroidLocalNodeProtocolError,
+                    "^android_local_node_create_result_invalid$",
+                ):
+                    self.create(store)
+                with self.assertRaisesRegex(
+                    AndroidLocalNodeUnavailable,
+                    "^android_local_node_unavailable$",
+                ):
+                    self.create(store)
+                self.assertEqual(1, len(channel.calls))
+                self.assertEqual(1, len(responses))
+                self.assertIn("<cleared>", repr(responses[0]))
+                self.assertNotIn("MALICIOUS_RESPONSE_CONTENT", repr(responses[0]))
+                self.assertGreaterEqual(channel.closed, 1)
+                store.close()
 
     def test_timeout_allows_only_one_inflight_exchange_then_poison(self) -> None:
         release = threading.Event()

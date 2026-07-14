@@ -14,7 +14,7 @@ import queue
 import re
 import threading
 import uuid
-from typing import Any, Callable, Iterable, Protocol, runtime_checkable
+from typing import Any, Callable, Iterable, NoReturn, Protocol, runtime_checkable
 
 from ameme_agent_local_node_protocol import (
     ERROR_RETRYABLE,
@@ -42,6 +42,7 @@ from .store import JsonStore
 
 
 MAX_RESPONSE_SECONDS = 5.0
+IMPLEMENTED_OPERATIONS = {"create_event"}
 _IDENTIFIER = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")
 _REFERENCE_SUFFIX = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,239}")
 
@@ -272,7 +273,10 @@ class AndroidLocalNodeStore:
             ) from None
         self.state = self.control.state
         self.channel_config = channel_config
-        self.supported_operations = supported_operations
+        self.channel_operations = supported_operations
+        self.supported_operations = frozenset(
+            supported_operations & IMPLEMENTED_OPERATIONS
+        )
         self.response_timeout_seconds = response_timeout_seconds
         self.request_id_factory = request_id_factory or (
             lambda: f"req_{uuid.uuid4().hex}"
@@ -392,7 +396,10 @@ class AndroidLocalNodeStore:
         requested_spaces, requested_types = self._requested_scope(
             scope, spaces, memory_types
         )
-        if operation not in self.supported_operations:
+        if (
+            operation not in IMPLEMENTED_OPERATIONS
+            or operation not in self.supported_operations
+        ):
             raise AndroidLocalNodeOperationUnsupported(
                 "android_local_node_operation_unsupported"
             )
@@ -485,6 +492,18 @@ class AndroidLocalNodeStore:
         self._poison_channel()
         raise AndroidLocalNodeProtocolError("android_local_node_remote_protocol_error")
 
+    def _unsupported_operation(
+        self,
+        *,
+        scope: EventNodeScope,
+        spaces: Iterable[str],
+        memory_types: Iterable[str],
+    ) -> NoReturn:
+        self._requested_scope(scope, spaces, memory_types)
+        raise AndroidLocalNodeOperationUnsupported(
+            "android_local_node_operation_unsupported"
+        )
+
     def get_event(
         self,
         event_id: str,
@@ -493,23 +512,11 @@ class AndroidLocalNodeStore:
         space: str,
         memory_type: str,
     ) -> dict[str, Any] | None:
-        event = self._request(
-            "get_event",
+        self._unsupported_operation(
             scope=scope,
             spaces=(space,),
             memory_types=(memory_type,),
-            payload={"event_id": event_id, "space": space, "memory_type": memory_type},
         )
-        if (
-            event.get("owner_id") != scope.owner_id
-            or event.get("space_id") != space
-            or event.get("memory_type", "event") != memory_type
-        ):
-            self._poison_channel()
-            raise AndroidLocalNodeProtocolError(
-                "android_local_node_result_scope_mismatch"
-            )
-        return event
 
     def create_event(
         self,
@@ -539,7 +546,7 @@ class AndroidLocalNodeStore:
         }
         if event_time is not None:
             payload["event_time"] = event_time
-        return self._request(
+        result = self._request(
             "create_event",
             scope=scope,
             spaces=(space,),
@@ -547,6 +554,20 @@ class AndroidLocalNodeStore:
             payload=payload,
             idempotency_key=idempotency_key,
         )
+        if (
+            set(result) != {"object_type", "event_id", "revision"}
+            or result.get("object_type") != "event"
+            or not isinstance(result.get("event_id"), str)
+            or not _IDENTIFIER.fullmatch(result["event_id"])
+            or not isinstance(result.get("revision"), int)
+            or isinstance(result.get("revision"), bool)
+            or result["revision"] <= 0
+        ):
+            self._poison_channel()
+            raise AndroidLocalNodeProtocolError(
+                "android_local_node_create_result_invalid"
+            )
+        return result
 
     def append_revision(
         self,
@@ -560,21 +581,10 @@ class AndroidLocalNodeStore:
         now: str,
         idempotency_key: str,
     ) -> dict[str, Any]:
-        return self._request(
-            "append_revision",
+        self._unsupported_operation(
             scope=scope,
             spaces=(space,),
             memory_types=("revision",),
-            payload={
-                "event_id": event_id,
-                "space": space,
-                "memory_type": "revision",
-                "content": content,
-                "evidence_state": evidence_state,
-                "fact_status": fact_status,
-                "now": now,
-            },
-            idempotency_key=idempotency_key,
         )
 
     def undo_capture(
@@ -587,19 +597,10 @@ class AndroidLocalNodeStore:
         now: str,
         idempotency_key: str,
     ) -> dict[str, Any]:
-        del undo
-        return self._request(
-            "undo_capture",
+        self._unsupported_operation(
             scope=scope,
             spaces=(space,),
             memory_types=(memory_type,),
-            payload={
-                "undo_token": idempotency_key,
-                "space": space,
-                "memory_type": memory_type,
-                "now": now,
-            },
-            idempotency_key=idempotency_key,
         )
 
     def visible_events(
@@ -613,45 +614,11 @@ class AndroidLocalNodeStore:
         start_at: datetime | None,
         end_at: datetime | None,
     ) -> tuple[list[dict[str, Any]], bool]:
-        requested_spaces, requested_types = self._requested_scope(
-            scope, spaces, memory_types
-        )
-        payload: dict[str, Any] = {
-            "spaces": requested_spaces,
-            "memory_types": requested_types,
-            "allow_high_risk": allow_high_risk,
-            "limit": 100,
-        }
-        if query is not None:
-            payload["query"] = query
-        if start_at is not None:
-            payload["start_at"] = start_at.isoformat()
-        if end_at is not None:
-            payload["end_at"] = end_at.isoformat()
-        result = self._request(
-            "visible_events",
+        self._unsupported_operation(
             scope=scope,
-            spaces=requested_spaces,
-            memory_types=requested_types,
-            payload=payload,
+            spaces=spaces,
+            memory_types=memory_types,
         )
-        events = result.get("events")
-        risk_filtered = result.get("risk_filtered")
-        if not isinstance(events, list) or not isinstance(risk_filtered, bool):
-            self._poison_channel()
-            raise AndroidLocalNodeProtocolError("android_local_node_result_invalid")
-        for event in events:
-            if (
-                not isinstance(event, dict)
-                or event.get("owner_id") != scope.owner_id
-                or event.get("space_id") not in requested_spaces
-                or event.get("memory_type") not in requested_types
-            ):
-                self._poison_channel()
-                raise AndroidLocalNodeProtocolError(
-                    "android_local_node_result_scope_mismatch"
-                )
-        return events, risk_filtered
 
     def set_policy_blocked(
         self,
@@ -661,18 +628,11 @@ class AndroidLocalNodeStore:
         space: str,
         memory_type: str,
     ) -> bool:
-        result = self._request(
-            "set_policy_blocked",
+        self._unsupported_operation(
             scope=scope,
             spaces=(space,),
             memory_types=(memory_type,),
-            payload={"event_id": event_id, "space": space, "memory_type": memory_type},
         )
-        blocked = result.get("blocked")
-        if not isinstance(blocked, bool):
-            self._poison_channel()
-            raise AndroidLocalNodeProtocolError("android_local_node_result_invalid")
-        return blocked
 
     def enqueue_delivery(
         self,
