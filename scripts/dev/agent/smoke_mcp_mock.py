@@ -3,6 +3,7 @@
 # Output: A JSON smoke summary; non-zero exit on protocol, policy, or lifecycle failure.
 from __future__ import annotations
 
+import argparse
 import json
 import subprocess
 import sys
@@ -18,10 +19,20 @@ SEED = ROOT / "tests" / "fixtures" / "agent" / "synthetic-memories.json"
 
 
 class Client:
-    def __init__(self, data_dir: Path) -> None:
+    def __init__(self, data_dir: Path, backend: str) -> None:
         self.next_id = 1
+        command = [
+            sys.executable,
+            str(SERVER),
+            "--data-dir",
+            str(data_dir),
+            "--store-backend",
+            backend,
+        ]
+        if backend == "json":
+            command.extend(["--seed-file", str(SEED)])
         self.process = subprocess.Popen(
-            [sys.executable, str(SERVER), "--data-dir", str(data_dir), "--seed-file", str(SEED)],
+            command,
             cwd=ROOT,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
@@ -68,9 +79,20 @@ class Client:
             self.process.wait(timeout=5)
 
 
+def _arguments() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Smoke the Ameme MCP stdio server")
+    parser.add_argument(
+        "--store-backend",
+        choices=("json", "core-oracle-host-reference"),
+        default="json",
+    )
+    return parser.parse_args()
+
+
 def main() -> int:
+    arguments = _arguments()
     with tempfile.TemporaryDirectory() as directory:
-        client = Client(Path(directory))
+        client = Client(Path(directory), arguments.store_backend)
         try:
             initialized = client.request("initialize", {"protocolVersion": "2024-11-05", "capabilities": {}, "clientInfo": {"name": "ameme-smoke", "version": "0.1"}})
             tools = client.request("tools/list")["tools"]
@@ -150,6 +172,7 @@ def main() -> int:
             )
             summary = {
                 "status": "passed",
+                "store_backend": arguments.store_backend,
                 "protocol": initialized["protocolVersion"],
                 "tools_checked": len(tools),
                 "capture_state": [captured["persistence_state"], captured["delivery_state"]],

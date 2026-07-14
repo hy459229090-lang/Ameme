@@ -18,6 +18,7 @@ Native Android 14+ client skeleton with an encrypted Local Event Node and the fi
 - Kotlin contract bundle DTO, schema-subset validator, and round-trip tests against `packages/contracts` remain intact.
 - Voice recording, Calendar Provider, location, health, account, network, analytics, Raw Vault, and bulk/background system-source integrations are not implemented.
 - Production starts with an empty repository and never seeds `FakeMemoryRepository`; synthetic seeds are available only through an explicit test/demo flag. Today shows deterministic counts, not a fabricated fixed summary.
+- `AgentLocalNodeTransport` now freezes the application-layer port needed by a future authenticated Agent-to-Android path: exact space/type scope, content-free retry/audit metadata, domain-separated idempotency slot, payload digest, and redacted opaque payload. It intentionally has no implementation and defines no LAN wire format. Real Codex/Agent access to the Android SQLCipher Local Node remains blocked on approved device discovery, authentication, encryption, replay protection, background lifecycle, and transport evidence; Android never starts or falls back to the Python Oracle host.
 
 The manifest declares no sensitive permissions. All bundled people, events, IDs, locations, and content are synthetic.
 
@@ -74,6 +75,7 @@ The storage instrumented suite verifies on an API 36 x86_64 AVD:
 - compiled cloud-backup/device-transfer exclusions for every application data domain;
 - successful and failed-open key-array clearing;
 - Android Keystore wrapped-key reuse after an initial database-creation failure.
+- Agent Local Node port exact-scope rejection, strict protocol/request-response binding, opaque payload defensive copy/redaction, and explicit payload clearing.
 
 This is API 36 AVD evidence only. It does not prove physical-device compatibility, 16 KB page-size readiness, OS process-death recovery, 10k/100k capacity, startup or paging performance, backup/restore, physical deletion, Calendar Provider/voice behavior, Raw Vault, or peer sync. FTS5 is verified only for the tested SQLCipher runtime; other runtime/device combinations may use the tested LIKE fallback.
 

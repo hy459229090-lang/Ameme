@@ -17,6 +17,7 @@ if str(CORE_ROOT) not in sys.path:
 
 from ameme_mcp_mock import AmemeMock, JsonStore  # noqa: E402
 from ameme_mcp_mock.core_store import CoreEventNodeStore  # noqa: E402
+from ameme_mcp_mock.native_host_store import CoreOracleHostReferenceStore  # noqa: E402
 
 
 FIXED_NOW = datetime(2026, 7, 14, 4, 0, tzinfo=timezone.utc)
@@ -52,6 +53,20 @@ class Harness:
                 self.root / "core.sqlite3",
                 clock=lambda: FIXED_NOW,
                 fault_injector=self.fault_injector,
+            )
+        elif self.backend == "core_host":
+            if self.seed:
+                raise ValueError(
+                    "CoreOracleHostReferenceStore tests must capture synthetic data "
+                    "through public commands"
+                )
+            if self.fault_injector is not None:
+                raise ValueError(
+                    "fault injection belongs to the in-process Core oracle tests"
+                )
+            self.store = CoreOracleHostReferenceStore(
+                self.root / "mcp-control.json",
+                self.root / "core-oracle-host",
             )
         else:
             raise ValueError(f"unknown Harness backend: {self.backend}")
