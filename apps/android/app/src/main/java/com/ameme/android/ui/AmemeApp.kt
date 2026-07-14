@@ -129,8 +129,9 @@ fun AmemeApp(
         }
     }
     DisposableEffect(repository, repositoryOverride) {
+        val ownedRepository = repository.takeIf { repositoryOverride == null }
         onDispose {
-            if (repositoryOverride == null) repository?.let(ioExecutor::closeInBackground)
+            ownedRepository?.let(ioExecutor::closeInBackground)
         }
     }
     val experienceMode = ExperienceMode.valueOf(experienceModeName)
