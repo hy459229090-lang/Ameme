@@ -1,0 +1,307 @@
+{
+  "fixture_version": 1,
+  "description": "Fully synthetic sparse day for the non-production local-core oracle.",
+  "owner_id": "owner_synthetic",
+  "space_id": "space_synthetic_personal",
+  "contract": {
+    "schema_version": 1,
+    "contract_id": "contract_synthetic_calendar",
+    "owner_id": "owner_synthetic",
+    "space_id": "space_synthetic_personal",
+    "device_id": "device_synthetic_001",
+    "source_type": "calendar",
+    "purpose": "Read one synthetic calendar item",
+    "data_types": [
+      "calendar_metadata"
+    ],
+    "permission_state": "granted",
+    "processing_locations": [
+      "device"
+    ],
+    "sync_mode": "structured_sync",
+    "valid_from": "2026-07-14T08:00:00+08:00",
+    "revocation_state": "active",
+    "created_at": "2026-07-14T08:00:00+08:00",
+    "updated_at": "2026-07-14T08:00:00+08:00"
+  },
+  "additional_contracts": [
+    {
+      "schema_version": 1,
+      "contract_id": "contract_synthetic_share",
+      "owner_id": "owner_synthetic",
+      "space_id": "space_synthetic_personal",
+      "device_id": "device_synthetic_001",
+      "source_type": "share",
+      "purpose": "Read one synthetic shared reference",
+      "data_types": [
+        "shared_link_metadata"
+      ],
+      "permission_state": "granted",
+      "processing_locations": [
+        "device"
+      ],
+      "sync_mode": "structured_sync",
+      "valid_from": "2026-07-14T08:00:00+08:00",
+      "revocation_state": "active",
+      "created_at": "2026-07-14T08:00:00+08:00",
+      "updated_at": "2026-07-14T08:00:00+08:00"
+    },
+    {
+      "schema_version": 1,
+      "contract_id": "contract_synthetic_text",
+      "owner_id": "owner_synthetic",
+      "space_id": "space_synthetic_personal",
+      "device_id": "device_synthetic_001",
+      "source_type": "text",
+      "purpose": "Save one synthetic user text addendum",
+      "data_types": [
+        "user_text"
+      ],
+      "permission_state": "granted",
+      "processing_locations": [
+        "device"
+      ],
+      "sync_mode": "structured_sync",
+      "valid_from": "2026-07-14T08:00:00+08:00",
+      "revocation_state": "active",
+      "created_at": "2026-07-14T08:00:00+08:00",
+      "updated_at": "2026-07-14T08:00:00+08:00"
+    }
+  ],
+  "day": {
+    "local_date": "2026-07-14",
+    "timezone": "Asia/Shanghai",
+    "coverage_state": "partial",
+    "partial_reasons": [
+      "device_not_synced"
+    ]
+  },
+  "records": [
+    {
+      "name": "planned_review",
+      "contract_id": "contract_synthetic_calendar",
+      "source": {
+        "source_type": "calendar",
+        "capture_method": "explicit",
+        "acquired_at": "2026-07-14T08:10:00+08:00",
+        "occurred_range": {
+          "start": "2026-07-14T09:00:00+08:00",
+          "end": "2026-07-14T09:30:00+08:00",
+          "timezone": "Asia/Shanghai",
+          "precision": "minute"
+        },
+        "content_hash": "sha256_synthetic_calendar_0001",
+        "sensitivity": "personal",
+        "source_locator": {
+          "locator_type": "app_private_object",
+          "opaque_locator_ref": "synthetic:calendar:001",
+          "display_label": "Synthetic calendar item",
+          "state": "available",
+          "last_verified_at": "2026-07-14T08:10:00+08:00"
+        }
+      },
+      "observation": {
+        "kind": "calendar_plan",
+        "value": {
+          "title": "Project review"
+        },
+        "time_range": {
+          "start": "2026-07-14T09:00:00+08:00",
+          "end": "2026-07-14T09:30:00+08:00",
+          "timezone": "Asia/Shanghai",
+          "precision": "minute"
+        },
+        "fact_status": "planned",
+        "confidence": 1.0,
+        "parser_version": "synthetic-calendar-v1",
+        "created_at": "2026-07-14T08:10:01+08:00"
+      },
+      "event": {
+        "event_type": "activity",
+        "time_range": {
+          "start": "2026-07-14T09:00:00+08:00",
+          "end": "2026-07-14T09:30:00+08:00",
+          "timezone": "Asia/Shanghai",
+          "precision": "minute"
+        },
+        "title": "Project review (planned)",
+        "description": "Calendar evidence only; occurrence is not confirmed.",
+        "fact_status": "planned",
+        "sensitivity": "personal",
+        "actor": "system",
+        "created_at": "2026-07-14T08:10:02+08:00"
+      },
+      "evidences": [
+        {
+          "field": "time",
+          "confidence": 1.0,
+          "status": "planned"
+        },
+        {
+          "field": "action",
+          "confidence": 1.0,
+          "status": "planned"
+        }
+      ]
+    },
+    {
+      "name": "inferred_research",
+      "contract_id": "contract_synthetic_share",
+      "source": {
+        "source_type": "share",
+        "capture_method": "share",
+        "acquired_at": "2026-07-14T15:05:00+08:00",
+        "occurred_range": {
+          "start": "2026-07-14T15:00:00+08:00",
+          "timezone": "Asia/Shanghai",
+          "precision": "minute"
+        },
+        "content_hash": "sha256_synthetic_share_00000001",
+        "sensitivity": "personal",
+        "source_locator": {
+          "locator_type": "external_file_ref",
+          "opaque_locator_ref": "synthetic:share:001",
+          "display_label": "Synthetic shared reference",
+          "state": "available",
+          "last_verified_at": "2026-07-14T15:05:00+08:00"
+        }
+      },
+      "observation": {
+        "kind": "shared_reference_topic",
+        "value": {
+          "topic": "hiking routes"
+        },
+        "time_range": {
+          "start": "2026-07-14T15:00:00+08:00",
+          "timezone": "Asia/Shanghai",
+          "precision": "minute"
+        },
+        "fact_status": "inferred",
+        "confidence": 0.72,
+        "parser_version": "synthetic-share-rule-v1",
+        "created_at": "2026-07-14T15:05:01+08:00"
+      },
+      "event": {
+        "event_type": "activity",
+        "time_range": {
+          "start": "2026-07-14T15:00:00+08:00",
+          "timezone": "Asia/Shanghai",
+          "precision": "minute"
+        },
+        "title": "Researched hiking routes",
+        "description": "Inferred from one shared reference; no outcome is claimed.",
+        "fact_status": "high_confidence_inference",
+        "sensitivity": "personal",
+        "actor": "system",
+        "created_at": "2026-07-14T15:05:02+08:00"
+      },
+      "evidences": [
+        {
+          "field": "action",
+          "confidence": 0.72,
+          "status": "inferred"
+        }
+      ]
+    },
+    {
+      "name": "river_walk",
+      "contract_id": "contract_synthetic_text",
+      "source": {
+        "source_type": "text",
+        "capture_method": "explicit",
+        "acquired_at": "2026-07-14T20:05:00+08:00",
+        "occurred_range": {
+          "start": "2026-07-14T19:30:00+08:00",
+          "end": "2026-07-14T20:00:00+08:00",
+          "timezone": "Asia/Shanghai",
+          "precision": "minute"
+        },
+        "content_hash": "sha256_synthetic_text_000000001",
+        "sensitivity": "personal",
+        "source_locator": {
+          "locator_type": "app_private_object",
+          "opaque_locator_ref": "synthetic:text:walk:001",
+          "display_label": "Synthetic text note",
+          "state": "available",
+          "last_verified_at": "2026-07-14T20:05:00+08:00"
+        }
+      },
+      "addendum": {
+        "text": "Walked along the river after dinner; the breeze felt comfortable.",
+        "submitted_at": "2026-07-14T20:05:00+08:00",
+        "event_time": {
+          "start": "2026-07-14T19:30:00+08:00",
+          "end": "2026-07-14T20:00:00+08:00",
+          "timezone": "Asia/Shanghai",
+          "precision": "minute"
+        },
+        "target_type": "new_event",
+        "assertion_scope": "fact_and_feeling",
+        "sensitivity": "personal"
+      },
+      "observation": {
+        "kind": "user_statement",
+        "value": {
+          "text": "Synthetic river walk statement"
+        },
+        "time_range": {
+          "start": "2026-07-14T19:30:00+08:00",
+          "end": "2026-07-14T20:00:00+08:00",
+          "timezone": "Asia/Shanghai",
+          "precision": "minute"
+        },
+        "fact_status": "user_asserted",
+        "confidence": 1.0,
+        "parser_version": "explicit-text-v1",
+        "created_at": "2026-07-14T20:05:01+08:00"
+      },
+      "event": {
+        "event_type": "experience",
+        "time_range": {
+          "start": "2026-07-14T19:30:00+08:00",
+          "end": "2026-07-14T20:00:00+08:00",
+          "timezone": "Asia/Shanghai",
+          "precision": "minute"
+        },
+        "title": "River walk after dinner",
+        "description": "The user explicitly recorded a calm walk by the river.",
+        "fact_status": "user_asserted",
+        "sensitivity": "personal",
+        "actor": "user",
+        "created_at": "2026-07-14T20:05:02+08:00"
+      },
+      "evidences": [
+        {
+          "field": "action",
+          "confidence": 1.0,
+          "status": "user_asserted"
+        },
+        {
+          "field": "emotion",
+          "confidence": 1.0,
+          "status": "user_asserted"
+        }
+      ]
+    }
+  ],
+  "episodes": [
+    {
+      "name": "evening_walk",
+      "title": "Evening river walk",
+      "time_range": {
+        "start": "2026-07-14T19:30:00+08:00",
+        "end": "2026-07-14T20:00:00+08:00",
+        "timezone": "Asia/Shanghai",
+        "precision": "minute"
+      },
+      "sensitivity": "personal",
+      "created_at": "2026-07-14T20:05:03+08:00",
+      "event_refs": [
+        {
+          "record": "river_walk",
+          "role": "middle"
+        }
+      ]
+    }
+  ]
+}
