@@ -27,14 +27,18 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.ameme.android.data.MemoryRepository
+import com.ameme.android.data.MemoryIoExecutor
+import com.ameme.android.data.runCatchingCancellable
 import com.ameme.android.domain.ExperienceMode
 import com.ameme.android.domain.DayGroup
 import com.ameme.android.domain.MemoryEvent
@@ -45,11 +49,14 @@ import com.ameme.android.ui.displayDate
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SearchScreen(
     repository: MemoryRepository,
+    ioExecutor: MemoryIoExecutor,
     experienceMode: ExperienceMode,
     onBack: () -> Unit,
     onEvent: (String) -> Unit,
@@ -57,10 +64,26 @@ fun SearchScreen(
     var query by remember { mutableStateOf("") }
     var selectedDate by remember { mutableStateOf<LocalDate?>(null) }
     var showCalendar by remember { mutableStateOf(false) }
-    var page by remember(query, selectedDate, repository) {
-        mutableStateOf(repository.searchPage(query, selectedDate, cursor = null, pageSize = PAGE_SIZE))
+    var page by remember(repository) { mutableStateOf<com.ameme.android.domain.MemoryPage?>(null) }
+    var searchInFlight by remember { mutableStateOf(false) }
+    var searchFailed by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    LaunchedEffect(repository, query, selectedDate) {
+        searchInFlight = true
+        searchFailed = false
+        if (query.isNotBlank()) delay(SEARCH_DEBOUNCE_MS)
+        runCatchingCancellable {
+            ioExecutor.searchPage(repository, query, selectedDate, cursor = null, pageSize = PAGE_SIZE)
+        }.onSuccess {
+            page = it
+        }.onFailure {
+            page = null
+            searchFailed = true
+        }
+        searchInFlight = false
     }
-    val rawGroups = page.events
+    val rawGroups = page?.events.orEmpty()
         .groupBy(MemoryEvent::localDate)
         .toSortedMap(compareByDescending { it })
         .map { (date, events) -> DayGroup(date, events) }
@@ -124,10 +147,23 @@ fun SearchScreen(
                 mode = experienceMode,
                 modifier = Modifier.padding(top = 10.dp),
             )
+            Text(
+                "按日期从新到旧浏览，底部可加载更早记录",
+                modifier = Modifier.padding(top = 10.dp),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+            )
             if (groups.isEmpty()) {
                 EmptyMessage(
-                    title = if (query.isBlank() && selectedDate == null) "当前可见范围内没有记录" else "当前条件没有结果",
-                    detail = if (query.isBlank()) {
+                    title = when {
+                        searchInFlight -> "正在读取本机索引"
+                        searchFailed -> "搜索暂不可用"
+                        query.isBlank() && selectedDate == null -> "当前可见范围内没有记录"
+                        else -> "当前条件没有结果"
+                    },
+                    detail = if (searchFailed) {
+                        "已有内容保持安全；可以稍后重试当前搜索。"
+                    } else if (query.isBlank()) {
                         "这只说明当前本机与获准范围没有可见事件。"
                     } else {
                         "未找到“$query”；可以清除搜索词或日期，不代表这件事从未发生。"
@@ -135,12 +171,6 @@ fun SearchScreen(
                     modifier = Modifier.weight(1f),
                 )
             } else {
-                Text(
-                    "按日期从新到旧浏览，底部可加载更早记录",
-                    modifier = Modifier.padding(top = 10.dp),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                )
                 LazyColumn(
                     modifier = Modifier.fillMaxWidth().weight(1f),
                     contentPadding = PaddingValues(vertical = 12.dp),
@@ -161,18 +191,35 @@ fun SearchScreen(
                         }
                     }
                     item(key = "load-more") {
-                        if (page.nextCursor != null) {
+                        if (page?.nextCursor != null) {
                             OutlinedButton(
                                 onClick = {
-                                    val next = repository.searchPage(query, selectedDate, page.nextCursor, PAGE_SIZE)
-                                    page = page.copy(
-                                        events = page.events + next.events,
-                                        nextCursor = next.nextCursor,
-                                        searchBackend = next.searchBackend,
-                                    )
+                                    val current = page ?: return@OutlinedButton
+                                    if (!searchInFlight) {
+                                        searchInFlight = true
+                                        scope.launch {
+                                            runCatchingCancellable {
+                                                ioExecutor.searchPage(
+                                                    repository,
+                                                    query,
+                                                    selectedDate,
+                                                    current.nextCursor,
+                                                    PAGE_SIZE,
+                                                )
+                                            }.onSuccess { next ->
+                                                page = current.copy(
+                                                    events = current.events + next.events,
+                                                    nextCursor = next.nextCursor,
+                                                    searchBackend = next.searchBackend,
+                                                )
+                                            }.onFailure { searchFailed = true }
+                                            searchInFlight = false
+                                        }
+                                    }
                                 },
                                 modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
-                            ) { Text("加载更早") }
+                                enabled = !searchInFlight,
+                            ) { Text(if (searchInFlight) "正在加载…" else "加载更早") }
                         } else {
                             Text(
                                 "当前范围已加载完毕",
@@ -200,6 +247,7 @@ fun SearchScreen(
 }
 
 private const val PAGE_SIZE = 20
+private const val SEARCH_DEBOUNCE_MS = 200L
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

@@ -10,6 +10,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
@@ -19,7 +20,9 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.ameme.android.data.MemoryRepository
+import com.ameme.android.data.MemoryIoExecutor
 import com.ameme.android.data.UnavailableMemoryRepository
+import com.ameme.android.data.runCatchingCancellable
 import com.ameme.android.data.local.LocalEventDatabase
 import com.ameme.android.data.local.LocalMemoryRepository
 import com.ameme.android.data.source.ContentUriGrantResolver
@@ -36,6 +39,10 @@ import com.ameme.android.ui.screens.OnboardingScreen
 import com.ameme.android.ui.screens.SearchScreen
 import com.ameme.android.ui.screens.SettingsScreen
 import com.ameme.android.ui.screens.TodayScreen
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.launch
 
 private object Routes {
     const val Onboarding = "onboarding"
@@ -57,58 +64,84 @@ fun AmemeApp(
 ) {
     val navController = rememberNavController()
     val appContext = LocalContext.current.applicationContext
-    val repositoryResult = remember(repositoryOverride, appContext) {
-        runCatching {
-            repositoryOverride ?: LocalMemoryRepository.open(
-                context = appContext,
-                spaceId = LocalEventDatabase.DEFAULT_SPACE_ID,
-            )
+    val scope = rememberCoroutineScope()
+    val ioExecutor = remember { MemoryIoExecutor() }
+    val unavailableRepository = remember { UnavailableMemoryRepository() }
+    var repository by remember(repositoryOverride) { mutableStateOf(repositoryOverride) }
+    val uiRepository = repository ?: unavailableRepository
+    val events = remember { mutableStateListOf<com.ameme.android.domain.MemoryEvent>() }
+    var persistenceError by remember { mutableStateOf<String?>(null) }
+    var experienceModeName by rememberSaveable {
+        mutableStateOf(if (repositoryOverride == null) ExperienceMode.Loading.name else ExperienceMode.Ready.name)
+    }
+
+    LaunchedEffect(repositoryOverride, appContext) {
+        var unclaimedRepository: MemoryRepository? = null
+        var primaryFailure: Throwable? = null
+        try {
+            val readyRepository = repositoryOverride ?: ioExecutor.open {
+                    LocalMemoryRepository.open(
+                        context = appContext,
+                        spaceId = LocalEventDatabase.DEFAULT_SPACE_ID,
+                    )
+                }.also { unclaimedRepository = it }
+            val restored = ioExecutor.loadActiveEvents(readyRepository)
+            currentCoroutineContext().ensureActive()
+            events.clear()
+            events.addAll(restored)
+            unclaimedRepository = null
+            repository = readyRepository
+            persistenceError = null
+            if (experienceModeName == ExperienceMode.Loading.name) {
+                experienceModeName = ExperienceMode.Ready.name
+            }
+        } catch (cancelled: CancellationException) {
+            primaryFailure = cancelled
+            throw cancelled
+        } catch (failure: Throwable) {
+            primaryFailure = failure
+            persistenceError = "本机加密节点暂不可用；没有改用明文存储，请检查设备安全状态后重试。"
+            experienceModeName = ExperienceMode.RecoverableError.name
+        } finally {
+            unclaimedRepository?.let { unclaimed ->
+                try {
+                    ioExecutor.close(unclaimed)
+                } catch (closeFailure: Throwable) {
+                    primaryFailure?.addSuppressed(closeFailure) ?: throw closeFailure
+                }
+            }
         }
     }
-    val repository = remember(repositoryResult) {
-        repositoryResult.getOrElse { UnavailableMemoryRepository() }
-    }
+
     DisposableEffect(repository, repositoryOverride) {
         onDispose {
-            if (repositoryOverride == null) repository.close()
+            if (repositoryOverride == null) repository?.let(ioExecutor::closeInBackground)
         }
-    }
-    val events = remember(repository) {
-        mutableStateListOf(*repository.loadActiveEvents().toTypedArray())
-    }
-    var persistenceError by remember {
-        mutableStateOf(
-            repositoryResult.exceptionOrNull()?.let {
-                "本机加密节点暂不可用；没有改用明文存储，请检查设备安全状态后重试。"
-            },
-        )
-    }
-    var experienceModeName by rememberSaveable {
-        mutableStateOf(
-            if (repositoryResult.isSuccess) ExperienceMode.Ready.name else ExperienceMode.RecoverableError.name,
-        )
     }
     val experienceMode = ExperienceMode.valueOf(experienceModeName)
     val uriGrantResolver = remember(appContext) { ContentUriGrantResolver(appContext.contentResolver) }
-    val photoCoordinator = remember(repository, uriGrantResolver) {
-        PhotoCaptureCoordinator(repository, uriGrantResolver)
+    val photoCoordinator = remember(uiRepository, uriGrantResolver) {
+        PhotoCaptureCoordinator(uiRepository, uriGrantResolver)
     }
-    val grantCleanupCoordinator = remember(repository, uriGrantResolver) {
-        SourceGrantCleanupCoordinator(repository, uriGrantResolver)
+    val grantCleanupCoordinator = remember(uiRepository, uriGrantResolver) {
+        SourceGrantCleanupCoordinator(uiRepository, uriGrantResolver)
     }
     val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) {
-            runCatching { photoCoordinator.capture(uri) }
-                .onSuccess { event ->
-                    if (event != null) events.add(event)
-                    persistenceError = null
-                }
-                .onFailure { persistenceError = "照片引用尚未保存；本机加密节点写入失败，请重试。" }
+            scope.launch {
+                runCatchingCancellable { ioExecutor.runSourceIo { photoCoordinator.capture(uri) } }
+                    .onSuccess { event ->
+                        if (event != null) events.add(event)
+                        persistenceError = null
+                    }
+                    .onFailure { persistenceError = "照片引用尚未保存；本机加密节点写入失败，请重试。" }
+            }
         }
     }
 
     LaunchedEffect(repository, grantCleanupCoordinator) {
-        runCatching { grantCleanupCoordinator.retryPending() }
+        if (repository == null) return@LaunchedEffect
+        runCatchingCancellable { ioExecutor.retrySourceGrantCleanup(grantCleanupCoordinator) }
             .onSuccess { cleanup ->
                 if (cleanup.remaining > 0) {
                     persistenceError = "仍有 ${cleanup.remaining} 个系统来源授权等待释放；下次启动会继续重试。"
@@ -117,9 +150,10 @@ fun AmemeApp(
             .onFailure { persistenceError = "系统来源授权清理暂不可用；待处理记录仍保留在本机并会重试。" }
     }
 
-    LaunchedEffect(incomingShare) {
-        if (incomingShare != null) {
-            runCatching { repository.captureSource(incomingShare) }
+    LaunchedEffect(incomingShare, repository) {
+        val readyRepository = repository
+        if (incomingShare != null && readyRepository != null) {
+            runCatchingCancellable { ioExecutor.captureSource(readyRepository, incomingShare) }
                 .onSuccess {
                     events.add(it)
                     persistenceError = null
@@ -155,21 +189,28 @@ fun AmemeApp(
                     photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                 },
                 onCapture = { kind: CaptureKind, text: String ->
-                    runCatching { repository.capture(kind, text) }
-                        .onSuccess {
-                            events.add(it)
-                            persistenceError = null
-                        }
-                        .onFailure {
-                            persistenceError = "记录尚未保存；本机加密节点写入失败，请重试。"
-                        }
-                        .isSuccess
+                    val readyRepository = repository
+                    if (readyRepository == null) {
+                        persistenceError = "本机加密节点仍在打开，请稍后重试。"
+                        false
+                    } else {
+                        runCatchingCancellable { ioExecutor.capture(readyRepository, kind, text) }
+                            .onSuccess {
+                                events.add(it)
+                                persistenceError = null
+                            }
+                            .onFailure {
+                                persistenceError = "记录尚未保存；本机加密节点写入失败，请重试。"
+                            }
+                            .isSuccess
+                    }
                 },
             )
         }
         composable(Routes.Search) {
             SearchScreen(
-                repository = repository,
+                repository = uiRepository,
+                ioExecutor = ioExecutor,
                 experienceMode = experienceMode,
                 onBack = navController::popBackStack,
                 onEvent = { navController.navigate(Routes.event(it)) },
@@ -203,10 +244,17 @@ fun AmemeApp(
                 event = event,
                 onBack = navController::popBackStack,
                 onDeleteLocally = {
-                    val deleted = runCatching { repository.deleteEvent(eventId) }.getOrDefault(false)
+                    val readyRepository = repository
+                    val deleted = if (readyRepository == null) {
+                        false
+                    } else {
+                        runCatchingCancellable { ioExecutor.deleteEvent(readyRepository, eventId) }.getOrDefault(false)
+                    }
                     if (deleted) {
                         events.removeAll { it.id == eventId }
-                        persistenceError = runCatching { grantCleanupCoordinator.retryPending() }
+                        persistenceError = runCatchingCancellable {
+                            ioExecutor.retrySourceGrantCleanup(grantCleanupCoordinator)
+                        }
                             .fold(
                                 onSuccess = { cleanup ->
                                     if (cleanup.remaining == 0) null else {

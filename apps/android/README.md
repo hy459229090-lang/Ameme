@@ -1,6 +1,6 @@
 # Ameme Android MVP
 
-Native Android 14+ client skeleton with an encrypted Local Event Node and the first user-initiated acquisition adapters. Text, Photo Picker, accepted ACTION_SEND content, Today restore, paged date/keyword recall, and local deletion use a durable SQLCipher repository.
+Native Android 14+ client skeleton with an encrypted Local Event Node and the first user-initiated acquisition adapters. Text, Photo Picker, accepted ACTION_SEND content, Today restore, paged date/keyword recall, and local deletion use a durable SQLCipher repository. Compose routes all repository open/read/write/search and source-grant cleanup through an injected I/O dispatcher; cancellation during open cannot orphan an already-created repository.
 
 ## Scope
 
@@ -56,6 +56,14 @@ With an API 34+ emulator or device connected:
 ```powershell
 ./gradlew.bat connectedDebugAndroidTest
 ```
+
+Run only one instrumentation/connected-test process per device serial. These tasks reinstall the same application ID; concurrent runs on one serial can kill the other process and invalidate both reports. The DB-01 performance runner acquires a per-serial process mutex and refuses to start when that lock is held:
+
+```powershell
+../../scripts/validation/run_android_db01_performance.ps1 -Serial emulator-5554
+```
+
+The explicit performance test is skipped during ordinary connected regression. Its content-free JSON covers 10k/100k capacity, cold database open, FTS and forced-LIKE query paths, date/keyset pagination, single-capture commit, coarse process memory snapshots, disk use, and a reproducible 10k-row v3-to-current migration fixture. Performance budget failures remain in the JSON as fail evidence; missing datasets, privacy markers, migration evidence, or semantic equivalence fail the runner. No valid DB-01 performance baseline is committed yet.
 
 The storage instrumented suite verifies on an API 36 x86_64 AVD:
 

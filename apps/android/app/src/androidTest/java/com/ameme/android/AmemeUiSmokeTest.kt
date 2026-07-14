@@ -4,6 +4,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -46,12 +47,18 @@ class AmemeUiSmokeTest {
 
     @Test
     fun eventDetailAndDeleteImpact_areReachable() {
+        val title = "合成详情-${System.nanoTime()}"
         composeRule.onNodeWithText("进入合成的今天").performClick()
         composeRule.onNodeWithContentDescription("记录一件事").performClick()
         composeRule.onNodeWithText("文字").performClick()
-        composeRule.onNodeWithText("写下一句话").performTextInput("用于详情测试的合成记录")
+        composeRule.onNodeWithText("写下一句话").performTextInput(title)
         composeRule.onNodeWithText("保存到本机").performClick()
-        composeRule.onNodeWithText("用于详情测试的合成记录").performClick()
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            composeRule.onAllNodesWithText("保存到本机")
+                .fetchSemanticsNodes()
+                .isEmpty()
+        }
+        composeRule.onNodeWithContentDescription(title, substring = true).performClick()
         composeRule.onNodeWithText("事件详情").assertIsDisplayed()
         composeRule.onNodeWithText("查看删除影响").performScrollTo().performClick()
         composeRule.onNodeWithText("删除影响与进度").assertIsDisplayed()

@@ -39,6 +39,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -56,6 +57,7 @@ import com.ameme.android.ui.components.EventRow
 import com.ameme.android.ui.components.StateNotice
 import com.ameme.android.ui.displayDate
 import java.time.LocalDate
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -68,7 +70,7 @@ fun TodayScreen(
     onEvent: (String) -> Unit,
     voiceAvailable: Boolean,
     onRequestPhoto: () -> Unit,
-    onCapture: (CaptureKind, String) -> Boolean,
+    onCapture: suspend (CaptureKind, String) -> Boolean,
 ) {
     var showCapture by remember { mutableStateOf(false) }
     val today = LocalDate.now()
@@ -177,11 +179,7 @@ fun TodayScreen(
                 showCapture = false
                 onRequestPhoto()
             },
-            onSave = { kind, text ->
-                val saved = onCapture(kind, text)
-                if (saved) showCapture = false
-                saved
-            },
+            onSave = { kind, text -> onCapture(kind, text).also { saved -> if (saved) showCapture = false } },
         )
     }
 }
@@ -223,10 +221,12 @@ private fun CaptureBottomSheet(
     onDismiss: () -> Unit,
     voiceAvailable: Boolean,
     onRequestPhoto: () -> Unit,
-    onSave: (CaptureKind, String) -> Boolean,
+    onSave: suspend (CaptureKind, String) -> Boolean,
 ) {
     var selectedKind by remember { mutableStateOf<CaptureKind?>(null) }
     var text by remember { mutableStateOf("") }
+    var isSaving by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
@@ -278,11 +278,19 @@ private fun CaptureBottomSheet(
                 Spacer(Modifier.height(16.dp))
                 if (kind == CaptureKind.Text || voiceAvailable) {
                     Button(
-                        onClick = { onSave(kind, text) },
+                        onClick = {
+                            if (!isSaving) {
+                                isSaving = true
+                                scope.launch {
+                                    onSave(kind, text)
+                                    isSaving = false
+                                }
+                            }
+                        },
                         modifier = Modifier.fillMaxWidth(),
-                        enabled = kind != CaptureKind.Text || text.isNotBlank(),
+                        enabled = !isSaving && (kind != CaptureKind.Text || text.isNotBlank()),
                     ) {
-                        Text("保存到本机")
+                        Text(if (isSaving) "正在保存…" else "保存到本机")
                     }
                 }
                 OutlinedButton(

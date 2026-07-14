@@ -44,6 +44,15 @@ class LocalEventDatabase private constructor(
         event
     }
 
+    fun insertCapturedBatch(events: List<MemoryEvent>): Int = inTransaction {
+        events.forEach { event ->
+            check(findCurrent(event.id, includeDeleted = true) == null) { "Event id already exists" }
+            appendRevision(event, reason = "capture_batch", state = STATE_ACTIVE)
+            refreshSearchIndex(event, STATE_ACTIVE)
+        }
+        events.size
+    }
+
     fun readPage(query: String, date: LocalDate?, cursor: String?, pageSize: Int): MemoryPage {
         require(pageSize in 1..100) { "pageSize must be between 1 and 100" }
         val decodedCursor = cursor?.let(::decodeCursor)
@@ -252,6 +261,17 @@ class LocalEventDatabase private constructor(
     fun journalMode(): String = database.rawQuery("PRAGMA journal_mode", emptyArray()).use { cursor ->
         check(cursor.moveToFirst())
         cursor.getString(0)
+    }
+
+    fun cipherVersion(): String = database.rawQuery("PRAGMA cipher_version", emptyArray()).use { cursor ->
+        check(cursor.moveToFirst())
+        cursor.getString(0)
+    }
+
+    fun checkpointWal() {
+        database.rawQuery("PRAGMA wal_checkpoint(TRUNCATE)", emptyArray()).use { cursor ->
+            check(cursor.moveToFirst())
+        }
     }
 
     fun schemaVersion(): Int = database.version
@@ -733,22 +753,39 @@ class LocalEventDatabase private constructor(
                         )
                     """.trimIndent(),
                 )
-                database.beginTransaction()
-                try {
-                    database.delete("events_fts", null, null)
-                    database.execSQL(
-                        """
-                            INSERT INTO events_fts(space_id, event_id, title, detail, source_label, user_words)
-                            SELECT space_id, event_id, title, detail, source_label, COALESCE(user_words, '')
-                            FROM events_current WHERE state = '$STATE_ACTIVE'
-                        """.trimIndent(),
-                    )
-                    database.setTransactionSuccessful()
-                } finally {
-                    database.endTransaction()
+                if (searchIndexNeedsRebuild(database)) {
+                    database.beginTransaction()
+                    try {
+                        database.delete("events_fts", null, null)
+                        database.execSQL(
+                            """
+                                INSERT INTO events_fts(space_id, event_id, title, detail, source_label, user_words)
+                                SELECT space_id, event_id, title, detail, source_label, COALESCE(user_words, '')
+                                FROM events_current WHERE state = '$STATE_ACTIVE'
+                            """.trimIndent(),
+                        )
+                        database.setTransactionSuccessful()
+                    } finally {
+                        database.endTransaction()
+                    }
                 }
                 SearchBackend.Fts5
             }.getOrElse { SearchBackend.LikeFallback }
+        }
+
+        private fun searchIndexNeedsRebuild(database: SQLiteDatabase): Boolean {
+            val activeCount = database.rawQuery(
+                "SELECT COUNT(*) FROM events_current WHERE state = '$STATE_ACTIVE'",
+                emptyArray(),
+            ).use { cursor ->
+                check(cursor.moveToFirst())
+                cursor.getLong(0)
+            }
+            val indexCount = database.rawQuery("SELECT COUNT(*) FROM events_fts", emptyArray()).use { cursor ->
+                check(cursor.moveToFirst())
+                cursor.getLong(0)
+            }
+            return activeCount != indexCount
         }
 
         private fun createIndexes(database: SQLiteDatabase) {

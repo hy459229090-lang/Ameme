@@ -24,6 +24,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
@@ -32,15 +33,18 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.ameme.android.domain.DeleteStep
 import com.ameme.android.domain.MemoryEvent
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DeleteScreen(
     event: MemoryEvent?,
     onBack: () -> Unit,
-    onDeleteLocally: () -> Boolean,
+    onDeleteLocally: suspend () -> Boolean,
 ) {
     var stepName by rememberSaveable { mutableStateOf(DeleteStep.Queued.name) }
+    var deleteInFlight by rememberSaveable { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
     val step = DeleteStep.valueOf(stepName)
 
     Scaffold(
@@ -103,10 +107,17 @@ fun DeleteScreen(
                 ) { Text("重试失败步骤") }
                 DeleteStep.Completed -> Button(
                     onClick = {
-                        if (!onDeleteLocally()) stepName = DeleteStep.PartialFailed.name
+                        if (!deleteInFlight) {
+                            deleteInFlight = true
+                            scope.launch {
+                                if (!onDeleteLocally()) stepName = DeleteStep.PartialFailed.name
+                                deleteInFlight = false
+                            }
+                        }
                     },
                     modifier = Modifier.fillMaxWidth(),
-                ) { Text("返回今天") }
+                    enabled = !deleteInFlight,
+                ) { Text(if (deleteInFlight) "正在提交删除…" else "返回今天") }
             }
             OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) { Text("离开，任务状态保留") }
         }
