@@ -135,13 +135,40 @@ class MachineContract:
                 raise ProcessingError(ErrorCode.SPACE_DENIED)
             if field == "time":
                 supported = all(observation_supports_event_time(item) for item in typed)
+                referenced_values = {
+                    canonical_json(item["time_range"])
+                    for item in typed
+                    if "time_range" in item
+                }
             else:
                 keys = FIELD_VALUE_KEYS.get(str(field), set())
                 supported = bool(keys) and all(bool(keys & set(item.get("value", {}))) for item in typed)
+                referenced_values = {
+                    canonical_json(item["value"][key])
+                    for item in typed
+                    for key in keys
+                    if key in item["value"]
+                }
             if not supported:
                 raise ProcessingError(
                     ErrorCode.MISSING_EVIDENCE, safe_context={"reason": "field_not_supported"}
                 )
+            if provider_output and field == "time" and candidate.get("time_range"):
+                candidate_time = canonical_json(candidate["time_range"])
+                if any(
+                    canonical_json(item["time_range"]) != candidate_time
+                    for item in typed
+                ):
+                    raise ProcessingError(
+                        ErrorCode.SCHEMA_MISMATCH,
+                        safe_context={"reason": "time_evidence_value_mismatch"},
+                    )
+            elif provider_output and field != "time" and evidence.get("status") != "conflict":
+                if len(referenced_values) > 1:
+                    raise ProcessingError(
+                        ErrorCode.SCHEMA_MISMATCH,
+                        safe_context={"reason": "field_evidence_value_mismatch"},
+                    )
             maximum = max(float(item["confidence"]) for item in typed)
             if float(evidence.get("confidence", 0)) > maximum + 1e-9:
                 raise ProcessingError(
@@ -152,7 +179,7 @@ class MachineContract:
                 source_statuses = {str(item["fact_status"]) for item in typed}
                 evidence_status = str(evidence.get("status"))
                 if evidence_status == "conflict":
-                    status_supported = len(typed) > 1
+                    status_supported = len(referenced_values) > 1
                 else:
                     status_supported = evidence_status in source_statuses
                 if not status_supported:
@@ -186,17 +213,6 @@ class MachineContract:
                     ErrorCode.SCHEMA_MISMATCH,
                     safe_context={"reason": "time_evidence_range_mismatch"},
                 )
-            if time_evidence:
-                supported_ranges = {
-                    canonical_json(known[observation_id]["time_range"])
-                    for evidence in time_evidence
-                    for observation_id in evidence["observation_ids"]
-                }
-                if canonical_json(candidate["time_range"]) not in supported_ranges:
-                    raise ProcessingError(
-                        ErrorCode.SCHEMA_MISMATCH,
-                        safe_context={"reason": "time_range_not_supported"},
-                    )
 
             referenced_fact_ids = {
                 str(observation_id)

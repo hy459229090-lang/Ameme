@@ -73,10 +73,13 @@ class PromptEnvelope:
 
 @dataclass(frozen=True, slots=True)
 class PolicyContext:
+    """Caller-supplied authorization snapshot; not a complete Grant evaluator."""
+
     space_id: str
     purpose: str
     sensitivity: str
     processing_locations: frozenset[str]
+    allowed_provider_adapters: frozenset[str] = frozenset()
     deleted_evidence_ids: frozenset[str] = frozenset()
     budget_remaining: int = 0
 

@@ -43,6 +43,7 @@ class AIProcessingReferenceTest(unittest.TestCase):
             purpose="form_today",
             sensitivity="personal",
             processing_locations=frozenset({"device", "model_provider"}),
+            allowed_provider_adapters=frozenset({"fake-synthetic-provider"}),
             budget_remaining=2,
         )
 
@@ -181,6 +182,7 @@ class AIProcessingReferenceTest(unittest.TestCase):
             purpose="form_today",
             sensitivity="restricted",
             processing_locations=frozenset({"device", "model_provider"}),
+            allowed_provider_adapters=frozenset({"fake-synthetic-provider"}),
             budget_remaining=5,
         )
         provider = FakeSyntheticProvider({"salience": deepcopy(self.fixture["fake_provider_candidate"])})
@@ -305,6 +307,7 @@ class AIProcessingReferenceTest(unittest.TestCase):
             purpose="form_today",
             sensitivity="personal",
             processing_locations=frozenset({"device", "model_provider"}),
+            allowed_provider_adapters=frozenset({"fake-synthetic-provider"}),
             budget_remaining=0,
         )
         provider = FakeSyntheticProvider(
@@ -349,6 +352,194 @@ class AIProcessingReferenceTest(unittest.TestCase):
             [self.observation("sparse")], context=self.context, provider=provider
         )
         self.assertEqual(non_synthetic.fallback_reason, ErrorCode.PROVIDER_ERROR.value)
+        self.assertEqual(provider.calls, 1)
+
+    def test_provider_adapter_requires_explicit_allow_list_and_restricted_wins(self) -> None:
+        provider = FakeSyntheticProvider(
+            {"unknown": deepcopy(self.fixture["fake_provider_candidate"])}
+        )
+        provider.adapter_name = "unknown-synthetic-provider"
+
+        denied = self.reference.create_candidate(
+            [self.observation("sparse")],
+            context=self.context,
+            provider=provider,
+            synthetic_fixture_id="unknown",
+        )
+        self.assertEqual(denied.fallback_reason, ErrorCode.PROVIDER_NOT_ALLOWED.value)
+        self.assertEqual(provider.calls, 0)
+
+        restricted = PolicyContext(
+            space_id="space_personal",
+            purpose="form_today",
+            sensitivity="restricted",
+            processing_locations=frozenset({"device", "model_provider"}),
+            allowed_provider_adapters=frozenset(),
+            budget_remaining=2,
+        )
+        blocked = self.reference.create_candidate(
+            [self.observation("sparse")],
+            context=restricted,
+            provider=provider,
+            synthetic_fixture_id="unknown",
+        )
+        self.assertEqual(blocked.fallback_reason, ErrorCode.SENSITIVE_MODEL_BLOCKED.value)
+        self.assertEqual(provider.calls, 0)
+
+    def test_provider_cannot_launder_time_status_across_different_ranges(self) -> None:
+        inferred = self.observation("sparse")
+        inferred["observation_id"] = "obs_time_inferred_10"
+        inferred["source_object_id"] = "src_time_inferred_10"
+        inferred["value"] = {"action": "同一合成动作", "event_type": "activity"}
+        inferred["time_range"] = {
+            "start": "2026-07-14T10:00:00+08:00",
+            "timezone": "Asia/Shanghai",
+            "precision": "minute"
+        }
+        inferred["fact_status"] = "inferred"
+        inferred["confidence"] = 0.2
+
+        asserted = deepcopy(inferred)
+        asserted["observation_id"] = "obs_time_asserted_11"
+        asserted["source_object_id"] = "src_time_asserted_11"
+        asserted["time_range"]["start"] = "2026-07-14T11:00:00+08:00"
+        asserted["fact_status"] = "user_asserted"
+        asserted["confidence"] = 1.0
+        asserted["created_at"] = "2026-07-14T11:01:00+08:00"
+
+        provider_candidate = {
+            "schema_version": 1,
+            "candidate_id": "cand_time_status_launder",
+            "space_id": "space_personal",
+            "event_type": "activity",
+            "time_range": deepcopy(inferred["time_range"]),
+            "field_evidence": [
+                {
+                    "field": "time",
+                    "observation_ids": [
+                        inferred["observation_id"],
+                        asserted["observation_id"]
+                    ],
+                    "confidence": 1.0,
+                    "status": "user_asserted"
+                },
+                {
+                    "field": "action",
+                    "observation_ids": [
+                        inferred["observation_id"],
+                        asserted["observation_id"]
+                    ],
+                    "confidence": 1.0,
+                    "status": "user_asserted"
+                }
+            ],
+            "status": "candidate",
+            "created_at": asserted["created_at"]
+        }
+        provider = FakeSyntheticProvider({"time_launder": provider_candidate})
+
+        draft = self.reference.create_candidate(
+            [inferred, asserted],
+            context=self.context,
+            provider=provider,
+            synthetic_fixture_id="time_launder",
+        )
+
+        self.assertEqual(draft.fallback_reason, ErrorCode.SCHEMA_MISMATCH.value)
+        self.assertEqual(draft.candidate["time_range"], asserted["time_range"])
+        self.assertEqual(provider.calls, 1)
+
+    def test_provider_non_conflict_evidence_cannot_mix_action_or_description_values(self) -> None:
+        for field in ("action", "description"):
+            with self.subTest(field=field):
+                inferred = self.observation("sparse")
+                inferred["observation_id"] = f"obs_{field}_inferred"
+                inferred["source_object_id"] = f"src_{field}_inferred"
+                inferred["value"] = {field: "合成值甲", "event_type": "activity"}
+                inferred["fact_status"] = "inferred"
+                inferred["confidence"] = 0.2
+
+                asserted = deepcopy(inferred)
+                asserted["observation_id"] = f"obs_{field}_asserted"
+                asserted["source_object_id"] = f"src_{field}_asserted"
+                asserted["value"][field] = "合成值乙"
+                asserted["fact_status"] = "user_asserted"
+                asserted["confidence"] = 1.0
+
+                provider_candidate = {
+                    "schema_version": 1,
+                    "candidate_id": f"cand_{field}_status_launder",
+                    "space_id": "space_personal",
+                    "event_type": "activity",
+                    "field_evidence": [
+                        {
+                            "field": field,
+                            "observation_ids": [
+                                inferred["observation_id"],
+                                asserted["observation_id"]
+                            ],
+                            "confidence": 1.0,
+                            "status": "user_asserted"
+                        }
+                    ],
+                    "status": "candidate",
+                    "created_at": asserted["created_at"]
+                }
+                provider = FakeSyntheticProvider(
+                    {f"{field}_launder": provider_candidate}
+                )
+
+                draft = self.reference.create_candidate(
+                    [inferred, asserted],
+                    context=self.context,
+                    provider=provider,
+                    synthetic_fixture_id=f"{field}_launder",
+                )
+
+                self.assertEqual(
+                    draft.fallback_reason, ErrorCode.SCHEMA_MISMATCH.value
+                )
+                self.assertEqual(provider.calls, 1)
+
+    def test_provider_cannot_invent_conflict_for_same_field_value(self) -> None:
+        first = self.observation("sparse")
+        first["observation_id"] = "obs_same_action_first"
+        first["source_object_id"] = "src_same_action_first"
+        first["value"] = {"action": "完全相同的合成动作", "event_type": "activity"}
+        second = deepcopy(first)
+        second["observation_id"] = "obs_same_action_second"
+        second["source_object_id"] = "src_same_action_second"
+
+        provider_candidate = {
+            "schema_version": 1,
+            "candidate_id": "cand_false_action_conflict",
+            "space_id": "space_personal",
+            "event_type": "activity",
+            "field_evidence": [
+                {
+                    "field": "action",
+                    "observation_ids": [
+                        first["observation_id"],
+                        second["observation_id"]
+                    ],
+                    "confidence": 0.82,
+                    "status": "conflict"
+                }
+            ],
+            "status": "conflict",
+            "created_at": second["created_at"]
+        }
+        provider = FakeSyntheticProvider({"false_conflict": provider_candidate})
+
+        draft = self.reference.create_candidate(
+            [first, second],
+            context=self.context,
+            provider=provider,
+            synthetic_fixture_id="false_conflict",
+        )
+
+        self.assertEqual(draft.fallback_reason, ErrorCode.SCHEMA_MISMATCH.value)
+        self.assertNotEqual(draft.candidate["status"], "conflict")
         self.assertEqual(provider.calls, 1)
 
     def test_provider_cannot_invent_time_range_or_add_time_without_evidence(self) -> None:

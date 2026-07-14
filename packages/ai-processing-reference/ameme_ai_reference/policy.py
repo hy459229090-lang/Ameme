@@ -32,9 +32,13 @@ class PrivacyPolicyGate:
 
         if adapter is None:
             return
-        if not spec.cloud_allowed or adapter.processing_location not in context.processing_locations:
-            raise ProcessingError(ErrorCode.PROVIDER_NOT_ALLOWED)
         if context.sensitivity == "restricted" and adapter.processing_location == "model_provider":
             raise ProcessingError(ErrorCode.SENSITIVE_MODEL_BLOCKED)
+        if (
+            not spec.cloud_allowed
+            or adapter.processing_location not in context.processing_locations
+            or adapter.adapter_name not in context.allowed_provider_adapters
+        ):
+            raise ProcessingError(ErrorCode.PROVIDER_NOT_ALLOWED)
         if context.budget_remaining <= 0:
             raise ProcessingError(ErrorCode.BUDGET_EXHAUSTED)
