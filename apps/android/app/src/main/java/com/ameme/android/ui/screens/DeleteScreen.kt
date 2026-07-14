@@ -38,7 +38,7 @@ import com.ameme.android.domain.MemoryEvent
 fun DeleteScreen(
     event: MemoryEvent?,
     onBack: () -> Unit,
-    onDeleteLocally: () -> Unit,
+    onDeleteLocally: () -> Boolean,
 ) {
     var stepName by rememberSaveable { mutableStateOf(DeleteStep.Queued.name) }
     val step = DeleteStep.valueOf(stepName)
@@ -102,7 +102,9 @@ fun DeleteScreen(
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text("重试失败步骤") }
                 DeleteStep.Completed -> Button(
-                    onClick = onDeleteLocally,
+                    onClick = {
+                        if (!onDeleteLocally()) stepName = DeleteStep.PartialFailed.name
+                    },
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text("返回今天") }
             }

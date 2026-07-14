@@ -64,10 +64,11 @@ import java.time.LocalDate
 fun TodayScreen(
     events: List<MemoryEvent>,
     experienceMode: ExperienceMode,
+    persistenceError: String?,
     onSearch: () -> Unit,
     onSettings: () -> Unit,
     onEvent: (String) -> Unit,
-    onCapture: (CaptureKind, String) -> Unit,
+    onCapture: (CaptureKind, String) -> Boolean,
 ) {
     var showCapture by remember { mutableStateOf(false) }
     val today = LocalDate.now()
@@ -137,6 +138,16 @@ fun TodayScreen(
                     onAction = if (experienceMode != ExperienceMode.Ready) onSettings else null,
                 )
             }
+            persistenceError?.let { error ->
+                item {
+                    Text(
+                        error,
+                        modifier = Modifier.padding(bottom = 12.dp),
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+            }
             if (visibleToday.isEmpty()) {
                 item {
                     EmptyMessage(
@@ -152,7 +163,7 @@ fun TodayScreen(
                     }
                 }
                 if (visibleToday.count { it.factStatus != FactStatus.Processing } >= 2) {
-                    item { SyntheticSummary(experienceMode) }
+                    item { DeterministicDayStatus(visibleToday) }
                 }
             }
         }
@@ -162,8 +173,9 @@ fun TodayScreen(
         CaptureBottomSheet(
             onDismiss = { showCapture = false },
             onSave = { kind, text ->
-                onCapture(kind, text)
-                showCapture = false
+                val saved = onCapture(kind, text)
+                if (saved) showCapture = false
+                saved
             },
         )
     }
@@ -185,21 +197,18 @@ private fun VerificationPrompt(eventTitle: String) {
 }
 
 @Composable
-private fun SyntheticSummary(mode: ExperienceMode) {
+private fun DeterministicDayStatus(events: List<MemoryEvent>) {
+    val processingCount = events.count { it.factStatus == FactStatus.Processing }
     Column(Modifier.fillMaxWidth().padding(top = 28.dp, bottom = 12.dp)) {
         HorizontalDivider()
-        Text("今日小结", modifier = Modifier.padding(top = 18.dp), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Text("今日状态", modifier = Modifier.padding(top = 18.dp), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         Text(
-            if (mode == ExperienceMode.Partial || mode == ExperienceMode.Offline) {
-                "今天推进了移动端体验骨架，也留出了一段生活记录。当前只包含本机合成内容，范围可能不完整。"
-            } else {
-                "今天推进了移动端体验骨架，也留出了一段生活记录。存在一项计划仍待核验。"
-            },
+            "本机当前可见 ${events.size} 条记录，其中 $processingCount 条仍在整理；当前版本尚未生成 AI 小结。",
             modifier = Modifier.padding(top = 8.dp),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Text("合成规则摘要 · 15:10", modifier = Modifier.padding(top = 8.dp), style = MaterialTheme.typography.labelSmall)
+        Text("基于当前本机投影的确定性计数", modifier = Modifier.padding(top = 8.dp), style = MaterialTheme.typography.labelSmall)
     }
 }
 
@@ -207,7 +216,7 @@ private fun SyntheticSummary(mode: ExperienceMode) {
 @Composable
 private fun CaptureBottomSheet(
     onDismiss: () -> Unit,
-    onSave: (CaptureKind, String) -> Unit,
+    onSave: (CaptureKind, String) -> Boolean,
 ) {
     var selectedKind by remember { mutableStateOf<CaptureKind?>(null) }
     var text by remember { mutableStateOf("") }
@@ -222,7 +231,7 @@ private fun CaptureBottomSheet(
         ) {
             Text("记录一件事", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
             Text(
-                "所有入口都是 mock；不会打开系统能力或申请权限。",
+                "内容会先写入本机加密节点；系统来源能力仍是 mock，不会申请权限。",
                 modifier = Modifier.padding(top = 4.dp, bottom = 12.dp),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -264,7 +273,8 @@ private fun CaptureBottomSheet(
                 Button(
                     onClick = { onSave(kind, text) },
                     modifier = Modifier.fillMaxWidth(),
-                    enabled = kind != CaptureKind.Voice || !voiceActive,
+                    enabled = (kind != CaptureKind.Voice || !voiceActive) &&
+                        (kind != CaptureKind.Text || text.isNotBlank()),
                 ) {
                     Text("保存到本机")
                 }

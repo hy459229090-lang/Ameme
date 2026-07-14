@@ -17,7 +17,7 @@
 | ADR-002 | `ADR-002-本地EventCore与可重建索引.md` | accepted | SQLite + Raw Vault，索引/Summary 可重建 |
 | ADR-003 | `ADR-003-云协调模块化单体.md` | superseded_for_mvp | 未来云候选；MVP 被 ADR-006 替代 |
 | ADR-004 | `ADR-004-AI分层与提供方可替换.md` | accepted | 确定性优先、provider adapter |
-| ADR-005 | `ADR-005-MVP技术实现默认栈.md` | accepted | SQLCipher/FTS5、SourceLocator、OS 版本、透明设备密钥和 TTL 默认值 |
+| ADR-005 | `ADR-005-MVP技术实现默认栈.md` | accepted | Android 固定官方 SQLCipher 4.15.0；FTS5、SourceLocator、OS 版本、透明设备密钥和 TTL 默认值 |
 | ADR-006 | `ADR-006-LAN点对点同步.md` | accepted | Bonjour/NSD、同账户设备认证、LAN Peer Sync |
 | SDR-001 | `SDR-001-结构化同步可见性.md` | accepted | 同局域网点对点同步，不建设用户数据云 |
 | SDR-002 | `SDR-002-账户恢复与密钥模型.md` | accepted | 账户归属、系统透明密钥、无用户 recovery key UX |
@@ -31,3 +31,4 @@
 | 2026-07-13 | 新增 | 将结构化导出、条件启动与验证投入转为产品负责人可直接选择的 proposed 决策 |
 | 2026-07-14 | 决议 | 产品负责人授权按专业建议代决：接受 PDR-002/003/004、SDR-001/002；新增品牌品质和技术默认栈决策 |
 | 2026-07-14 | 最终拍板 | D1 改为 LAN/P2P 无数据云，D2 改为账户优先无用户密钥，健康进入公开 MVP，M1–M6 全面启动，Agent 自动读写，Raw 保留源索引，Today 改为单悬浮按钮 |
+| 2026-07-14 | 依赖纠偏 | Android 加密库固定为官方 `sqlcipher-android:4.15.0`，纠正此前错误版本表述；真机、16 KB 与性能仍待验证 |

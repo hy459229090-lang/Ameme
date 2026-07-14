@@ -8,6 +8,8 @@ import java.time.LocalDate
 import java.time.ZoneId
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertNull
+import org.junit.Assert.fail
 import org.junit.Test
 
 class FakeMemoryRepositoryTest {
@@ -39,5 +41,20 @@ class FakeMemoryRepositoryTest {
         assertEquals(date, groups.single().date)
         assertTrue(groups.single().events.all { it.localDate == date })
         assertTrue(groups.single().events.any { it.title.contains("方案") || it.detail.contains("方案") })
+    }
+
+    @Test
+    fun blankTextIsRejectedAndBlankMockDescriptionIsNotInventedAsUserWords() {
+        try {
+            repository.capture(CaptureKind.Text, "   ")
+            fail("Blank text capture must be rejected")
+        } catch (_: IllegalArgumentException) {
+            // Expected: no placeholder sentence may be persisted as user input.
+        }
+
+        val mockVoice = repository.capture(CaptureKind.Voice, "   ")
+        assertEquals("模拟语音引用", mockVoice.title)
+        assertNull(mockVoice.userWords)
+        assertTrue(mockVoice.detail.contains("mock 引用"))
     }
 }

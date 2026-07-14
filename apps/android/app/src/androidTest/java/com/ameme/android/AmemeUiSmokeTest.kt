@@ -8,6 +8,8 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTextInput
 import org.junit.Rule
 import org.junit.Test
 
@@ -46,9 +48,13 @@ class AmemeUiSmokeTest {
     @Test
     fun eventDetailAndDeleteImpact_areReachable() {
         composeRule.onNodeWithText("进入合成的今天").performClick()
-        composeRule.onNodeWithText("梳理移动端体验骨架").performClick()
+        composeRule.onNodeWithContentDescription("记录一件事").performClick()
+        composeRule.onNodeWithText("文字").performClick()
+        composeRule.onNodeWithText("写下一句话").performTextInput("用于详情测试的合成记录")
+        composeRule.onNodeWithText("保存到本机").performClick()
+        composeRule.onNodeWithText("用于详情测试的合成记录").performClick()
         composeRule.onNodeWithText("事件详情").assertIsDisplayed()
-        composeRule.onNodeWithText("查看删除影响").performClick()
+        composeRule.onNodeWithText("查看删除影响").performScrollTo().performClick()
         composeRule.onNodeWithText("删除影响与进度").assertIsDisplayed()
         composeRule.onNodeWithText("合成影响范围").assertIsDisplayed()
     }

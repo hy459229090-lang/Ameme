@@ -73,6 +73,8 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.navigation.compose)
     implementation(libs.kotlinx.serialization.json)
+    implementation("net.zetetic:sqlcipher-android:4.15.0@aar")
+    implementation("androidx.sqlite:sqlite:2.6.2")
 
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)

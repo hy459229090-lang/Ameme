@@ -15,8 +15,9 @@ import java.util.concurrent.atomic.AtomicInteger
  */
 class FakeMemoryRepository(
     private val clock: Clock = Clock.systemDefaultZone(),
-) {
+) : MemoryRepository {
     private val captureCounter = AtomicInteger(100)
+    private val events by lazy { seedEvents().toMutableList() }
 
     fun seedEvents(): List<MemoryEvent> {
         val today = LocalDate.now(clock)
@@ -80,29 +81,39 @@ class FakeMemoryRepository(
         )
     }
 
-    fun capture(kind: CaptureKind, text: String): MemoryEvent {
+    override fun loadActiveEvents(): List<MemoryEvent> = events.toList()
+
+    override fun capture(kind: CaptureKind, text: String): MemoryEvent {
         val now = LocalTime.now(clock).withSecond(0).withNano(0)
-        val safeText = text.trim().ifEmpty { "一条未补充说明的${kind.label}记录" }
+        val userDescription = text.trim()
+        require(kind != CaptureKind.Text || userDescription.isNotEmpty()) {
+            "Text capture requires non-empty user input"
+        }
         return MemoryEvent(
             id = "evt_synth_capture_${captureCounter.incrementAndGet()}",
             localDate = LocalDate.now(clock),
             time = now,
             title = when (kind) {
-                CaptureKind.Text -> safeText.take(24)
-                CaptureKind.Voice -> "已保存一段模拟语音"
-                CaptureKind.Photo -> "已保存一张模拟照片"
-                CaptureKind.Import -> "已保存一个模拟导入对象"
+                CaptureKind.Text -> userDescription.take(24)
+                CaptureKind.Voice -> "模拟语音引用"
+                CaptureKind.Photo -> "模拟照片引用"
+                CaptureKind.Import -> "模拟导入引用"
             },
             detail = when (kind) {
                 CaptureKind.Text -> "用户原话已先保存在本机；合成整理尚未完成。"
-                else -> "$safeText；当前只创建合成引用，不访问系统${kind.label}能力。"
+                else -> buildString {
+                    append("当前只创建 mock 引用，没有访问系统${kind.label}能力。")
+                    if (userDescription.isNotEmpty()) append(" 用户补充：$userDescription")
+                }
             },
             factStatus = FactStatus.Processing,
-            sourceLabel = "合成${kind.label}",
+            sourceLabel = if (kind == CaptureKind.Text) "用户文字" else "mock ${kind.label}引用",
             isLocalOnly = true,
-            userWords = safeText,
-        )
+            userWords = userDescription.ifEmpty { null },
+        ).also(events::add)
     }
+
+    override fun search(query: String, date: LocalDate?): List<DayGroup> = search(events, query, date)
 
     fun search(
         events: List<MemoryEvent>,
@@ -123,4 +134,6 @@ class FakeMemoryRepository(
                 DayGroup(groupDate, groupEvents.sortedByDescending { it.time })
             }
     }
+
+    override fun deleteEvent(eventId: String): Boolean = events.removeAll { it.id == eventId }
 }

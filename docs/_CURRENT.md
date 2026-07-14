@@ -39,7 +39,7 @@ Ameme 已完成 MVP 研发前本地可完善准备与 D1–D10 最终拍板；�
 | MVP 指标与埋点字典 | `product/MVP指标与埋点字典.md` | v0.1，主指标、护栏和隐私安全埋点候选 |
 | MVP 研发架构技术方案 | `architecture/MVP研发架构技术方案.md` | v0.6，技术实现默认栈与 Spike 边界已接受 |
 | MVP 领域契约与状态机 | `architecture/MVP领域契约与状态机.md` | v0.1，不变量、状态、冲突、Recall 与兼容候选 |
-| MVP 本地存储、同步与删除 | `architecture/MVP本地存储同步与删除协议.md` | v0.2，SQLCipher/Raw Vault/SourceLocator/LAN sync/删除基线已接受 |
+| MVP 本地存储、同步与删除 | `architecture/MVP本地存储同步与删除协议.md` | v0.3，Android SQLCipher 4.15.0/v3 space 隔离首切片部分验证；完整 Raw/LAN/删除仍待验证 |
 | MVP 接口、错误与 Agent 工具 | `engineering/MVP接口与错误契约.md` | v0.1，OpenAPI/MCP/幂等/分页/错误候选 |
 | MVP 机器契约 | `../packages/contracts/` | v0.1，JSON Schema/OpenAPI/合成夹具可复跑 |
 | MVP AI 路由与 Prompt | `architecture/MVP-AI任务路由与Prompt契约.md` | v0.1，任务分层、隐私门、回退与 Eval 候选 |

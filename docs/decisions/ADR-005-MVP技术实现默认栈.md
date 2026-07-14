@@ -14,7 +14,7 @@
 |---|---|
 | iOS | SwiftUI + 原生导航/Picker/权限；deployment target iOS 18.0 |
 | Android | Kotlin + Jetpack Compose Material 3；minSdk 34、targetSdk 36 |
-| 结构化本地库 | SQLCipher 4.17.x 系列 + SQLite WAL/FTS5；iOS/Android 通过各自 repository adapter 接入 |
+| 结构化本地库 | 固定官方 `net.zetetic:sqlcipher-android:4.15.0`（Android）+ SQLite WAL；FTS5 仍由后续搜索 Spike 接入；iOS/Android 通过各自 repository adapter 接入 |
 | 账户与密钥 | 账户 ID 作为数据归属；设备身份/透明包装密钥存 Keychain/Android Keystore，不向用户暴露 recovery key；每 Raw object 仍用内部 DEK |
 | Raw Vault | 应用私有目录，每对象 AES-256-GCM、独立 nonce/DEK/hash；默认不进普通系统备份 |
 | 源文件索引 | 对外部 Raw 保留系统授权范围内的 opaque locator/bookmark/content URI、fingerprint 和可用状态；不把明文绝对路径写入日志或跨端正文 |
@@ -42,7 +42,8 @@
 
 ## 依据与约束
 
-- SQLCipher 提供跨 iOS/Android 的 SQLite 全库加密；采用前仍需做许可证、WAL、后台锁和性能验证：<https://www.zetetic.net/sqlcipher/documentation/>
+- Android 采用 SQLCipher 官方长期支持的新包 `net.zetetic:sqlcipher-android:4.15.0`，不使用已废弃的 `android-database-sqlcipher`：<https://github.com/sqlcipher/sqlcipher-android>、<https://central.sonatype.com/artifact/net.zetetic/sqlcipher-android/4.15.0>、<https://www.zetetic.net/blog/2026/04/28/sqlcipher-4.15.0-release/>
+- SQLCipher 提供 SQLite 全库加密；当前只有 Android API 36 x86_64 AVD 的 WAL、错误密钥、文件头、重建和迁移证据，不能外推为 iOS、真机、16 KB page size、后台锁或性能通过：<https://www.zetetic.net/sqlcipher/documentation/>
 - iOS 使用系统 Data Protection 与 Keychain；Android 密钥保持在 Keystore：<https://developer.apple.com/documentation/uikit/encrypting-your-app-s-files>、<https://developer.android.com/privacy-and-security/keystore>
 - Health Connect 在 Android 14+ 为系统能力，降低封闭 MVP 的安装/迁移分支：<https://developer.android.com/health-and-fitness/health-connect/availability>
 

@@ -1,9 +1,9 @@
-# Ameme MVP 本地存储、同步与删除协议 v0.2
+# Ameme MVP 本地存储、同步与删除协议 v0.3
 
 > 文档状态：已接受；MVP 存储/同步/删除实现正本，达成情况待 Spike\
 > 更新日期：2026-07-14\
 > 上游：`MVP领域契约与状态机.md`、`../../packages/contracts/schemas/ameme-domain.schema.json`、`../decisions/ADR-005-MVP技术实现默认栈.md`\
-> 实现基线：SQLCipher 4.17.x + SQLite WAL/FTS5、应用私有 Raw Vault AES-256-GCM、SourceLocator、Keychain/Keystore、LAN append-only peer sync；这些是已接受选型，不是已通过真机/安全验证的结论。
+> 实现基线：Android 固定官方 `net.zetetic:sqlcipher-android:4.15.0` + SQLite WAL，FTS5/应用私有 Raw Vault AES-256-GCM/SourceLocator/Keychain/Keystore/LAN append-only peer sync 继续按阶段实现；当前只有 Android API 36 x86_64 AVD 的本地 Event 最小切片证据，不是双端、真机、16 KB、安全或性能通过结论。官方来源：<https://github.com/sqlcipher/sqlcipher-android>、<https://central.sonatype.com/artifact/net.zetetic/sqlcipher-android/4.15.0>。
 
 ## 1. 设备内逻辑分区
 
@@ -156,7 +156,21 @@ Deletion planner 从 target 沿 lineage 计算：Raw、SourceObject、Observatio
 4. App 降级若不能理解当前 major，只读导出/升级提示；禁止写旧格式破坏安全对象。
 5. Peer 升级使用 tolerant reader → writer 顺序；破坏性变化通过新 major、能力协商和双读窗口，未知 major 隔离但不污染现有空间。
 
-## 9. 必须执行的 Spike
+## 9. Android 本地 Event 最小切片达成边界
+
+2026-07-14 的 Android 首切片已经实现并在 API 36 x86_64 AVD 验证：注入式 `DatabaseKeyProvider`、Keystore AES-256-GCM 包裹随机数据库 key、SQLCipher WAL、数据库 trigger 强制 `event_revisions` 禁止 UPDATE/DELETE、`events_current` 投影、Repository 显式绑定 `space_id`、按空间/日期/关键词读取、commit 后再展示、tombstone 后重建仍不可见，以及 v1→v2 Revision backfill 后再迁移到 v3 `space_legacy` 隔离。跨空间相同 Event ID 可共存且不可互读/互删。错误密钥被拒绝，主库文件头不是明文 SQLite header；SQLCipher/应用日志不输出正文或 key。
+
+Android 清单同时保持 `allowBackup=false`，`data-extraction-rules` 对 cloud backup 和 device transfer 显式排除 root/file/database/sharedpref/external 及四个 device-protected data domain；编译后 XML 资源由设备测试核对。该配置用于避免 SQLCipher DB 和 wrapped-key blob 被系统备份或 D2D 搬迁，仍需后续厂商/真机矩阵验证：<https://developer.android.com/identity/data/autobackup>。
+
+该证据仅关闭“最小本地 Event 闭环可运行”的实现问题，没有关闭完整协议或 DB-01：
+
+- 重建测试是关闭数据库并重新构造 repository，不等于操作系统杀进程/崩溃恢复；
+- 未验证真机、iOS、16 KB page size、10k/100k 数据量、首帧、分页、后台锁、电量或体积；
+- 当前删除是追加 tombstone 并更新本机投影，尚未实现物理清除、影响图、peer ack 和删除证明；
+- FTS5、Raw Vault、SourceLocator、durable job/outbox、完整 lineage/审计和 LAN sync 尚未进入该切片；
+- v1→v2→v3 已验证成功迁移与 legacy space 回填，但故障注入、加密快照和失败回滚仍属于 MIG-01。
+
+## 10. 必须执行的 Spike
 
 | Spike | 环境/输入 | 指标 | 通过/否决 | 证据 |
 |---|---|---|---|---|

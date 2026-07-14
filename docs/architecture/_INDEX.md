@@ -8,7 +8,7 @@
 | 事件反馈与记忆类型 | `记忆类型与反馈事件模型.md` | v0.2，等待 DayLedger 实验验证 |
 | MVP 研发架构技术方案 | `MVP研发架构技术方案.md` | v0.6，技术栈、LAN/账户、SourceLocator、Skill 与 Spike 边界已接受 |
 | MVP 领域契约与状态机 | `MVP领域契约与状态机.md` | v0.1，领域不变量、状态、冲突、Recall 和兼容候选 |
-| MVP 本地存储、同步与删除 | `MVP本地存储同步与删除协议.md` | v0.2，SQLCipher/Raw Vault/SourceLocator/LAN sync/删除实现基线已接受 |
+| MVP 本地存储、同步与删除 | `MVP本地存储同步与删除协议.md` | v0.3，Android SQLCipher 4.15.0/v3 space 隔离/append-only trigger/备份排除部分验证；完整 DB-01/Raw/LAN/删除仍待验证 |
 | MVP AI 路由与 Prompt | `MVP-AI任务路由与Prompt契约.md` | v0.1，任务目录、隐私门、回退和 Eval 候选 |
 | MVP 成本容量 SLO 与观测 | `MVP成本容量SLO与可观测性.md` | v0.2，LAN/local-first 规划档、公式、暂定预算与观测基线 |
 
@@ -35,3 +35,5 @@
 | 2026-07-13 | 新增 | 形成机器契约对应的领域状态机、本地存储、同步、删除和迁移正本候选 |
 | 2026-07-13 | 修订 | 架构升级 v0.5，冻结可逆默认基线，补齐 AI、成本、容量、SLO 与无内容可观测性 |
 | 2026-07-14 | 决策 | 接受 SQLCipher/FTS5/SourceLocator、LAN Peer Sync、账户归属/透明设备密钥和统一 Skill 自动记忆边界 |
+| 2026-07-14 | 实现证据 | Android 固定官方 SQLCipher 4.15.0；API 36 AVD 验证 WAL、错误密钥、非明文 header、重建、追加删除与 v1→v2→v3，未外推真机/16 KB/性能 |
+| 2026-07-14 | 边界加固 | 本地库升级 v3，显式 space 绑定和复合主键；Revision trigger 禁止改删；系统备份/D2D 显式排除全部数据域；空文字不生成占位原话 |

@@ -34,9 +34,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.ameme.android.data.FakeMemoryRepository
+import com.ameme.android.data.MemoryRepository
 import com.ameme.android.domain.ExperienceMode
-import com.ameme.android.domain.MemoryEvent
 import com.ameme.android.ui.components.EmptyMessage
 import com.ameme.android.ui.components.EventRow
 import com.ameme.android.ui.components.StateNotice
@@ -48,8 +47,7 @@ import java.time.ZoneOffset
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SearchScreen(
-    repository: FakeMemoryRepository,
-    events: List<MemoryEvent>,
+    repository: MemoryRepository,
     experienceMode: ExperienceMode,
     onBack: () -> Unit,
     onEvent: (String) -> Unit,
@@ -57,7 +55,7 @@ fun SearchScreen(
     var query by remember { mutableStateOf("") }
     var selectedDate by remember { mutableStateOf<LocalDate?>(null) }
     var showCalendar by remember { mutableStateOf(false) }
-    val rawGroups = repository.search(events, query, selectedDate)
+    val rawGroups = repository.search(query, selectedDate)
     val groups = when (experienceMode) {
         ExperienceMode.Empty -> emptyList()
         ExperienceMode.Sparse -> rawGroups.take(1).map { it.copy(events = it.events.take(1)) }
