@@ -19,3 +19,19 @@ class InvariantViolation(CoreOracleError):
 
 class NotFound(CoreOracleError):
     """A referenced object does not exist in the requested space."""
+
+
+class CryptoUnavailable(CoreOracleError):
+    """The approved reference cryptography implementation is unavailable."""
+
+
+class RawIntegrityError(CoreOracleError):
+    """A Raw Vault object failed ciphertext hash or AES-GCM authentication."""
+
+
+class RawQuotaExceeded(CoreOracleError):
+    """A Raw Vault write would exceed its configured local quota."""
+
+
+class QueueLeaseConflict(CoreOracleError):
+    """A durable job was completed or failed without its active lease."""

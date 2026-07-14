@@ -1,23 +1,34 @@
 """Deterministic SQLite reference/oracle for Ameme's local memory loop.
 
-This module intentionally models domain behavior, not production storage. It does
-not provide encryption, Raw Vault durability, system adapters, networking, or
-real-model processing.
+This module intentionally models domain behavior, not production storage. Its
+Raw Vault and durable queues are failure-testable references, not mobile runtime,
+SQLCipher, Keychain/Keystore, networking, or release-readiness evidence.
 """
 
 from __future__ import annotations
 
 from contextlib import contextmanager
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+import base64
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import sqlite3
 from typing import Any, Callable, Iterator
 
-from .errors import IdempotencyConflict, InvariantViolation, NotFound, RevisionConflict
+from .errors import (
+    IdempotencyConflict,
+    InvariantViolation,
+    NotFound,
+    QueueLeaseConflict,
+    RawIntegrityError,
+    RawQuotaExceeded,
+    RevisionConflict,
+)
+from .raw_vault import FaultInjector, KeyProvider, RawVaultIO
 from .schema import SCHEMA_SQL, SCHEMA_VERSION
 
 
@@ -56,6 +67,13 @@ DAY_COVERAGE_STATES = {
     "permission_limited",
     "offline",
 }
+RAW_RETENTION_CLASSES = {
+    "ephemeral_recovery",
+    "user_retained",
+    "derived_rebuildable",
+}
+EXPIRING_RAW_RETENTION_CLASSES = {"ephemeral_recovery", "derived_rebuildable"}
+QUEUE_TYPES = {"processing", "sync", "delete", "export", "recompute"}
 
 
 def _canonical(value: Any) -> str:
@@ -68,6 +86,26 @@ def _hash(value: Any) -> str:
 
 def _default_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _parse_timestamp(value: str) -> datetime:
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise InvariantViolation("timestamp must be valid ISO-8601") from exc
+    if parsed.tzinfo is None:
+        raise InvariantViolation("timestamp must include an offset")
+    return parsed
+
+
+def _utc_timestamp(value: str) -> str:
+    return _parse_timestamp(value).astimezone(timezone.utc).isoformat(timespec="seconds")
+
+
+def _plus_seconds(value: str, seconds: int) -> str:
+    return (_parse_timestamp(value) + timedelta(seconds=seconds)).isoformat(
+        timespec="seconds"
+    )
 
 
 def _local_date(time_range: dict[str, Any]) -> str:
@@ -85,8 +123,24 @@ class CoreOracle:
         database: str | Path = ":memory:",
         *,
         now: Callable[[], str] | None = None,
+        raw_vault_dir: str | Path | None = None,
+        raw_key_provider: KeyProvider | None = None,
+        raw_quota_bytes: int = 64 * 1024 * 1024,
+        raw_fault_injector: FaultInjector | None = None,
     ) -> None:
+        if raw_quota_bytes <= 0:
+            raise InvariantViolation("raw_quota_bytes must be positive")
         self._now = now or _default_now
+        self._raw_quota_bytes = raw_quota_bytes
+        self._raw_vault = (
+            RawVaultIO(
+                raw_vault_dir,
+                key_provider=raw_key_provider,
+                fault_injector=raw_fault_injector,
+            )
+            if raw_vault_dir is not None
+            else None
+        )
         self.connection = sqlite3.connect(str(database), isolation_level=None)
         self.connection.row_factory = sqlite3.Row
         self.connection.execute("PRAGMA foreign_keys = ON")
@@ -97,6 +151,8 @@ class CoreOracle:
             "INSERT OR IGNORE INTO schema_migrations(migration_id, applied_at) VALUES (?, ?)",
             (SCHEMA_VERSION, self._now()),
         )
+        if self._raw_vault is not None:
+            self._recover_raw_vault()
 
     def close(self) -> None:
         self.connection.close()
@@ -305,6 +361,405 @@ class CoreOracle:
             }
 
         return self._command("capture_source", idempotency_key, payload, action)
+
+    def store_raw(
+        self,
+        source_object_id: str,
+        content: bytes,
+        *,
+        key_id: str,
+        mime_type: str,
+        retention_class: str,
+        expires_at: str | None,
+        selected_for_sync: bool = False,
+        idempotency_key: str,
+    ) -> dict[str, Any]:
+        if not isinstance(content, bytes) or not content:
+            raise InvariantViolation("Raw Vault content must be non-empty bytes")
+        normalized_expires_at = (
+            _utc_timestamp(expires_at) if expires_at is not None else None
+        )
+        payload = {
+            "source_object_id": source_object_id,
+            "content_sha256": hashlib.sha256(content).hexdigest(),
+            "content_size": len(content),
+            "key_id": key_id,
+            "mime_type": mime_type,
+            "retention_class": retention_class,
+            "expires_at": normalized_expires_at,
+            "selected_for_sync": selected_for_sync,
+        }
+        written_relative_path: str | None = None
+
+        def action() -> dict[str, Any]:
+            nonlocal written_relative_path
+            vault = self._require_raw_vault()
+            source = self._active_source(source_object_id)
+            if not key_id or not mime_type:
+                raise InvariantViolation("Raw Vault key_id and mime_type are required")
+            if retention_class not in RAW_RETENTION_CLASSES:
+                raise InvariantViolation("unsupported Raw Vault retention class")
+            created_at = _utc_timestamp(self._now())
+            if retention_class in EXPIRING_RAW_RETENTION_CLASSES:
+                if normalized_expires_at is None:
+                    raise InvariantViolation("expiring Raw Vault content requires expires_at")
+                if _parse_timestamp(normalized_expires_at) <= _parse_timestamp(created_at):
+                    raise InvariantViolation("Raw Vault expires_at must be in the future")
+            projected_size = len(content) + 16
+            used = self.raw_vault_usage()["ciphertext_bytes"]
+            if used + projected_size > self._raw_quota_bytes:
+                raise RawQuotaExceeded("Raw Vault quota would be exceeded")
+            raw_object_id = self._next_id("raw")
+            relative_path = f"objects/{raw_object_id}.agcm"
+            nonce = self._unique_raw_nonce()
+            nonce_b64 = base64.b64encode(nonce).decode("ascii")
+            aad_value = {
+                "raw_object_id": raw_object_id,
+                "source_object_id": source_object_id,
+                "space_id": source["space_id"],
+                "created_at": created_at,
+                "schema_version": 1,
+            }
+            aad = _canonical(aad_value).encode("utf-8")
+            written = vault.write_encrypted(
+                relative_path=relative_path,
+                plaintext=content,
+                key_id=key_id,
+                nonce=nonce,
+                aad=aad,
+            )
+            written_relative_path = relative_path
+            try:
+                self.connection.execute(
+                    "INSERT INTO raw_manifests VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        raw_object_id,
+                        source_object_id,
+                        source["space_id"],
+                        relative_path,
+                        key_id,
+                        nonce_b64,
+                        _canonical(aad_value),
+                        written["plaintext_sha256"],
+                        written["ciphertext_sha256"],
+                        written["plaintext_size"],
+                        written["ciphertext_size"],
+                        mime_type,
+                        retention_class,
+                        created_at,
+                        normalized_expires_at,
+                        "active",
+                        1 if selected_for_sync else 0,
+                        "ready",
+                        created_at,
+                    ),
+                )
+                self._lineage(
+                    "raw_manifest",
+                    raw_object_id,
+                    "source_object",
+                    source_object_id,
+                    "derived_from",
+                )
+                return self.raw_manifest(raw_object_id)
+            except Exception:
+                vault.cleanup_file(relative_path)
+                written_relative_path = None
+                raise
+
+        try:
+            return self._command("store_raw", idempotency_key, payload, action)
+        except Exception:
+            if written_relative_path is not None and self._raw_vault is not None:
+                try:
+                    self._raw_vault.cleanup_file(written_relative_path)
+                except OSError:
+                    pass
+            raise
+
+    def read_raw(self, raw_object_id: str) -> bytes:
+        vault = self._require_raw_vault()
+        row = self._raw_manifest_row(raw_object_id)
+        if row["state"] != "ready" or row["deletion_state"] != "active":
+            raise NotFound("Raw Vault object is not available")
+        plaintext = vault.read_encrypted(
+            relative_path=row["relative_path"],
+            key_id=row["key_id"],
+            nonce=base64.b64decode(row["nonce_b64"], validate=True),
+            aad=row["aad_json"].encode("utf-8"),
+            expected_ciphertext_sha256=row["ciphertext_sha256"],
+        )
+        if hashlib.sha256(plaintext).hexdigest() != row["plaintext_sha256"]:
+            raise RawIntegrityError("Raw Vault plaintext hash mismatch")
+        return plaintext
+
+    def raw_manifest(self, raw_object_id: str) -> dict[str, Any]:
+        row = self._raw_manifest_row(raw_object_id)
+        return {
+            "raw_object_id": row["raw_object_id"],
+            "source_object_id": row["source_object_id"],
+            "space_id": row["space_id"],
+            "relative_path": row["relative_path"],
+            "key_id": row["key_id"],
+            "nonce_b64": row["nonce_b64"],
+            "aad": json.loads(row["aad_json"]),
+            "plaintext_sha256": row["plaintext_sha256"],
+            "ciphertext_sha256": row["ciphertext_sha256"],
+            "plaintext_size": row["plaintext_size"],
+            "ciphertext_size": row["ciphertext_size"],
+            "mime_type": row["mime_type"],
+            "retention_class": row["retention_class"],
+            "created_at": row["created_at"],
+            "expires_at": row["expires_at"],
+            "deletion_state": row["deletion_state"],
+            "selected_for_sync": bool(row["selected_for_sync"]),
+            "state": row["state"],
+            "updated_at": row["updated_at"],
+        }
+
+    def raw_vault_usage(self) -> dict[str, int]:
+        row = self.connection.execute(
+            "SELECT COUNT(*) object_count, COALESCE(SUM(ciphertext_size), 0) ciphertext_bytes "
+            "FROM raw_manifests WHERE state = 'ready' AND deletion_state = 'active'"
+        ).fetchone()
+        return {
+            "object_count": int(row["object_count"]),
+            "ciphertext_bytes": int(row["ciphertext_bytes"]),
+            "quota_bytes": self._raw_quota_bytes,
+        }
+
+    def purge_expired_raw(
+        self, *, at: str, idempotency_key: str
+    ) -> dict[str, Any]:
+        normalized_at = _utc_timestamp(at)
+        payload = {"at": normalized_at}
+
+        def action() -> dict[str, Any]:
+            rows = self.connection.execute(
+                "SELECT raw_object_id FROM raw_manifests WHERE state = 'ready' "
+                "AND deletion_state = 'active' AND retention_class IN (?, ?) "
+                "AND expires_at IS NOT NULL AND expires_at <= ? ORDER BY raw_object_id",
+                (*sorted(EXPIRING_RAW_RETENTION_CLASSES), normalized_at),
+            ).fetchall()
+            deleted: list[str] = []
+            failed: list[str] = []
+            for row in rows:
+                try:
+                    self._delete_raw_manifest_tx(
+                        row["raw_object_id"], "expired", normalized_at
+                    )
+                except OSError:
+                    failed.append(row["raw_object_id"])
+                else:
+                    deleted.append(row["raw_object_id"])
+            return {"deleted_raw_object_ids": deleted, "failed_raw_object_ids": failed}
+
+        return self._command("purge_expired_raw", idempotency_key, payload, action)
+
+    def enqueue_job(
+        self,
+        queue_type: str,
+        job_payload: dict[str, Any],
+        *,
+        priority: int,
+        max_attempts: int = 5,
+        available_at: str | None = None,
+        idempotency_key: str,
+    ) -> dict[str, Any]:
+        payload = {
+            "queue_type": queue_type,
+            "job_payload": deepcopy(job_payload),
+            "priority": priority,
+            "max_attempts": max_attempts,
+            "available_at": available_at,
+        }
+
+        def action() -> dict[str, Any]:
+            return self._enqueue_job_tx(
+                queue_type,
+                payload["job_payload"],
+                priority=priority,
+                max_attempts=max_attempts,
+                available_at=available_at,
+                queue_idempotency_key=idempotency_key,
+            )
+
+        return self._command("enqueue_job", idempotency_key, payload, action)
+
+    def lease_next_job(
+        self,
+        *,
+        worker_id: str,
+        lease_seconds: int,
+        queue_types: list[str] | None = None,
+        idempotency_key: str,
+    ) -> dict[str, Any]:
+        requested_types = sorted(set(queue_types or QUEUE_TYPES))
+        payload = {
+            "worker_id": worker_id,
+            "lease_seconds": lease_seconds,
+            "queue_types": requested_types,
+        }
+
+        def action() -> dict[str, Any]:
+            if not worker_id:
+                raise InvariantViolation("worker_id is required")
+            if not 1 <= lease_seconds <= 3600:
+                raise InvariantViolation("lease_seconds must be between 1 and 3600")
+            if not requested_types or not set(requested_types) <= QUEUE_TYPES:
+                raise InvariantViolation("unsupported durable queue type")
+            now = _utc_timestamp(self._now())
+            self._release_expired_leases_tx(now)
+            placeholders = ",".join("?" for _ in requested_types)
+            row = self.connection.execute(
+                "SELECT * FROM durable_jobs WHERE state = 'queued' AND available_at <= ? "
+                f"AND queue_type IN ({placeholders}) "
+                "ORDER BY priority DESC, created_at, job_id LIMIT 1",
+                (now, *requested_types),
+            ).fetchone()
+            if not row:
+                return {"job": None}
+            lease_expires_at = _plus_seconds(now, lease_seconds)
+            self.connection.execute(
+                "UPDATE durable_jobs SET state = 'leased', lease_owner = ?, "
+                "lease_expires_at = ?, attempt_count = attempt_count + 1, updated_at = ? "
+                "WHERE job_id = ? AND state = 'queued'",
+                (worker_id, lease_expires_at, now, row["job_id"]),
+            )
+            return {"job": self.get_job(row["job_id"])}
+
+        return self._command("lease_next_job", idempotency_key, payload, action)
+
+    def complete_job(
+        self,
+        job_id: str,
+        *,
+        worker_id: str,
+        result: dict[str, Any] | None,
+        idempotency_key: str,
+    ) -> dict[str, Any]:
+        payload = {
+            "job_id": job_id,
+            "worker_id": worker_id,
+            "result": deepcopy(result),
+        }
+
+        def action() -> dict[str, Any]:
+            row = self._leased_job(job_id, worker_id)
+            now = _utc_timestamp(self._now())
+            if _parse_timestamp(row["lease_expires_at"]) <= _parse_timestamp(now):
+                raise QueueLeaseConflict("job lease expired before completion")
+            if row["queue_type"] == "delete":
+                deletion_job_id = json.loads(row["payload_json"]).get(
+                    "deletion_job_id"
+                )
+                deletion = self._deletion_job_row(deletion_job_id)
+                affected = json.loads(deletion["affected_json"])
+                if deletion["state"] != "completed" or not affected.get(
+                    "proof_complete"
+                ):
+                    raise QueueLeaseConflict(
+                        "delete queue cannot complete before deletion proof"
+                    )
+            self.connection.execute(
+                "UPDATE durable_jobs SET state = 'completed', lease_owner = NULL, "
+                "lease_expires_at = NULL, result_json = ?, updated_at = ? WHERE job_id = ?",
+                (_canonical(result) if result is not None else None, now, job_id),
+            )
+            return self.get_job(job_id)
+
+        return self._command("complete_job", idempotency_key, payload, action)
+
+    def fail_job(
+        self,
+        job_id: str,
+        *,
+        worker_id: str,
+        error_code: str,
+        base_backoff_seconds: int = 5,
+        max_backoff_seconds: int = 3600,
+        idempotency_key: str,
+    ) -> dict[str, Any]:
+        payload = {
+            "job_id": job_id,
+            "worker_id": worker_id,
+            "error_code": error_code,
+            "base_backoff_seconds": base_backoff_seconds,
+            "max_backoff_seconds": max_backoff_seconds,
+        }
+
+        def action() -> dict[str, Any]:
+            row = self._leased_job(job_id, worker_id)
+            if not error_code or len(error_code) > 64:
+                raise InvariantViolation("error_code must be a short non-content code")
+            if base_backoff_seconds <= 0 or max_backoff_seconds < base_backoff_seconds:
+                raise InvariantViolation("invalid durable queue backoff")
+            now = _utc_timestamp(self._now())
+            if _parse_timestamp(row["lease_expires_at"]) <= _parse_timestamp(now):
+                raise QueueLeaseConflict("job lease expired before failure handling")
+            attempts = int(row["attempt_count"])
+            if attempts >= int(row["max_attempts"]):
+                state = "failed"
+                available_at = now
+            else:
+                state = "queued"
+                delay = min(
+                    max_backoff_seconds,
+                    base_backoff_seconds * (2 ** max(0, attempts - 1)),
+                )
+                available_at = _plus_seconds(now, delay)
+            self.connection.execute(
+                "UPDATE durable_jobs SET state = ?, lease_owner = NULL, "
+                "lease_expires_at = NULL, available_at = ?, last_error_code = ?, "
+                "updated_at = ? WHERE job_id = ?",
+                (state, available_at, error_code, now, job_id),
+            )
+            return self.get_job(job_id)
+
+        return self._command("fail_job", idempotency_key, payload, action)
+
+    def get_job(self, job_id: str) -> dict[str, Any]:
+        row = self.connection.execute(
+            "SELECT * FROM durable_jobs WHERE job_id = ?", (job_id,)
+        ).fetchone()
+        if not row:
+            raise NotFound("durable job not found")
+        return {
+            "job_id": row["job_id"],
+            "queue_type": row["queue_type"],
+            "payload": json.loads(row["payload_json"]),
+            "priority": row["priority"],
+            "state": row["state"],
+            "lease_owner": row["lease_owner"],
+            "lease_expires_at": row["lease_expires_at"],
+            "attempt_count": row["attempt_count"],
+            "max_attempts": row["max_attempts"],
+            "available_at": row["available_at"],
+            "last_error_code": row["last_error_code"],
+            "result": json.loads(row["result_json"]) if row["result_json"] else None,
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+        }
+
+    def get_deletion_job(self, deletion_job_id: str) -> dict[str, Any]:
+        row = self._deletion_job_row(deletion_job_id)
+        queue = self.connection.execute(
+            "SELECT job_id FROM durable_jobs WHERE queue_idempotency_key = ?",
+            (f"deletion:{deletion_job_id}",),
+        ).fetchone()
+        return {
+            "deletion_job_id": row["deletion_job_id"],
+            "queue_job_id": queue["job_id"] if queue else None,
+            "owner_id": row["owner_id"],
+            "space_id": row["space_id"],
+            "target_type": row["target_type"],
+            "target_id": row["target_id"],
+            "state": row["state"],
+            "affected": json.loads(row["affected_json"]),
+            "proof_hash": row["proof_hash"],
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+        }
 
     def add_user_addendum(
         self,
@@ -697,25 +1152,23 @@ class CoreOracle:
         *,
         idempotency_key: str,
         reason: str = "user_delete",
+        required_replica_ids: list[str] | None = None,
     ) -> dict[str, Any]:
-        payload = {"source_object_id": source_object_id, "reason": reason}
+        replicas = sorted(set(required_replica_ids or []))
+        payload = {
+            "source_object_id": source_object_id,
+            "reason": reason,
+            "required_replica_ids": replicas,
+        }
 
         def action() -> dict[str, Any]:
             source = self._source(source_object_id)
             if source["processing_state"] == "deleted":
                 raise InvariantViolation("source is already deleted without an idempotent replay key")
-            affected_events = sorted(
-                row["event_id"]
-                for row in self.connection.execute(
-                    "SELECT DISTINCT fe.event_id FROM field_evidence fe "
-                    "JOIN events_current ec ON ec.event_id = fe.event_id "
-                    "AND ec.revision = fe.revision "
-                    "WHERE fe.source_object_id = ? AND ec.state != 'deleted'",
-                    (source_object_id,),
-                )
-            )
+            impact = self.deletion_impact(source_object_id)
+            affected_events = impact["event_ids"]
             tombstone_id = self._next_id("tmb")
-            now = self._now()
+            now = _utc_timestamp(self._now())
             self.connection.execute(
                 "INSERT INTO tombstones VALUES (?, 'source_object', ?, ?, ?)",
                 (tombstone_id, source_object_id, reason, now),
@@ -782,36 +1235,214 @@ class CoreOracle:
             self._recompute_episodes_after_deletion(set(deleted_event_ids), touched_dates)
             for owner_id, space_id, local_date, timezone_name in touched_dates:
                 self._refresh_ledger(owner_id, space_id, local_date, timezone_name)
+            failed_raw_object_ids: list[str] = []
+            for raw_object_id in impact["raw_object_ids"]:
+                try:
+                    self._delete_raw_manifest_tx(raw_object_id, reason, now)
+                except Exception:
+                    failed_raw_object_ids.append(raw_object_id)
             job_id = self._next_id("del")
+            local_cleanup_complete = not failed_raw_object_ids and self._raw_cleanup_complete(
+                impact["raw_object_ids"]
+            )
+            state = (
+                "completed"
+                if local_cleanup_complete and not replicas
+                else "partial_failed"
+            )
             affected = {
                 "source_object_ids": [source_object_id],
+                "raw_object_ids": impact["raw_object_ids"],
+                "observation_ids": impact["observation_ids"],
                 "event_ids": affected_events,
                 "retained_event_ids": retained_event_ids,
                 "deleted_event_ids": deleted_event_ids,
+                "episode_ids": impact["episode_ids"],
+                "day_ledger_ids": impact["day_ledger_ids"],
+                "lineage_edge_ids": impact["lineage_edge_ids"],
+                "failed_raw_object_ids": failed_raw_object_ids,
+                "local_cleanup_complete": local_cleanup_complete,
+                "pending_replica_ids": replicas,
+                "acked_replica_ids": [],
+                "proof_complete": state == "completed",
                 "tombstone_precedence": True,
             }
             proof_hash = _hash(affected)
             self.connection.execute(
-                "INSERT INTO deletion_jobs VALUES (?, ?, ?, 'source_object', ?, 'completed', ?, ?, ?, ?)",
+                "INSERT INTO deletion_jobs VALUES (?, ?, ?, 'source_object', ?, ?, ?, ?, ?, ?)",
                 (
                     job_id,
                     source["owner_id"],
                     source["space_id"],
                     source_object_id,
+                    state,
                     _canonical(affected),
                     proof_hash,
                     now,
                     now,
                 ),
             )
+            queue_job = self._enqueue_job_tx(
+                "delete",
+                {"deletion_job_id": job_id, "source_object_id": source_object_id},
+                priority=100,
+                max_attempts=10,
+                available_at=now,
+                queue_idempotency_key=f"deletion:{job_id}",
+            )
+            if state == "completed":
+                self.connection.execute(
+                    "UPDATE durable_jobs SET state = 'completed', result_json = ?, updated_at = ? "
+                    "WHERE job_id = ?",
+                    (_canonical({"proof_hash": proof_hash}), now, queue_job["job_id"]),
+                )
             return {
                 "deletion_job_id": job_id,
-                "state": "completed",
+                "queue_job_id": queue_job["job_id"],
+                "state": state,
                 "affected": affected,
                 "proof_hash": proof_hash,
             }
 
         return self._command("delete_source", idempotency_key, payload, action)
+
+    def retry_deletion_job(
+        self, deletion_job_id: str, *, idempotency_key: str
+    ) -> dict[str, Any]:
+        payload = {"deletion_job_id": deletion_job_id}
+
+        def action() -> dict[str, Any]:
+            row = self._deletion_job_row(deletion_job_id)
+            affected = json.loads(row["affected_json"])
+            now = _utc_timestamp(self._now())
+            failed: list[str] = []
+            for raw_object_id in affected.get("raw_object_ids", []):
+                try:
+                    self._delete_raw_manifest_tx(raw_object_id, "deletion_retry", now)
+                except Exception:
+                    failed.append(raw_object_id)
+            affected["failed_raw_object_ids"] = failed
+            affected["local_cleanup_complete"] = not failed and self._raw_cleanup_complete(
+                affected.get("raw_object_ids", [])
+            )
+            state = self._deletion_state(affected)
+            affected["proof_complete"] = state == "completed"
+            proof_hash = _hash(affected)
+            self._update_deletion_job_tx(
+                deletion_job_id, state, affected, proof_hash, now
+            )
+            return {
+                "deletion_job_id": deletion_job_id,
+                "state": state,
+                "affected": affected,
+                "proof_hash": proof_hash,
+            }
+
+        return self._command("retry_deletion_job", idempotency_key, payload, action)
+
+    def acknowledge_deletion(
+        self,
+        deletion_job_id: str,
+        *,
+        replica_id: str,
+        idempotency_key: str,
+    ) -> dict[str, Any]:
+        payload = {"deletion_job_id": deletion_job_id, "replica_id": replica_id}
+
+        def action() -> dict[str, Any]:
+            if not replica_id:
+                raise InvariantViolation("replica_id is required")
+            row = self._deletion_job_row(deletion_job_id)
+            affected = json.loads(row["affected_json"])
+            pending = set(affected.get("pending_replica_ids", []))
+            acked = set(affected.get("acked_replica_ids", []))
+            if replica_id not in pending and replica_id not in acked:
+                raise InvariantViolation("replica is outside this deletion proof scope")
+            pending.discard(replica_id)
+            acked.add(replica_id)
+            affected["pending_replica_ids"] = sorted(pending)
+            affected["acked_replica_ids"] = sorted(acked)
+            state = self._deletion_state(affected)
+            affected["proof_complete"] = state == "completed"
+            now = _utc_timestamp(self._now())
+            proof_hash = _hash(affected)
+            self._update_deletion_job_tx(
+                deletion_job_id, state, affected, proof_hash, now
+            )
+            return {
+                "deletion_job_id": deletion_job_id,
+                "state": state,
+                "affected": affected,
+                "proof_hash": proof_hash,
+            }
+
+        return self._command("acknowledge_deletion", idempotency_key, payload, action)
+
+    def deletion_impact(self, source_object_id: str) -> dict[str, list[str]]:
+        self._source(source_object_id)
+        observation_ids = sorted(
+            row["observation_id"]
+            for row in self.connection.execute(
+                "SELECT observation_id FROM observations WHERE source_object_id = ?",
+                (source_object_id,),
+            )
+        )
+        event_ids = sorted(
+            row["event_id"]
+            for row in self.connection.execute(
+                "SELECT DISTINCT fe.event_id FROM field_evidence fe "
+                "JOIN events_current ec ON ec.event_id = fe.event_id "
+                "AND ec.revision = fe.revision "
+                "WHERE fe.source_object_id = ? AND ec.state != 'deleted'",
+                (source_object_id,),
+            )
+        )
+        event_set = set(event_ids)
+        episode_ids: list[str] = []
+        for row in self.connection.execute(
+            "SELECT episode_id, snapshot_json FROM episodes_current WHERE state != 'deleted'"
+        ):
+            snapshot = json.loads(row["snapshot_json"])
+            if any(ref["event_id"] in event_set for ref in snapshot["event_refs"]):
+                episode_ids.append(row["episode_id"])
+        day_ledger_ids = sorted(
+            {
+                row["day_ledger_id"]
+                for row in self.connection.execute(
+                    "SELECT DISTINCT dle.day_ledger_id FROM day_ledger_entries dle "
+                    "WHERE dle.object_id IN ("
+                    "SELECT fe.event_id FROM field_evidence fe WHERE fe.source_object_id = ?"
+                    ")",
+                    (source_object_id,),
+                )
+            }
+        )
+        lineage_edge_ids = sorted(
+            row["lineage_edge_id"]
+            for row in self.connection.execute(
+                "SELECT lineage_edge_id FROM lineage_edges WHERE "
+                "(to_type = 'source_object' AND to_id = ?) OR "
+                "(from_type = 'observation' AND from_id IN ("
+                "SELECT observation_id FROM observations WHERE source_object_id = ?))",
+                (source_object_id, source_object_id),
+            )
+        )
+        raw_object_ids = sorted(
+            row["raw_object_id"]
+            for row in self.connection.execute(
+                "SELECT raw_object_id FROM raw_manifests WHERE source_object_id = ? "
+                "AND deletion_state = 'active'",
+                (source_object_id,),
+            )
+        )
+        return {
+            "raw_object_ids": raw_object_ids,
+            "observation_ids": observation_ids,
+            "event_ids": event_ids,
+            "episode_ids": sorted(episode_ids),
+            "day_ledger_ids": day_ledger_ids,
+            "lineage_edge_ids": lineage_edge_ids,
+        }
 
     def today(
         self,
@@ -1039,6 +1670,7 @@ class CoreOracle:
     def table_count(self, table: str) -> int:
         allowed = {
             "source_objects",
+            "raw_manifests",
             "source_locator_history",
             "user_addenda",
             "observations",
@@ -1052,6 +1684,7 @@ class CoreOracle:
             "lineage_edges",
             "tombstones",
             "deletion_jobs",
+            "durable_jobs",
             "idempotency_records",
         }
         if table not in allowed:
@@ -1076,6 +1709,204 @@ class CoreOracle:
                 (event_id,),
             )
         ]
+
+    def _require_raw_vault(self) -> RawVaultIO:
+        if self._raw_vault is None:
+            raise InvariantViolation("Raw Vault directory was not configured")
+        return self._raw_vault
+
+    def _raw_manifest_row(self, raw_object_id: str) -> sqlite3.Row:
+        row = self.connection.execute(
+            "SELECT * FROM raw_manifests WHERE raw_object_id = ?", (raw_object_id,)
+        ).fetchone()
+        if not row:
+            raise NotFound("Raw Vault manifest not found")
+        return row
+
+    def _unique_raw_nonce(self) -> bytes:
+        for _ in range(16):
+            nonce = os.urandom(12)
+            encoded = base64.b64encode(nonce).decode("ascii")
+            if not self.connection.execute(
+                "SELECT 1 FROM raw_manifests WHERE nonce_b64 = ?", (encoded,)
+            ).fetchone():
+                return nonce
+        raise InvariantViolation("failed to allocate a unique Raw Vault nonce")
+
+    def _recover_raw_vault(self) -> None:
+        vault = self._require_raw_vault()
+        rows = self.connection.execute(
+            "SELECT raw_object_id, relative_path FROM raw_manifests "
+            "WHERE state = 'ready' AND deletion_state = 'active'"
+        ).fetchall()
+        vault.recover(row["relative_path"] for row in rows)
+        now = _utc_timestamp(self._now())
+        with self._transaction():
+            for row in rows:
+                if not vault.exists(row["relative_path"]):
+                    self.connection.execute(
+                        "UPDATE raw_manifests SET state = 'missing', updated_at = ? "
+                        "WHERE raw_object_id = ?",
+                        (now, row["raw_object_id"]),
+                    )
+
+    def _delete_raw_manifest_tx(
+        self, raw_object_id: str, deletion_state: str, now: str
+    ) -> None:
+        row = self._raw_manifest_row(raw_object_id)
+        if row["deletion_state"] != "active":
+            return
+        vault = self._require_raw_vault()
+        vault.delete(row["relative_path"])
+        self.connection.execute(
+            "UPDATE raw_manifests SET state = 'deleted', deletion_state = ?, updated_at = ? "
+            "WHERE raw_object_id = ?",
+            (deletion_state, now, raw_object_id),
+        )
+
+    def _raw_cleanup_complete(self, raw_object_ids: list[str]) -> bool:
+        if not raw_object_ids:
+            return True
+        if self._raw_vault is None:
+            return False
+        for raw_object_id in raw_object_ids:
+            row = self._raw_manifest_row(raw_object_id)
+            if row["deletion_state"] == "active":
+                return False
+            if self._raw_vault.exists(row["relative_path"]):
+                return False
+        return True
+
+    def _enqueue_job_tx(
+        self,
+        queue_type: str,
+        job_payload: dict[str, Any],
+        *,
+        priority: int,
+        max_attempts: int,
+        available_at: str | None,
+        queue_idempotency_key: str,
+    ) -> dict[str, Any]:
+        if queue_type not in QUEUE_TYPES:
+            raise InvariantViolation("unsupported durable queue type")
+        if not 0 <= priority <= 100:
+            raise InvariantViolation("job priority must be between 0 and 100")
+        if max_attempts < 1:
+            raise InvariantViolation("max_attempts must be positive")
+        if len(queue_idempotency_key) < 8:
+            raise InvariantViolation("queue idempotency key is too short")
+        payload_hash = _hash(
+            {
+                "queue_type": queue_type,
+                "payload": job_payload,
+                "priority": priority,
+                "max_attempts": max_attempts,
+                "available_at": available_at,
+            }
+        )
+        existing = self.connection.execute(
+            "SELECT job_id, payload_hash FROM durable_jobs WHERE queue_idempotency_key = ?",
+            (queue_idempotency_key,),
+        ).fetchone()
+        if existing:
+            if existing["payload_hash"] != payload_hash:
+                raise IdempotencyConflict(
+                    f"IDEMPOTENCY_CONFLICT for durable job {queue_idempotency_key}"
+                )
+            return self.get_job(existing["job_id"])
+        created_at = _utc_timestamp(self._now())
+        ready_at = _utc_timestamp(available_at) if available_at else created_at
+        job_id = self._next_id("job")
+        self.connection.execute(
+            "INSERT INTO durable_jobs VALUES (?, ?, ?, ?, ?, ?, 'queued', NULL, NULL, 0, ?, ?, NULL, NULL, ?, ?)",
+            (
+                job_id,
+                queue_type,
+                queue_idempotency_key,
+                payload_hash,
+                _canonical(job_payload),
+                priority,
+                max_attempts,
+                ready_at,
+                created_at,
+                created_at,
+            ),
+        )
+        return self.get_job(job_id)
+
+    def _release_expired_leases_tx(self, now: str) -> None:
+        self.connection.execute(
+            "UPDATE durable_jobs SET state = 'failed', lease_owner = NULL, "
+            "lease_expires_at = NULL, last_error_code = 'LEASE_EXPIRED_MAX_ATTEMPTS', "
+            "updated_at = ? WHERE state = 'leased' AND lease_expires_at <= ? "
+            "AND attempt_count >= max_attempts",
+            (now, now),
+        )
+        self.connection.execute(
+            "UPDATE durable_jobs SET state = 'queued', lease_owner = NULL, "
+            "lease_expires_at = NULL, updated_at = ? WHERE state = 'leased' "
+            "AND lease_expires_at <= ? AND attempt_count < max_attempts",
+            (now, now),
+        )
+
+    def _leased_job(self, job_id: str, worker_id: str) -> sqlite3.Row:
+        row = self.connection.execute(
+            "SELECT * FROM durable_jobs WHERE job_id = ?", (job_id,)
+        ).fetchone()
+        if not row:
+            raise NotFound("durable job not found")
+        if row["state"] != "leased" or row["lease_owner"] != worker_id:
+            raise QueueLeaseConflict("job is not leased by this worker")
+        return row
+
+    def _deletion_job_row(self, deletion_job_id: str) -> sqlite3.Row:
+        row = self.connection.execute(
+            "SELECT * FROM deletion_jobs WHERE deletion_job_id = ?",
+            (deletion_job_id,),
+        ).fetchone()
+        if not row:
+            raise NotFound("deletion job not found")
+        return row
+
+    @staticmethod
+    def _deletion_state(affected: dict[str, Any]) -> str:
+        if affected.get("local_cleanup_complete") and not affected.get(
+            "pending_replica_ids"
+        ):
+            return "completed"
+        return "partial_failed"
+
+    def _update_deletion_job_tx(
+        self,
+        deletion_job_id: str,
+        state: str,
+        affected: dict[str, Any],
+        proof_hash: str,
+        now: str,
+    ) -> None:
+        self.connection.execute(
+            "UPDATE deletion_jobs SET state = ?, affected_json = ?, proof_hash = ?, "
+            "updated_at = ? WHERE deletion_job_id = ?",
+            (state, _canonical(affected), proof_hash, now, deletion_job_id),
+        )
+        if state == "completed":
+            self.connection.execute(
+                "UPDATE durable_jobs SET state = 'completed', lease_owner = NULL, "
+                "lease_expires_at = NULL, result_json = ?, updated_at = ? "
+                "WHERE queue_idempotency_key = ?",
+                (
+                    _canonical({"proof_hash": proof_hash}),
+                    now,
+                    f"deletion:{deletion_job_id}",
+                ),
+            )
+        else:
+            self.connection.execute(
+                "UPDATE durable_jobs SET state = 'queued', lease_owner = NULL, "
+                "lease_expires_at = NULL, available_at = ?, updated_at = ? "
+                "WHERE queue_idempotency_key = ? AND state != 'completed'",
+                (now, now, f"deletion:{deletion_job_id}"),
+            )
 
     def _source(self, source_id: str) -> sqlite3.Row:
         row = self.connection.execute(

@@ -1,6 +1,6 @@
 """SQLite logical schema for the non-production core oracle."""
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 SCHEMA_SQL = r"""
 PRAGMA foreign_keys = ON;
@@ -56,6 +56,32 @@ CREATE TABLE IF NOT EXISTS source_objects (
 );
 CREATE INDEX IF NOT EXISTS source_objects_space_date
     ON source_objects(space_id, local_date, acquired_at);
+
+CREATE TABLE IF NOT EXISTS raw_manifests (
+    raw_object_id TEXT PRIMARY KEY,
+    source_object_id TEXT NOT NULL REFERENCES source_objects(source_object_id),
+    space_id TEXT NOT NULL,
+    relative_path TEXT NOT NULL UNIQUE,
+    key_id TEXT NOT NULL,
+    nonce_b64 TEXT NOT NULL UNIQUE,
+    aad_json TEXT NOT NULL,
+    plaintext_sha256 TEXT NOT NULL,
+    ciphertext_sha256 TEXT NOT NULL,
+    plaintext_size INTEGER NOT NULL CHECK (plaintext_size >= 0),
+    ciphertext_size INTEGER NOT NULL CHECK (ciphertext_size >= 16),
+    mime_type TEXT NOT NULL,
+    retention_class TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    expires_at TEXT,
+    deletion_state TEXT NOT NULL,
+    selected_for_sync INTEGER NOT NULL CHECK (selected_for_sync IN (0, 1)),
+    state TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS raw_manifests_source
+    ON raw_manifests(source_object_id, state);
+CREATE INDEX IF NOT EXISTS raw_manifests_expiry
+    ON raw_manifests(state, retention_class, expires_at);
 
 CREATE TABLE IF NOT EXISTS source_locator_history (
     history_id TEXT PRIMARY KEY,
@@ -276,6 +302,27 @@ CREATE TABLE IF NOT EXISTS deletion_jobs (
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS durable_jobs (
+    job_id TEXT PRIMARY KEY,
+    queue_type TEXT NOT NULL,
+    queue_idempotency_key TEXT NOT NULL UNIQUE,
+    payload_hash TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    priority INTEGER NOT NULL CHECK (priority >= 0 AND priority <= 100),
+    state TEXT NOT NULL,
+    lease_owner TEXT,
+    lease_expires_at TEXT,
+    attempt_count INTEGER NOT NULL CHECK (attempt_count >= 0),
+    max_attempts INTEGER NOT NULL CHECK (max_attempts >= 1),
+    available_at TEXT NOT NULL,
+    last_error_code TEXT,
+    result_json TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS durable_jobs_ready
+    ON durable_jobs(state, available_at, priority DESC, created_at);
 
 CREATE VIRTUAL TABLE IF NOT EXISTS recall_fts USING fts5(
     event_id UNINDEXED,
