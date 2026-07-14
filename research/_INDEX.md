@@ -3,6 +3,7 @@
 | 子目录 | 用途 | 当前入口 |
 |---|---|---|
 | `windows/` | Windows 信息源低风险能力验证 | `windows/_INDEX.md` |
+| `browser/` | Browser Extension 与当前页低权限 Capture | `browser/_INDEX.md` |
 
 ## 规则
 

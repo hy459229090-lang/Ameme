@@ -1,0 +1,44 @@
+{
+  "status": "lan_local_first_planning_fixture_not_supplier_quote",
+  "currency": "relative_cost_unit",
+  "days_per_month": 30,
+  "object_sizes_bytes": {
+    "event": 1600,
+    "revision": 900,
+    "observation": 1000,
+    "audit": 300
+  },
+  "assumptions": {
+    "revisions_per_event": 0.35,
+    "observations_per_event": 2.5,
+    "audit_rows_per_event": 1.2,
+    "index_overhead_ratio": 0.6,
+    "selected_photo_bytes": 2500000,
+    "selected_audio_bytes_per_min": 960000,
+    "selected_raw_ratio": 0.1,
+    "model_input_tokens_per_task": 900,
+    "model_output_tokens_per_task": 180,
+    "model_tasks_per_event": 0.25,
+    "jobs_per_event": 3,
+    "egress_gb_per_structured_gb": 2
+  },
+  "unit_prices": {
+    "struct_gb_month": 0,
+    "blob_gb_month": 0,
+    "egress_gb": 0,
+    "stt_min": 1,
+    "ocr_image": 1,
+    "model_input_million_tokens": 1,
+    "model_output_million_tokens": 1,
+    "embedding_million_tokens": 1,
+    "jobs_million": 0,
+    "identity_user_month": 1,
+    "support_hour": 1
+  },
+  "profiles": {
+    "L": {"events_per_day": 20, "photo_refs_per_day": 5, "audio_min_per_day": 1, "ocr_images_per_day": 1, "agent_recalls_per_day": 2, "support_hours_per_month": 0.05},
+    "M": {"events_per_day": 80, "photo_refs_per_day": 20, "audio_min_per_day": 5, "ocr_images_per_day": 5, "agent_recalls_per_day": 10, "support_hours_per_month": 0.15},
+    "H": {"events_per_day": 300, "photo_refs_per_day": 60, "audio_min_per_day": 20, "ocr_images_per_day": 20, "agent_recalls_per_day": 40, "support_hours_per_month": 0.5},
+    "X": {"events_per_day": 1000, "photo_refs_per_day": 200, "audio_min_per_day": 60, "ocr_images_per_day": 60, "agent_recalls_per_day": 100, "support_hours_per_month": 1.5}
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "Ameme activeTab capability spike",
+  "version": "0.1.0",
+  "description": "Validates user-triggered one-page capture without persistent host permissions.",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage"
+  ],
+  "background": {
+    "service_worker": "service-worker.js"
+  },
+  "action": {
+    "default_title": "Capture this synthetic test page"
+  },
+  "commands": {
+    "capture-current-page": {
+      "suggested_key": {
+        "default": "Alt+Shift+M",
+        "mac": "Command+Shift+M"
+      },
+      "description": "Capture the current page after an explicit user gesture"
+    }
+  }
+}

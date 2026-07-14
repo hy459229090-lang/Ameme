@@ -14,7 +14,15 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+      - name: Install validation dependencies
+        run: python -m pip install -r scripts/requirements-dev.txt
       - name: Check workspace governance
         run: python scripts/governance/check_workspace.py
+      - name: Check local documentation links
+        run: python scripts/governance/check_markdown_links.py
+      - name: Validate machine contracts
+        run: python scripts/validation/validate_contracts.py
+      - name: Validate Ameme Skill package
+        run: python scripts/validation/validate_ameme_skill.py
       - name: Compile Python scripts
         run: python -m compileall -q scripts research

@@ -1,0 +1,363 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.ameme.local/v1/ameme-domain.schema.json",
+  "title": "Ameme MVP domain contracts",
+  "type": "object",
+  "required": ["schema_version", "object_type", "object"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "object_type": {"type": "string", "enum": ["acquisition_contract", "source_object", "observation", "user_addendum", "event_candidate", "event", "event_revision", "episode", "episode_revision", "artifact", "day_ledger", "summary", "feedback_event", "access_grant", "recall_query", "recall_page", "context_pack", "lineage_edge", "sync_envelope", "deletion_job", "export_job"]},
+    "object": {"type": "object"}
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "Id": {"type": "string", "minLength": 3, "maxLength": 128, "pattern": "^[a-z][a-z0-9_:-]+$"},
+    "Timestamp": {"type": "string", "format": "date-time"},
+    "LocalDate": {"type": "string", "format": "date"},
+    "SpaceId": {"$ref": "#/$defs/Id"},
+    "Sensitivity": {"type": "string", "enum": ["public", "personal", "confidential", "restricted"]},
+    "SyncMode": {"type": "string", "enum": ["device_local", "structured_sync", "selected_raw_sync"]},
+    "TimeRange": {
+      "type": "object",
+      "required": ["start", "precision"],
+      "properties": {
+        "start": {"$ref": "#/$defs/Timestamp"},
+        "end": {"$ref": "#/$defs/Timestamp"},
+        "timezone": {"type": "string", "minLength": 1, "maxLength": 64},
+        "precision": {"type": "string", "enum": ["exact", "minute", "hour", "part_of_day", "day", "range", "unknown"]}
+      },
+      "additionalProperties": false
+    },
+    "Retention": {
+      "type": "object",
+      "required": ["retention_class", "deletion_state"],
+      "properties": {
+        "retention_class": {"type": "string", "enum": ["ephemeral_recovery", "structured_active", "user_retained", "derived_rebuildable", "security_audit"]},
+        "expires_at": {"$ref": "#/$defs/Timestamp"},
+        "deletion_state": {"type": "string", "enum": ["active", "pending", "deleted", "proof_incomplete"]}
+      },
+      "additionalProperties": false
+    },
+    "SourceLocator": {
+      "type": "object",
+      "required": ["locator_type", "opaque_locator_ref", "state", "last_verified_at"],
+      "properties": {
+        "locator_type": {"type": "string", "enum": ["app_private_object", "photo_asset_id", "security_scoped_bookmark", "content_uri", "external_file_ref"]},
+        "opaque_locator_ref": {"type": "string", "minLength": 3, "maxLength": 1024},
+        "display_label": {"type": "string", "maxLength": 200},
+        "fingerprint": {
+          "type": "object",
+          "properties": {
+            "content_hash": {"type": "string", "minLength": 16, "maxLength": 128},
+            "size_bytes": {"type": "integer", "minimum": 0},
+            "modified_at": {"$ref": "#/$defs/Timestamp"}
+          },
+          "additionalProperties": false
+        },
+        "state": {"type": "string", "enum": ["available", "moved", "missing", "permission_revoked", "deleted", "unknown"]},
+        "last_verified_at": {"$ref": "#/$defs/Timestamp"}
+      },
+      "additionalProperties": false
+    },
+    "FieldEvidence": {
+      "type": "object",
+      "required": ["field", "observation_ids", "confidence", "status"],
+      "properties": {
+        "field": {"type": "string", "enum": ["time", "place", "people", "action", "result", "intent", "emotion", "relationship", "description"]},
+        "observation_ids": {"type": "array", "items": {"$ref": "#/$defs/Id"}, "uniqueItems": true},
+        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+        "status": {"type": "string", "enum": ["observed", "user_asserted", "inferred", "planned", "conflict", "unknown"]}
+      },
+      "additionalProperties": false
+    },
+    "AcquisitionContract": {
+      "type": "object",
+      "required": ["schema_version", "contract_id", "owner_id", "space_id", "device_id", "source_type", "purpose", "data_types", "permission_state", "processing_locations", "sync_mode", "valid_from", "revocation_state"],
+      "properties": {
+        "schema_version": {"const": 1},
+        "contract_id": {"$ref": "#/$defs/Id"}, "owner_id": {"$ref": "#/$defs/Id"}, "space_id": {"$ref": "#/$defs/SpaceId"}, "device_id": {"$ref": "#/$defs/Id"},
+        "source_type": {"type": "string", "enum": ["photo", "audio", "text", "share", "location", "calendar", "health", "agent"]},
+        "purpose": {"type": "string", "minLength": 1, "maxLength": 160},
+        "data_types": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 64}},
+        "permission_state": {"type": "string", "enum": ["not_requested", "limited", "foreground", "background_limited", "granted", "denied", "unsupported"]},
+        "processing_locations": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "enum": ["device", "trusted_cloud", "model_provider"]}},
+        "sync_mode": {"$ref": "#/$defs/SyncMode"}, "valid_from": {"$ref": "#/$defs/Timestamp"}, "expires_at": {"$ref": "#/$defs/Timestamp"},
+        "revocation_state": {"type": "string", "enum": ["active", "paused", "revoked", "expired"]},
+        "created_at": {"$ref": "#/$defs/Timestamp"}, "updated_at": {"$ref": "#/$defs/Timestamp"}
+      },
+      "additionalProperties": false
+    },
+    "SourceObjectEnvelope": {
+      "type": "object",
+      "required": ["schema_version", "source_object_id", "contract_id", "owner_id", "space_id", "device_id", "source_type", "capture_method", "acquired_at", "processing_state", "sensitivity", "sync_mode", "retention"],
+      "properties": {
+        "schema_version": {"const": 1}, "source_object_id": {"$ref": "#/$defs/Id"}, "contract_id": {"$ref": "#/$defs/Id"}, "owner_id": {"$ref": "#/$defs/Id"}, "space_id": {"$ref": "#/$defs/SpaceId"}, "device_id": {"$ref": "#/$defs/Id"},
+        "source_type": {"type": "string", "enum": ["photo", "audio", "text", "share", "location", "calendar", "health", "agent"]},
+        "capture_method": {"type": "string", "enum": ["explicit", "picker", "share", "foreground", "opportunistic", "background", "agent_writeback"]},
+        "acquired_at": {"$ref": "#/$defs/Timestamp"}, "occurred_range": {"$ref": "#/$defs/TimeRange"},
+        "content_hash": {"type": "string", "minLength": 16, "maxLength": 128}, "mime_type": {"type": "string", "maxLength": 128}, "size_bytes": {"type": "integer", "minimum": 0},
+        "raw_ref": {"type": "string", "maxLength": 512},
+        "source_locator": {"$ref": "#/$defs/SourceLocator"},
+        "processing_state": {"type": "string", "enum": ["acquired", "queued", "processing", "processed", "failed", "quarantined", "deleted"]},
+        "sensitivity": {"$ref": "#/$defs/Sensitivity"}, "sync_mode": {"$ref": "#/$defs/SyncMode"}, "retention": {"$ref": "#/$defs/Retention"},
+        "idempotency_key": {"type": "string", "minLength": 8, "maxLength": 128}, "created_at": {"$ref": "#/$defs/Timestamp"}, "updated_at": {"$ref": "#/$defs/Timestamp"}
+      },
+      "additionalProperties": false
+    },
+    "Observation": {
+      "type": "object",
+      "required": ["schema_version", "observation_id", "source_object_id", "space_id", "kind", "value", "fact_status", "confidence", "parser_version", "created_at"],
+      "properties": {
+        "schema_version": {"const": 1}, "observation_id": {"$ref": "#/$defs/Id"}, "source_object_id": {"$ref": "#/$defs/Id"}, "space_id": {"$ref": "#/$defs/SpaceId"},
+        "kind": {"type": "string", "minLength": 1, "maxLength": 64}, "value": {"type": "object"}, "time_range": {"$ref": "#/$defs/TimeRange"},
+        "fact_status": {"type": "string", "enum": ["observed", "user_asserted", "planned", "inferred"]}, "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+        "parser_version": {"type": "string", "minLength": 1, "maxLength": 64}, "created_at": {"$ref": "#/$defs/Timestamp"}
+      },
+      "additionalProperties": false
+    },
+    "UserAddendum": {
+      "type": "object",
+      "required": ["schema_version", "addendum_id", "owner_id", "space_id", "text", "submitted_at", "target_type", "target_id", "sensitivity", "sync_mode"],
+      "properties": {
+        "schema_version": {"const": 1}, "addendum_id": {"$ref": "#/$defs/Id"}, "owner_id": {"$ref": "#/$defs/Id"}, "space_id": {"$ref": "#/$defs/SpaceId"},
+        "text": {"type": "string", "minLength": 1, "maxLength": 20000}, "submitted_at": {"$ref": "#/$defs/Timestamp"}, "event_time": {"$ref": "#/$defs/TimeRange"},
+        "target_type": {"type": "string", "enum": ["new_event", "event", "day"]}, "target_id": {"$ref": "#/$defs/Id"}, "sensitivity": {"$ref": "#/$defs/Sensitivity"}, "sync_mode": {"$ref": "#/$defs/SyncMode"}
+      },
+      "additionalProperties": false
+    },
+    "EventCandidate": {
+      "type": "object",
+      "required": ["schema_version", "candidate_id", "space_id", "event_type", "field_evidence", "status", "created_at"],
+      "properties": {
+        "schema_version": {"const": 1}, "candidate_id": {"$ref": "#/$defs/Id"}, "space_id": {"$ref": "#/$defs/SpaceId"},
+        "event_type": {"type": "string", "enum": ["activity", "communication", "decision", "result", "state_change", "milestone", "experience"]},
+        "time_range": {"$ref": "#/$defs/TimeRange"}, "field_evidence": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/FieldEvidence"}},
+        "status": {"type": "string", "enum": ["candidate", "needs_review", "conflict", "accepted", "rejected", "superseded"]}, "created_at": {"$ref": "#/$defs/Timestamp"}
+      },
+      "additionalProperties": false
+    },
+    "Event": {
+      "type": "object",
+      "required": ["schema_version", "event_id", "owner_id", "space_id", "event_type", "time_range", "title", "fact_status", "field_evidence", "source_object_ids", "revision", "sensitivity", "state", "created_at", "updated_at"],
+      "properties": {
+        "schema_version": {"const": 1}, "event_id": {"$ref": "#/$defs/Id"}, "owner_id": {"$ref": "#/$defs/Id"}, "space_id": {"$ref": "#/$defs/SpaceId"},
+        "event_type": {"type": "string", "enum": ["activity", "communication", "decision", "result", "state_change", "milestone", "experience"]},
+        "time_range": {"$ref": "#/$defs/TimeRange"}, "title": {"type": "string", "minLength": 1, "maxLength": 200}, "description": {"type": "string", "maxLength": 4000},
+        "subject": {"type": "string", "enum": ["user", "other", "mixed", "unknown"]},
+        "fact_status": {"type": "string", "enum": ["confirmed", "high_confidence_inference", "low_confidence_candidate", "conflict", "user_asserted", "planned"]},
+        "field_evidence": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/FieldEvidence"}},
+        "source_object_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/Id"}},
+        "revision_head_id": {"$ref": "#/$defs/Id"}, "revision": {"type": "integer", "minimum": 1},
+        "salience": {"type": "object", "properties": {"importance": {"type": "number", "minimum": 0, "maximum": 1}, "emotional": {"type": "number", "minimum": 0, "maximum": 1}, "relationship": {"type": "number", "minimum": 0, "maximum": 1}}, "additionalProperties": false},
+        "sensitivity": {"$ref": "#/$defs/Sensitivity"}, "state": {"type": "string", "enum": ["active", "recomputing", "conflict", "deleted"]},
+        "created_at": {"$ref": "#/$defs/Timestamp"}, "updated_at": {"$ref": "#/$defs/Timestamp"}
+      },
+      "additionalProperties": false
+    },
+    "EventRevision": {
+      "type": "object",
+      "required": ["schema_version", "event_revision_id", "event_id", "revision", "actor", "reason", "changes", "created_at"],
+      "properties": {
+        "schema_version": {"const": 1}, "event_revision_id": {"$ref": "#/$defs/Id"}, "event_id": {"$ref": "#/$defs/Id"}, "base_revision_id": {"$ref": "#/$defs/Id"}, "revision": {"type": "integer", "minimum": 1},
+        "actor": {"type": "string", "enum": ["user", "system", "agent"]}, "reason": {"type": "string", "enum": ["initial", "user_edit", "user_addendum", "merge", "split", "source_update", "conflict_resolution", "deletion_recompute", "model_recompute"]},
+        "changes": {"type": "object", "minProperties": 1}, "created_at": {"$ref": "#/$defs/Timestamp"}
+      },
+      "additionalProperties": false
+    },
+    "EpisodeEventRef": {
+      "type": "object",
+      "required": ["event_id", "revision", "role"],
+      "properties": {
+        "event_id": {"$ref": "#/$defs/Id"}, "revision": {"type": "integer", "minimum": 1}, "role": {"type": "string", "enum": ["begin", "middle", "end", "result", "related"]}
+      },
+      "additionalProperties": false
+    },
+    "Episode": {
+      "type": "object",
+      "required": ["schema_version", "episode_id", "owner_id", "space_id", "title", "time_range", "event_refs", "revision", "sensitivity", "state", "created_at", "updated_at"],
+      "properties": {
+        "schema_version": {"const": 1}, "episode_id": {"$ref": "#/$defs/Id"}, "owner_id": {"$ref": "#/$defs/Id"}, "space_id": {"$ref": "#/$defs/SpaceId"}, "title": {"type": "string", "minLength": 1, "maxLength": 240}, "time_range": {"$ref": "#/$defs/TimeRange"},
+        "event_refs": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/EpisodeEventRef"}}, "revision_head_id": {"$ref": "#/$defs/Id"}, "revision": {"type": "integer", "minimum": 1}, "sensitivity": {"$ref": "#/$defs/Sensitivity"}, "state": {"type": "string", "enum": ["active", "recomputing", "conflict", "deleted"]}, "created_at": {"$ref": "#/$defs/Timestamp"}, "updated_at": {"$ref": "#/$defs/Timestamp"}
+      },
+      "additionalProperties": false
+    },
+    "EpisodeRevision": {
+      "type": "object",
+      "required": ["schema_version", "episode_revision_id", "episode_id", "revision", "actor", "reason", "event_refs", "created_at"],
+      "properties": {
+        "schema_version": {"const": 1}, "episode_revision_id": {"$ref": "#/$defs/Id"}, "episode_id": {"$ref": "#/$defs/Id"}, "base_revision_id": {"$ref": "#/$defs/Id"}, "revision": {"type": "integer", "minimum": 1}, "actor": {"type": "string", "enum": ["user", "system"]},
+        "reason": {"type": "string", "enum": ["initial", "add_event", "remove_event", "merge", "split", "conflict_resolution", "deletion_recompute"]}, "event_refs": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/EpisodeEventRef"}}, "created_at": {"$ref": "#/$defs/Timestamp"}
+      },
+      "additionalProperties": false
+    },
+    "Artifact": {
+      "type": "object",
+      "required": ["schema_version", "artifact_id", "owner_id", "space_id", "source_object_id", "artifact_type", "title", "sensitivity", "sync_mode", "retention", "state", "created_at"],
+      "properties": {
+        "schema_version": {"const": 1}, "artifact_id": {"$ref": "#/$defs/Id"}, "owner_id": {"$ref": "#/$defs/Id"}, "space_id": {"$ref": "#/$defs/SpaceId"}, "source_object_id": {"$ref": "#/$defs/Id"},
+        "artifact_type": {"type": "string", "enum": ["document", "code", "commit", "image", "audio", "link", "other"]}, "title": {"type": "string", "minLength": 1, "maxLength": 240},
+        "content_hash": {"type": "string", "minLength": 16, "maxLength": 128}, "mime_type": {"type": "string", "maxLength": 128}, "event_id": {"$ref": "#/$defs/Id"},
+        "sensitivity": {"$ref": "#/$defs/Sensitivity"}, "sync_mode": {"$ref": "#/$defs/SyncMode"}, "retention": {"$ref": "#/$defs/Retention"}, "state": {"type": "string", "enum": ["active", "missing_source", "deleted"]}, "created_at": {"$ref": "#/$defs/Timestamp"}
+      },
+      "additionalProperties": false
+    },
+    "DayLedger": {
+      "type": "object",
+      "required": ["schema_version", "day_ledger_id", "owner_id", "space_id", "local_date", "timezone", "revision", "entries", "coverage_state", "summary_state", "updated_at"],
+      "properties": {
+        "schema_version": {"const": 1}, "day_ledger_id": {"$ref": "#/$defs/Id"}, "owner_id": {"$ref": "#/$defs/Id"}, "space_id": {"$ref": "#/$defs/SpaceId"}, "local_date": {"$ref": "#/$defs/LocalDate"}, "timezone": {"type": "string", "minLength": 1, "maxLength": 64}, "revision": {"type": "integer", "minimum": 1},
+        "entries": {"type": "array", "items": {"type": "object", "required": ["object_type", "object_id", "revision", "sort_key"], "properties": {"object_type": {"type": "string", "enum": ["event", "episode"]}, "object_id": {"$ref": "#/$defs/Id"}, "revision": {"type": "integer", "minimum": 1}, "sort_key": {"type": "string", "minLength": 1, "maxLength": 128}}, "additionalProperties": false}},
+        "coverage_state": {"type": "string", "enum": ["empty", "sparse", "ready_local", "processing", "partial", "syncing", "permission_limited", "offline"]},
+        "partial_reasons": {"type": "array", "uniqueItems": true, "items": {"type": "string", "enum": ["device_not_synced", "space_not_selected", "source_not_authorized", "source_rate_limited", "source_failed", "index_stale"]}},
+        "summary_state": {"type": "string", "enum": ["absent", "processing", "ready", "stale", "insufficient"]}, "updated_at": {"$ref": "#/$defs/Timestamp"}
+      },
+      "additionalProperties": false
+    },
+    "TodayView": {
+      "type": "object",
+      "required": ["schema_version", "ledger", "events", "episodes", "range_state", "generated_at"],
+      "properties": {
+        "schema_version": {"const": 1}, "ledger": {"$ref": "#/$defs/DayLedger"}, "events": {"type": "array", "items": {"$ref": "#/$defs/Event"}}, "episodes": {"type": "array", "items": {"$ref": "#/$defs/Episode"}}, "summary": {"$ref": "#/$defs/Summary"},
+        "range_state": {"type": "string", "enum": ["ready_local", "partial", "syncing", "offline"]}, "generated_at": {"$ref": "#/$defs/Timestamp"}
+      },
+      "additionalProperties": false
+    },
+    "Summary": {
+      "type": "object",
+      "required": ["schema_version", "summary_id", "day_ledger_id", "based_on_revision", "text", "state", "model_or_rule_version", "created_at"],
+      "properties": {
+        "schema_version": {"const": 1}, "summary_id": {"$ref": "#/$defs/Id"}, "day_ledger_id": {"$ref": "#/$defs/Id"}, "based_on_revision": {"type": "integer", "minimum": 1}, "text": {"type": "string", "minLength": 1, "maxLength": 4000},
+        "state": {"type": "string", "enum": ["ready", "stale", "deleted"]}, "model_or_rule_version": {"type": "string", "minLength": 1, "maxLength": 128}, "created_at": {"$ref": "#/$defs/Timestamp"}
+      },
+      "additionalProperties": false
+    },
+    "FeedbackEvent": {
+      "type": "object",
+      "required": ["schema_version", "feedback_id", "owner_id", "space_id", "target_type", "target_id", "action", "created_at", "sync_mode"],
+      "properties": {
+        "schema_version": {"const": 1}, "feedback_id": {"$ref": "#/$defs/Id"}, "owner_id": {"$ref": "#/$defs/Id"}, "space_id": {"$ref": "#/$defs/SpaceId"},
+        "target_type": {"type": "string", "enum": ["candidate", "event", "field", "day", "context_pack", "policy"]}, "target_id": {"$ref": "#/$defs/Id"},
+        "action": {"type": "string", "enum": ["accept", "reject", "correct", "add_missing", "merge", "split", "mark_important", "context_useful", "context_irrelevant", "context_missing", "context_outdated", "policy_violation"]},
+        "field_class": {"type": "string", "enum": ["time", "place", "people", "action", "result", "intent", "emotion", "relationship", "description"]},
+        "payload": {"type": "object"}, "created_at": {"$ref": "#/$defs/Timestamp"}, "sync_mode": {"$ref": "#/$defs/SyncMode"}
+      },
+      "additionalProperties": false
+    },
+    "AccessGrant": {
+      "type": "object",
+      "required": ["schema_version", "grant_id", "owner_id", "caller_id", "purposes", "spaces", "data_types", "not_before", "expires_at", "status", "created_at"],
+      "properties": {
+        "schema_version": {"const": 1}, "grant_id": {"$ref": "#/$defs/Id"}, "owner_id": {"$ref": "#/$defs/Id"}, "caller_id": {"$ref": "#/$defs/Id"},
+        "purposes": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 80}}, "spaces": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/SpaceId"}}, "data_types": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 64}},
+        "not_before": {"$ref": "#/$defs/Timestamp"}, "expires_at": {"$ref": "#/$defs/Timestamp"}, "status": {"type": "string", "enum": ["active", "revoked", "expired"]}, "key_fingerprint": {"type": "string", "maxLength": 256}, "created_at": {"$ref": "#/$defs/Timestamp"}, "revoked_at": {"$ref": "#/$defs/Timestamp"}
+      },
+      "additionalProperties": false
+    },
+    "RecallQuery": {
+      "type": "object",
+      "required": ["schema_version", "query_id", "caller_id", "purpose", "requested_spaces", "data_types", "device_scope", "page_size", "created_at"],
+      "properties": {
+        "schema_version": {"const": 1}, "query_id": {"$ref": "#/$defs/Id"}, "caller_id": {"$ref": "#/$defs/Id"}, "grant_id": {"$ref": "#/$defs/Id"}, "purpose": {"type": "string", "minLength": 1, "maxLength": 160},
+        "requested_spaces": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/SpaceId"}}, "data_types": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 64}},
+        "time_range": {"$ref": "#/$defs/TimeRange"}, "anchor_date": {"$ref": "#/$defs/LocalDate"}, "query_text": {"type": "string", "maxLength": 1000},
+        "device_scope": {"type": "string", "enum": ["local", "synced", "all_available"]}, "cursor": {"type": "string", "maxLength": 512}, "page_size": {"type": "integer", "minimum": 1, "maximum": 100}, "created_at": {"$ref": "#/$defs/Timestamp"}
+      },
+      "additionalProperties": false
+    },
+    "RecallPage": {
+      "type": "object",
+      "required": ["schema_version", "query_id", "range_state", "results", "generated_at"],
+      "properties": {
+        "schema_version": {"const": 1}, "query_id": {"$ref": "#/$defs/Id"}, "range_state": {"type": "string", "enum": ["complete_for_requested_scope", "partial", "empty"]},
+        "partial_reasons": {"type": "array", "uniqueItems": true, "items": {"type": "string", "enum": ["device_not_synced", "space_not_selected", "source_not_authorized", "index_stale", "policy_filtered"]}},
+        "results": {"type": "array", "items": {"type": "object", "required": ["object_type", "object_id", "revision", "local_date", "rank"], "properties": {"object_type": {"type": "string", "enum": ["event", "episode", "artifact", "summary"]}, "object_id": {"$ref": "#/$defs/Id"}, "revision": {"type": "integer", "minimum": 1}, "local_date": {"$ref": "#/$defs/LocalDate"}, "rank": {"type": "integer", "minimum": 1}, "associated_event_id": {"$ref": "#/$defs/Id"}}, "additionalProperties": false}},
+        "next_cursor": {"type": "string", "maxLength": 512}, "generated_at": {"$ref": "#/$defs/Timestamp"}
+      },
+      "additionalProperties": false
+    },
+    "ContextPack": {
+      "type": "object",
+      "required": ["schema_version", "context_pack_id", "query_id", "grant_id", "caller_id", "purpose", "state", "items", "expires_at", "created_at"],
+      "properties": {
+        "schema_version": {"const": 1}, "context_pack_id": {"$ref": "#/$defs/Id"}, "query_id": {"$ref": "#/$defs/Id"}, "grant_id": {"$ref": "#/$defs/Id"}, "caller_id": {"$ref": "#/$defs/Id"}, "purpose": {"type": "string", "minLength": 1, "maxLength": 160},
+        "state": {"type": "string", "enum": ["ready", "partial", "denied", "expired"]}, "denial_reason": {"type": "string", "enum": ["grant_missing", "grant_expired", "grant_revoked", "purpose_denied", "space_denied", "data_type_denied", "policy_blocked"]},
+        "items": {"type": "array", "items": {"type": "object", "required": ["object_type", "object_id", "revision"], "properties": {"object_type": {"type": "string", "enum": ["event", "episode", "summary", "artifact"]}, "object_id": {"$ref": "#/$defs/Id"}, "revision": {"type": "integer", "minimum": 1}}, "additionalProperties": false}},
+        "expires_at": {"$ref": "#/$defs/Timestamp"}, "created_at": {"$ref": "#/$defs/Timestamp"}
+      },
+      "additionalProperties": false
+    },
+    "LineageEdge": {
+      "type": "object",
+      "required": ["schema_version", "lineage_edge_id", "from_type", "from_id", "to_type", "to_id", "relationship", "processor_version", "processing_location", "created_at"],
+      "properties": {
+        "schema_version": {"const": 1}, "lineage_edge_id": {"$ref": "#/$defs/Id"}, "from_type": {"type": "string", "minLength": 1, "maxLength": 64}, "from_id": {"$ref": "#/$defs/Id"}, "to_type": {"type": "string", "minLength": 1, "maxLength": 64}, "to_id": {"$ref": "#/$defs/Id"},
+        "relationship": {"type": "string", "enum": ["observed_from", "derived_from", "revises", "part_of", "merged_from", "split_from", "summarizes", "indexed_from", "authorized_by"]},
+        "processor_version": {"type": "string", "minLength": 1, "maxLength": 128}, "processing_location": {"type": "string", "enum": ["device", "trusted_cloud", "model_provider"]}, "created_at": {"$ref": "#/$defs/Timestamp"}
+      },
+      "additionalProperties": false
+    },
+    "SyncEnvelope": {
+      "type": "object",
+      "required": ["schema_version", "sync_envelope_id", "space_id", "device_id", "device_sequence", "operation", "object_type", "object_id", "idempotency_key", "created_at"],
+      "properties": {
+        "schema_version": {"const": 1}, "sync_envelope_id": {"$ref": "#/$defs/Id"}, "space_id": {"$ref": "#/$defs/SpaceId"}, "device_id": {"$ref": "#/$defs/Id"}, "device_sequence": {"type": "integer", "minimum": 1},
+        "operation": {"type": "string", "enum": ["append_revision", "structured_upsert", "tombstone", "grant_revocation", "deletion_ack", "raw_manifest"]}, "object_type": {"type": "string", "minLength": 1, "maxLength": 64}, "object_id": {"$ref": "#/$defs/Id"},
+        "base_revision": {"type": "integer", "minimum": 0}, "payload": {"type": "object"}, "idempotency_key": {"type": "string", "minLength": 8, "maxLength": 128}, "created_at": {"$ref": "#/$defs/Timestamp"}
+      },
+      "additionalProperties": false
+    },
+    "DeletionJob": {
+      "type": "object",
+      "required": ["schema_version", "deletion_job_id", "owner_id", "space_id", "target_type", "target_id", "scope", "state", "steps", "created_at", "updated_at"],
+      "properties": {
+        "schema_version": {"const": 1}, "deletion_job_id": {"$ref": "#/$defs/Id"}, "owner_id": {"$ref": "#/$defs/Id"}, "space_id": {"$ref": "#/$defs/SpaceId"}, "target_type": {"type": "string", "enum": ["source_object", "event", "source", "space", "account"]}, "target_id": {"$ref": "#/$defs/Id"},
+        "scope": {"type": "string", "enum": ["remove_source_only", "delete_event_and_dependents", "delete_source_contract", "delete_space", "delete_account"]}, "state": {"type": "string", "enum": ["queued", "local_deleting", "sync_propagating", "recomputing", "partial_failed", "completed"]},
+        "steps": {"type": "array", "minItems": 1, "items": {"type": "object", "required": ["step", "state"], "properties": {"step": {"type": "string", "enum": ["freeze_processing", "local_raw", "structured", "derived", "index", "sync_replicas", "recompute", "proof"]}, "state": {"type": "string", "enum": ["pending", "running", "completed", "failed", "not_applicable"]}, "error_code": {"type": "string", "maxLength": 80}}, "additionalProperties": false}},
+        "pending_replica_ids": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/Id"}}, "proof_hash": {"type": "string", "maxLength": 128}, "created_at": {"$ref": "#/$defs/Timestamp"}, "updated_at": {"$ref": "#/$defs/Timestamp"}
+      },
+      "additionalProperties": false
+    },
+    "ExportJob": {
+      "type": "object",
+      "required": ["schema_version", "export_job_id", "owner_id", "spaces", "date_range", "formats", "state", "created_at", "updated_at"],
+      "properties": {
+        "schema_version": {"const": 1}, "export_job_id": {"$ref": "#/$defs/Id"}, "owner_id": {"$ref": "#/$defs/Id"}, "spaces": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/SpaceId"}}, "date_range": {"$ref": "#/$defs/TimeRange"},
+        "formats": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "enum": ["json", "markdown"]}}, "include_selected_raw": {"type": "boolean"}, "state": {"type": "string", "enum": ["queued", "snapshotting", "rendering", "completed", "failed", "expired"]},
+        "output_ref": {"type": "string", "maxLength": 512}, "manifest_hash": {"type": "string", "maxLength": 128}, "created_at": {"$ref": "#/$defs/Timestamp"}, "updated_at": {"$ref": "#/$defs/Timestamp"}
+      },
+      "additionalProperties": false
+    },
+    "AcquisitionContractRequest": {
+      "type": "object",
+      "required": ["owner_id", "space_id", "device_id", "source_type", "purpose", "data_types", "processing_locations", "sync_mode"],
+      "properties": {
+        "owner_id": {"$ref": "#/$defs/Id"}, "space_id": {"$ref": "#/$defs/SpaceId"}, "device_id": {"$ref": "#/$defs/Id"}, "source_type": {"type": "string", "enum": ["photo", "audio", "text", "share", "location", "calendar", "health", "agent"]}, "purpose": {"type": "string", "minLength": 1, "maxLength": 160}, "data_types": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 64}}, "processing_locations": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "enum": ["device", "trusted_cloud", "model_provider"]}}, "sync_mode": {"$ref": "#/$defs/SyncMode"}, "expires_at": {"$ref": "#/$defs/Timestamp"}
+      },
+      "additionalProperties": false
+    },
+    "AccessGrantRequest": {
+      "type": "object",
+      "required": ["caller_id", "purposes", "spaces", "data_types", "not_before", "expires_at"],
+      "properties": {
+        "caller_id": {"$ref": "#/$defs/Id"}, "purposes": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 80}}, "spaces": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/SpaceId"}}, "data_types": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 64}}, "not_before": {"$ref": "#/$defs/Timestamp"}, "expires_at": {"$ref": "#/$defs/Timestamp"}, "key_fingerprint": {"type": "string", "maxLength": 256}
+      },
+      "additionalProperties": false
+    },
+    "DeletionRequest": {
+      "type": "object",
+      "required": ["space_id", "target_type", "target_id", "scope"],
+      "properties": {
+        "space_id": {"$ref": "#/$defs/SpaceId"}, "target_type": {"type": "string", "enum": ["source_object", "event", "source", "space", "account"]}, "target_id": {"$ref": "#/$defs/Id"}, "scope": {"type": "string", "enum": ["remove_source_only", "delete_event_and_dependents", "delete_source_contract", "delete_space", "delete_account"]}
+      },
+      "additionalProperties": false
+    },
+    "ExportRequest": {
+      "type": "object",
+      "required": ["spaces", "date_range", "formats", "include_selected_raw"],
+      "properties": {
+        "spaces": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/SpaceId"}}, "date_range": {"$ref": "#/$defs/TimeRange"}, "formats": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "enum": ["json", "markdown"]}}, "include_selected_raw": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    }
+  }
+}

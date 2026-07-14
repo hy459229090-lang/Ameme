@@ -1,0 +1,13 @@
+interface:
+  display_name: "Ameme Memory"
+  short_description: "在授权范围内自动召回、记录、纠正并写回个人记忆上下文"
+  default_prompt: "Use $ameme-memory to retrieve minimum relevant context and automatically write evidence-labeled outcomes or user statements within the active grant."
+
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "ameme"
+      description: "Ameme MCP tools for pairing, scoped recall/context, capture, feedback, and status."
+
+policy:
+  allow_implicit_invocation: true

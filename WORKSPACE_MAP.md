@@ -28,7 +28,7 @@
 | `docs/` | 正式产品、研究、架构、安全、工程、质量、发布与运行文档 |
 | `research/` | 可复跑的技术探针和实验 |
 | `apps/` | Desktop、Mobile、Web、Browser Extension |
-| `services/` | API、任务处理、同步和账户服务 |
+| `services/` | 账户身份、模型适配与未来可选服务；MVP 不承载用户记忆数据同步 |
 | `packages/` | 共享领域模型、存储、加密、UI 和 SDK |
 | `connectors/` | 各信息源适配器 |
 | `infra/` | 环境、部署、可观测性和基础设施 |

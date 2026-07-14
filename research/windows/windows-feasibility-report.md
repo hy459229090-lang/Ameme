@@ -1,7 +1,7 @@
 # Windows 信息源实测报告 v0.1
 
-实测日期：2026-07-13  
-设备：Windows 11 企业版，Build 26200，64 位，16 逻辑处理器，31.9 GiB 内存  
+实测日期：2026-07-13\
+设备：Windows 11 企业版，Build 26200，64 位，16 逻辑处理器，31.9 GiB 内存\
 结论状态：低风险能力验证完成；正文采集、持续性能和隐私体验尚未验证
 
 ## 1. 实测边界
@@ -20,7 +20,7 @@
 | 前台窗口识别 | 通过 | 能获得前台窗口、进程和标题长度；可见顶层窗口 14 个、进程类型 13 个 | 可作为低风险 Activity 信号 |
 | UI Automation 顶层结构 | 通过 | 顶层元素 20 个，其中 17 个具有可访问名称 | 可用，但不能推断所有应用正文都可读 |
 | UI Automation 应用覆盖 | 部分通过 | Explorer、Terminal、Chrome、Excel 有较多结构；部分 Electron/自绘应用结构很薄或为零 | 必须按应用分层，不能作为万能内容采集器 |
-| 文件变更事件 | 不稳定 | 首轮合成测试捕获 create 1、change 2、rename 1、delete 1；最终回归返回 `InvalidOperationException` | 路线可继续研究，但进入样机前必须修复并连续复跑 |
+| 文件变更事件 | 通过 | 探针 v0.2 修复事件回调竞态后连续 3 次捕获 create 2、change 3、rename 1、delete 1 | 适合选定目录的事件驱动采集；仍需真实目录噪声与恢复测试 |
 | Windows Graphics Capture | 探测失败 | 最终回归返回 `RuntimeException`，且 `capture_attempted=false` | 不能据此宣称可用；应先定位 API/运行时兼容性，并继续保持默认关闭 |
 | 浏览器环境 | 通过 | 本机安装 Chrome 和 Edge | 适合验证 Chromium Extension 路线 |
 | Git 环境 | 通过 | 本机 `git` 可用 | 可做仓库 opt-in 和 commit/diff 元数据实验 |
@@ -114,3 +114,9 @@ Chrome 官方文档表明：
 - 不读取正文时能否还原主要活动。
 
 这一实验仍不等于产品 MVP，只用于验证 Windows 端的最小充分数据组合。
+
+## 7. 回归修复记录
+
+最终回归出现的 `InvalidOperationException` 来自探针实现：异步 FileSystemWatcher 回调写入集合的同时，主线程枚举集合并清理订阅。v0.2 改为先进入 PowerShell 事件队列，再在操作完成后统一读取和清理；使用独立文件验证 delete，避免 rename 后立即删除被系统合并。
+
+修复后连续 3 次结果一致：create 2、change 3、rename 1、delete 1。这个结论只证明合成临时目录中 watcher 可工作，不证明真实项目目录不会丢事件、重复或产生大量临时文件噪声。

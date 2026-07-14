@@ -1,7 +1,7 @@
-# Ameme 多端信息源地图 v0.1
+# Ameme 多端信息源地图 v0.2
 
-更新日期：2026-07-13  
-状态：首轮官方文档桌面调研；需要实际设备和样本验证
+更新日期：2026-07-13\
+状态：官方能力矩阵已补充；Windows 文件事件和 Chrome activeTab 已实测，其余需要设备和样本验证
 
 ## 1. 结论摘要
 
@@ -10,6 +10,9 @@
 3. Android 比 iOS 开放，但后台服务、广播和跨 App 数据仍受到系统限制；稳定产品应优先使用系统 Picker、Share Intent、Health Connect/官方 API 和可见前台服务。
 4. 企业 IM 通常需要应用安装、OAuth scope、敏感权限或管理员同意，不等同于个人用户授权后即可读取所有聊天。
 5. 照片、截图、音频、PDF、账单和页面都可以接入；结构化 JSON 只是其中一种输入形式。
+6. Chrome `activeTab` 已证明一键 Capture 可以不声明全站 host permissions；用户触发前扩展看不到当前页 URL/标题，跨 origin 后旧授权撤回。
+7. Limitless/Rewind 的收购、区域退出和捕获停用说明全屏/全音频持续采集具有持续经营风险，不进入首版默认路径。
+8. 端优先级先看独特事件覆盖增益，再看用户规模：Native Mobile 获取现实生活与手机系统数据，MCP/Skill/API 获取 Agent 工作流上下文；Web/小程序/插件扩大触达和补充特定来源。独立 Native Desktop 暂不作为首版前提。
 
 ## 2. 可行性标记
 
@@ -25,8 +28,8 @@
 | 前台应用/窗口 | 应用名、标题、时间 | Win32/UI Automation；macOS Accessibility/窗口信息 | A/B | 仅保存元数据，支持应用排除 | 标题可能含敏感内容；应用兼容性不一 |
 | 界面文本 | UI 树、文本块 | Windows UI Automation；macOS Accessibility；OCR 降级 | B | 指定应用授权，端侧抽取 | 并非所有应用提供完整可访问树 |
 | 屏幕画面 | 图片/视频帧 | Windows Graphics Capture；macOS ScreenCaptureKit | B | 默认关闭；用户选择窗口/显示器；明显采集状态 | 权限高、存储大、可能捕获他人和密码 |
-| 文件变更 | 路径、事件、文件内容 | FileSystemWatcher/USN；macOS FSEvents；用户选定目录 | A | 默认只监听选定目录和元数据，内容按需解析 | 临时文件噪声、公司目录政策、二进制格式 |
-| 浏览器活动 | URL、标题、DOM、选中内容、截图 | Browser Extension + 当前页面授权 | A | 域名级权限和排除；正文按一键或分站授权 | 隐身模式、登录内容、浏览器商店策略 |
+| 文件变更 | 路径、事件、文件内容 | FileSystemWatcher/USN；macOS FSEvents；用户选定目录 | A | 默认只监听选定目录和元数据，内容按需解析 | Windows 合成 create/change/rename/delete 已连续复跑；真实目录仍有噪声、公司政策和二进制限制 |
+| 浏览器活动 | URL、标题、DOM、选中内容、截图 | Browser Extension + 当前页面授权 | A | 首先使用 `activeTab` 一键模式；持续模式另行授权 | 合成页低权限闭环已实测；PDF、内置页、登录页、商店发布仍待验证 |
 | Git/终端 | commit、diff、命令、路径、输出 | Git hooks/CLI；Shell integration | A/B | Git 事实可自动；命令正文默认谨慎 | 命令和输出可能含密钥，终端兼容复杂 |
 | 日历 | 结构化事件、参与人 | Microsoft Graph、Google Calendar、CalDAV/EventKit | A/B | OAuth 分项授权 | 企业管理员、参与人隐私 |
 | 会议音频 | 音频、转录、说话人 | 系统音频/麦克风采集或会议平台 API | B | 单次会议显式开启和录音提示 | 法律/同意、说话人识别、资源消耗 |
@@ -111,9 +114,23 @@
 
 处理失败时保留：原始对象引用、来源、时间、敏感度、失败原因和重试策略；不强行生成事件。
 
-## 8. 需要实测后才能定案的事项
+## 8. 每个信息源必须进入同一个 DayLedger，并配一个补漏入口
 
-1. Windows 与 macOS 在常用浏览器、Office、IDE、终端和 IM 中的可访问文本覆盖率。
+低权限采集和事件覆盖不是互相替代关系。各端只获取适合自己的证据，统一形成 EventCandidate/DayLedger，再用自然入口补足该端难以获取的事件：
+
+| 端 | 默认低权限获取 | 同端反馈入口 | 主要补足类型 |
+|---|---|---|---|
+| Desktop | 选定目录/仓库元数据、前台应用、主动 Capture | 每日 Inbox、全局快捷键“漏了这个” | 决策理由、项目状态、方法、阻塞 |
+| Browser | `activeTab` 用户触发后的当前页 | 保存时补“为什么重要/学到了什么” | 发现、认知变化、项目关联 |
+| iOS/Android | Share、Picker、系统分项授权 | 通知卡片、语音补一句、每日遗漏 | 生活时刻、人物、情绪、意义 |
+| IM/会议 | 转发、@Bot、授权会议/频道 | 决定/承诺卡确认责任人和期限 | 决策、承诺、关系上下文 |
+| MCP/Skill/Agent | 按 purpose 请求最小 ContextPack | 任务后有用/缺失/过时/越权反馈 | 使用价值、新结论；exact Grant 内写 Event/Revision，推断保留 inferred 状态 |
+
+详细机制见 `product/记忆反馈与类型覆盖框架.md`。首版不以“后台全量读取”换取类型覆盖，而以反馈逐渐学习个人规则。
+
+## 9. 需要实测后才能定案的事项
+
+1. macOS 在常用浏览器、Office、IDE、终端和 IM 中的可访问文本覆盖率；Windows UIA 仍需扩大真实样本。
 2. 连续采集对 CPU、电池、磁盘和用户信任的真实影响。
 3. iOS Journaling Suggestions 能提供的事件类型、地区和设备覆盖。
 4. Android 厂商后台限制对通知、位置和定时处理的影响。
@@ -122,3 +139,5 @@
 7. Steam 之外的游戏服务是否存在面向个人可用的稳定官方接口。
 
 这些事项在完成代码或设备验证前均不得写入 MVP 的“已可用能力”。
+
+逐项证据、权限和 Prototype 判定见 `research/R1官方能力证据矩阵_20260713.md`；Chrome 实测见 `../research/browser/active-tab-spike-report.md`。

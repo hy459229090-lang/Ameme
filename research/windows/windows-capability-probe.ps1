@@ -14,7 +14,7 @@ function Get-SafeError {
 }
 
 $result = [ordered]@{
-    probe_version = "0.1"
+    probe_version = "0.2"
     captured_at = (Get-Date).ToUniversalTime().ToString("o")
     privacy = [ordered]@{
         window_titles_recorded = $false
@@ -107,50 +107,65 @@ try {
     $result.ui_automation = [ordered]@{ error = Get-SafeError $_ }
 }
 
+$subscriptions = @()
+$watcher = $null
+$tempRoot = $null
+$eventPrefix = "AmemeProbe." + [guid]::NewGuid().ToString("N")
 try {
-    $events = [System.Collections.Generic.List[string]]::new()
     $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("ameme-probe-" + [guid]::NewGuid().ToString("N"))
     [System.IO.Directory]::CreateDirectory($tempRoot) | Out-Null
     $watcher = [System.IO.FileSystemWatcher]::new($tempRoot)
     $watcher.IncludeSubdirectories = $true
-    $watcher.EnableRaisingEvents = $true
     $subscriptions = @(
-        Register-ObjectEvent $watcher Created -Action { $Event.MessageData.Add("created") } -MessageData $events
-        Register-ObjectEvent $watcher Changed -Action { $Event.MessageData.Add("changed") } -MessageData $events
-        Register-ObjectEvent $watcher Renamed -Action { $Event.MessageData.Add("renamed") } -MessageData $events
-        Register-ObjectEvent $watcher Deleted -Action { $Event.MessageData.Add("deleted") } -MessageData $events
+        Register-ObjectEvent $watcher Created -SourceIdentifier ($eventPrefix + ".created")
+        Register-ObjectEvent $watcher Changed -SourceIdentifier ($eventPrefix + ".changed")
+        Register-ObjectEvent $watcher Renamed -SourceIdentifier ($eventPrefix + ".renamed")
+        Register-ObjectEvent $watcher Deleted -SourceIdentifier ($eventPrefix + ".deleted")
     )
+    $watcher.EnableRaisingEvents = $true
     $fileA = Join-Path $tempRoot "probe-a.txt"
     $fileB = Join-Path $tempRoot "probe-b.txt"
+    $fileC = Join-Path $tempRoot "probe-delete.txt"
     [System.IO.File]::WriteAllText($fileA, "ameme capability probe")
     Start-Sleep -Milliseconds 150
     [System.IO.File]::AppendAllText($fileA, " updated")
     Start-Sleep -Milliseconds 150
     [System.IO.File]::Move($fileA, $fileB)
     Start-Sleep -Milliseconds 150
-    [System.IO.File]::Delete($fileB)
+    # Use a separate, settled file for delete verification. Deleting a file
+    # immediately after rename can be coalesced by FileSystemWatcher.
+    [System.IO.File]::WriteAllText($fileC, "delete event probe")
     Start-Sleep -Milliseconds 300
+    [System.IO.File]::Delete($fileC)
+    Start-Sleep -Milliseconds 1500
 
+    $eventSnapshot = @(
+        Get-Event |
+            Where-Object { $_.SourceIdentifier -like ($eventPrefix + ".*") } |
+            ForEach-Object { $_.SourceIdentifier.Substring($eventPrefix.Length + 1) }
+    )
     $eventCounts = @{}
-    foreach ($eventName in $events) {
+    foreach ($eventName in $eventSnapshot) {
         if (-not $eventCounts.ContainsKey($eventName)) { $eventCounts[$eventName] = 0 }
         $eventCounts[$eventName]++
     }
     $result.file_events = [ordered]@{
-        watcher_operational = ($events.Count -gt 0)
+        watcher_operational = ($eventSnapshot.Count -gt 0)
         event_counts = $eventCounts
         test_scope = "temporary synthetic directory"
         user_files_read = $false
     }
-
-    foreach ($subscription in $subscriptions) {
-        Unregister-Event -SubscriptionId $subscription.Id -ErrorAction SilentlyContinue
-        Remove-Job -Id $subscription.Id -Force -ErrorAction SilentlyContinue
-    }
-    $watcher.Dispose()
-    [System.IO.Directory]::Delete($tempRoot, $true)
 } catch {
     $result.file_events = [ordered]@{ error = Get-SafeError $_ }
+} finally {
+    foreach ($subscription in $subscriptions) {
+        Unregister-Event -SubscriptionId $subscription.Id -ErrorAction SilentlyContinue
+    }
+    Remove-Event -SourceIdentifier ($eventPrefix + ".*") -ErrorAction SilentlyContinue
+    if ($null -ne $watcher) { $watcher.Dispose() }
+    if (-not [string]::IsNullOrWhiteSpace($tempRoot) -and [System.IO.Directory]::Exists($tempRoot)) {
+        [System.IO.Directory]::Delete($tempRoot, $true)
+    }
 }
 
 try {

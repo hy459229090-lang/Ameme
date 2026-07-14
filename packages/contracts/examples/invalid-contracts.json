@@ -1,0 +1,11 @@
+{
+  "example_version": 1,
+  "description": "Mutation-based negative fixtures derived from synthetic-day.json.",
+  "cases": [
+    {"name":"event_requires_evidence","object_type":"event","operation":"remove","path":"field_evidence","expected_error":"missing required field field_evidence"},
+    {"name":"event_requires_source","object_type":"event","operation":"set","path":"source_object_ids","value":[],"expected_error":"fewer than 1 items"},
+    {"name":"unsupported_major","object_type":"source_object","operation":"set","path":"schema_version","value":2,"expected_error":"expected const 1"},
+    {"name":"grant_requires_space","object_type":"access_grant","operation":"set","path":"spaces","value":[],"expected_error":"fewer than 1 items"},
+    {"name":"unknown_security_field_rejected","object_type":"access_grant","operation":"set","path":"silent_all_spaces","value":true,"expected_error":"unknown properties"}
+  ]
+}

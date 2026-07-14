@@ -4,10 +4,13 @@
 
 | 工作主题 | 当前状态 | 当前 Gate | 详情 |
 |---|---|---|---|
-| 工作区与上线工作流 | review_ready | 工作区审核 | `JOBS-Ameme.md#工作区与上线工作流` |
-| 用户与场景研究 | in_progress | Gate 1 | `JOBS-Ameme.md#用户与场景研究` |
-| 多端信息源研究 | in_progress | Gate 1 | `JOBS-Ameme.md#多端信息源研究` |
-| Prototype 候选评审 | proposed | Gate 1 | `JOBS-Ameme.md#prototype-候选评审` |
+| 工作区与上线工作流 | done | 已确认 | `JOBS-Ameme.md#工作区与上线工作流` |
+| 用户与场景研究 | plan_ready | Gate 1 | 按产品决策有意后置；`JOBS-Ameme.md#用户与场景研究` |
+| 多端信息源研究 | plan_ready | Gate 1 | 按产品决策有意后置；`JOBS-Ameme.md#多端信息源研究` |
+| MVP 范围与体验原则 | accepted | Gate 1 hold | 品牌、单悬浮记录入口、统一 Skill、旅程和指标已接受；`JOBS-Ameme.md#mvp-范围与体验原则` |
+| MVP 三线并行设计与技术方案 | accepted | M1–M6 authorized / Gate 1 hold | 产品、交互、契约、架构、安全、质量和工程计划完成全链审计；`JOBS-Ameme.md#mvp-三线并行设计与技术方案` |
+| MVP 研发前准备 Goal | done | M1–M6 authorized / Gate 1 hold | owner/local gap 清零且终检通过，只保留 Spike 与外部证据；`JOBS-Ameme.md#mvp-研发前准备-goal` |
+| Prototype 候选评审 | plan_ready | Gate 1 hold | D1–D10 已回填，等待 Gate 1 输入与实施证据；`JOBS-Ameme.md#prototype-候选评审` |
 
 ## 状态定义
 
