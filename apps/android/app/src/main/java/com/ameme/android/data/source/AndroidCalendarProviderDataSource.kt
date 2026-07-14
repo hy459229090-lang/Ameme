@@ -68,10 +68,11 @@ class AndroidCalendarProviderDataSource(
                 },
                 signal,
             )?.use { cursor ->
+                val rowLimit = ProviderRowLimit(MAX_CALENDARS, "Calendar catalog provider")
                 buildList {
                     while (cursor.moveToNext()) {
                         cancellation.throwIfCancelled()
-                        if (size >= MAX_CALENDARS) break
+                        rowLimit.observeRow()
                         val id = cursor.getLong(0).toString()
                         val name = cursor.getString(1)?.trim().orEmpty().take(MAX_DISPLAY_NAME)
                         if (name.isNotEmpty()) add(ReadableCalendar(id, name))
@@ -110,12 +111,11 @@ class AndroidCalendarProviderDataSource(
                 },
                 signal,
             )?.use { cursor ->
+                val rowLimit = ProviderRowLimit(request.maxItems, "Calendar instances provider")
                 buildList {
                     while (cursor.moveToNext()) {
                         cancellation.throwIfCancelled()
-                        if (size >= request.maxItems) {
-                            throw IllegalArgumentException("Calendar result exceeds the explicit item limit")
-                        }
+                        rowLimit.observeRow()
                         val eventId = cursor.getLong(0).toString()
                         val title = cursor.getString(3)?.trim().orEmpty().take(MAX_TITLE)
                         if (title.isEmpty()) continue
@@ -137,6 +137,7 @@ class AndroidCalendarProviderDataSource(
                                     CalendarContract.Events.CONTENT_URI,
                                     eventId.toLong(),
                                 ).toString(),
+                                isAllDay = cursor.getInt(6) != 0,
                             ),
                         )
                     }
@@ -178,6 +179,7 @@ class AndroidCalendarProviderDataSource(
             CalendarContract.Instances.TITLE,
             CalendarContract.Instances.DESCRIPTION,
             CalendarContract.Instances.EVENT_LOCATION,
+            CalendarContract.Instances.ALL_DAY,
         )
         const val MAX_CALENDARS = 100
         const val MAX_DISPLAY_NAME = 128

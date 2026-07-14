@@ -6,7 +6,9 @@ import com.ameme.android.domain.SourceCaptureRequest
 import com.ameme.android.domain.FactStatus
 import com.ameme.android.domain.LocatorPermissionState
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -18,6 +20,7 @@ class ScopedCalendarAdapterTest {
 
     @Test
     fun explicitScopedWindowImportsPlannedEvents() {
+        val cancellation = CalendarImportCancellation()
         val adapter = ScopedCalendarAdapter(
             expectedSpaceId = SPACE,
             repository = repository,
@@ -27,7 +30,7 @@ class ScopedCalendarAdapterTest {
             zoneId = ZoneId.of("Asia/Shanghai"),
         )
 
-        val imported = adapter.import(request())
+        val imported = adapter.import(request(), cancellation)
 
         assertEquals(1, imported.size)
         assertEquals(FactStatus.Planned, imported.single().factStatus)
@@ -36,6 +39,7 @@ class ScopedCalendarAdapterTest {
             LocatorPermissionState.ProviderRead,
             repository.sourceLocator(imported.single().id)?.permissionState,
         )
+        assertTrue(cancellation.isCommitComplete)
     }
 
     @Test
@@ -150,14 +154,57 @@ class ScopedCalendarAdapterTest {
             dataSource = CalendarDataSource { _, _ -> listOf(record()) },
             zoneId = ZoneId.of("UTC"),
         )
-        assertTrue(runCatching { failingAdapter.import(request()) }.isFailure)
+        val failedCommit = CalendarImportCancellation()
+        assertTrue(runCatching { failingAdapter.import(request(), failedCommit) }.isFailure)
         assertEquals(1, batchCalls)
         assertEquals(before, repository.loadActiveEvents().size)
+        assertTrue(failedCommit.isCommitFailed)
+        assertFalse(failedCommit.cancel())
+    }
+
+    @Test
+    fun repeatedCalendarInstanceIsIdempotentWithinBatchAndAgainstActiveEvents() {
+        val before = repository.loadActiveEvents().size
+        val repeated = record(start = start.plusSeconds(3_600))
+        val nextInstance = record(start = start.plusSeconds(7_200))
+        val adapter = ScopedCalendarAdapter(
+            expectedSpaceId = SPACE,
+            repository = repository,
+            dataSource = CalendarDataSource { _, _ -> listOf(repeated, repeated, nextInstance) },
+            zoneId = ZoneId.of("Asia/Shanghai"),
+        )
+
+        val first = adapter.import(request())
+        val second = adapter.import(request())
+
+        assertEquals(2, first.size)
+        assertTrue(second.isEmpty())
+        assertEquals(before + 2, repository.loadActiveEvents().size)
+    }
+
+    @Test
+    fun allDayEventKeepsUtcCalendarDateAndHasNoClockTime() {
+        val utcMidnight = Instant.parse("2026-07-02T00:00:00Z")
+        val adapter = ScopedCalendarAdapter(
+            expectedSpaceId = SPACE,
+            repository = repository,
+            dataSource = CalendarDataSource { _, _ ->
+                listOf(record(start = utcMidnight, isAllDay = true))
+            },
+            zoneId = ZoneId.of("America/Los_Angeles"),
+        )
+
+        val imported = adapter.import(request()).single()
+
+        assertEquals(LocalDate.of(2026, 7, 2), imported.localDate)
+        assertEquals(null, imported.time)
+        assertTrue(imported.detail.startsWith("全天计划；"))
     }
 
     private fun record(
         calendarId: String = "cal-work",
         start: Instant = this.start.plusSeconds(60),
+        isAllDay: Boolean = false,
     ) = CalendarSourceRecord(
         eventId = "42",
         calendarId = calendarId,
@@ -165,6 +212,7 @@ class ScopedCalendarAdapterTest {
         title = "合成评审",
         detail = "只表示计划",
         locatorUri = "content://com.android.calendar/events/42",
+        isAllDay = isAllDay,
     )
 
     private fun request() = CalendarImportRequest(

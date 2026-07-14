@@ -173,7 +173,7 @@ class LocalEventDatabaseInstrumentedTest {
     }
 
     @Test
-    fun v1ToV2ToV3ToV4Migration_preservesRowAndBackfillsLegacySpace() {
+    fun v1ToV2ToV3ToV4ToV5Migration_preservesRowAndBackfillsLegacySpace() {
         val file = newDatabaseFile()
         createVersionOneDatabase(file)
 
@@ -186,6 +186,7 @@ class LocalEventDatabaseInstrumentedTest {
             assertTrue(database.hasMigration(2))
             assertTrue(database.hasMigration(3))
             assertTrue(database.hasMigration(4))
+            assertTrue(database.hasMigration(5))
             val restored = database.readActive().single()
             assertEquals("evt_v1_synthetic", restored.id)
             assertEquals("v1 synthetic title", restored.title)
@@ -233,6 +234,53 @@ class LocalEventDatabaseInstrumentedTest {
             assertTrue(database.readActive().isEmpty())
             assertEquals(null, database.currentState(duplicate.id))
             assertEquals(null, database.sourceLocator(duplicate.id))
+        }
+    }
+
+    @Test
+    fun calendarSourceInstanceIsIdempotentWithinBatchAcrossReopenAndIsolatedBySpace() {
+        val file = newDatabaseFile()
+        val request = calendarSourceRequest()
+        val firstId = LocalMemoryRepository.open(
+            context, SPACE_A, SyntheticDatabaseKeyProvider(key), file, clock, seedSyntheticEvents = false,
+        ).use { repository ->
+            val first = repository.captureSources(listOf(request, request))
+            assertEquals(1, first.size)
+            assertEquals(null, first.single().time)
+            assertEquals(1, repository.loadActiveEvents().size)
+            first.single().id
+        }
+
+        LocalMemoryRepository.open(
+            context, SPACE_A, SyntheticDatabaseKeyProvider(key), file, clock, seedSyntheticEvents = false,
+        ).use { repository ->
+            assertEquals(firstId, repository.captureSource(request).id)
+            assertTrue(repository.captureSources(listOf(request)).isEmpty())
+            assertTrue(repository.deleteEvent(firstId))
+            val reimported = repository.captureSources(listOf(request))
+            assertEquals(1, reimported.size)
+            assertEquals(1, repository.loadActiveEvents().size)
+        }
+
+        LocalMemoryRepository.open(
+            context, SPACE_B, SyntheticDatabaseKeyProvider(key), file, clock, seedSyntheticEvents = false,
+        ).use { repository ->
+            assertEquals(1, repository.captureSources(listOf(request)).size)
+            assertEquals(1, repository.loadActiveEvents().size)
+        }
+    }
+
+    @Test
+    fun v4CalendarLocatorWithoutInstanceKeyStillDeduplicatesByStoredDateAndTime() {
+        val file = newDatabaseFile()
+        val request = calendarSourceRequest()
+        LocalMemoryRepository.open(
+            context, SPACE_A, SyntheticDatabaseKeyProvider(key), file, clock, seedSyntheticEvents = false,
+        ).use { repository ->
+            repository.captureSource(request.copy(sourceInstanceKey = null))
+
+            assertTrue(repository.captureSources(listOf(request)).isEmpty())
+            assertEquals(1, repository.loadActiveEvents().size)
         }
     }
 
@@ -505,6 +553,19 @@ class LocalEventDatabaseInstrumentedTest {
         locatorUri = "content://synthetic.provider/photo/${UUID.randomUUID()}",
         mimeType = "image/png",
         locatorPermissionState = permissionState,
+    )
+
+    private fun calendarSourceRequest() = SourceCaptureRequest(
+        sourceKind = SourceKind.Calendar,
+        title = "合成全天计划",
+        detail = "全天计划；仅验证来源实例幂等",
+        factStatus = FactStatus.Planned,
+        localDate = LocalDate.of(2026, 7, 14),
+        time = null,
+        locatorUri = "content://com.android.calendar/events/42",
+        mimeType = "vnd.android.cursor.item/event",
+        locatorPermissionState = LocatorPermissionState.ProviderRead,
+        sourceInstanceKey = "1783987200000",
     )
 
     private fun createVersionOneDatabase(file: File) {

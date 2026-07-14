@@ -9,6 +9,7 @@ import com.ameme.android.domain.SourceKind
 import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
+import java.time.ZoneOffset
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -28,6 +29,7 @@ data class CalendarSourceRecord(
     val title: String,
     val detail: String,
     val locatorUri: String,
+    val isAllDay: Boolean = false,
 )
 
 fun interface CalendarDataSource {
@@ -44,6 +46,8 @@ class CalendarImportCancellation {
     private val listeners = CopyOnWriteArrayList<() -> Unit>()
 
     val isCancelled: Boolean get() = state.get() == STATE_CANCELLED
+    val isCommitComplete: Boolean get() = state.get() == STATE_COMMIT_COMPLETE
+    val isCommitFailed: Boolean get() = state.get() == STATE_COMMIT_FAILED
 
     fun cancel(): Boolean {
         if (!state.compareAndSet(STATE_ACTIVE, STATE_CANCELLED)) return false
@@ -70,10 +74,24 @@ class CalendarImportCancellation {
         listeners.clear()
     }
 
+    fun completeCommit() {
+        check(state.compareAndSet(STATE_COMMITTING, STATE_COMMIT_COMPLETE)) {
+            "Calendar commit was not in progress"
+        }
+    }
+
+    fun failCommit() {
+        check(state.compareAndSet(STATE_COMMITTING, STATE_COMMIT_FAILED)) {
+            "Calendar commit was not in progress"
+        }
+    }
+
     private companion object {
         const val STATE_ACTIVE = 0
         const val STATE_CANCELLED = 1
         const val STATE_COMMITTING = 2
+        const val STATE_COMMIT_COMPLETE = 3
+        const val STATE_COMMIT_FAILED = 4
     }
 }
 
@@ -103,22 +121,35 @@ class ScopedCalendarAdapter(
                 "Calendar locator must match the returned event id"
             }
         }
-        cancellation.beginCommit()
         val sourceRequests = records.map { record ->
             val local = record.start.atZone(zoneId)
+            val localDate = if (record.isAllDay) {
+                record.start.atZone(ZoneOffset.UTC).toLocalDate()
+            } else {
+                local.toLocalDate()
+            }
             SourceCaptureRequest(
                 sourceKind = SourceKind.Calendar,
                 title = record.title,
-                detail = record.detail,
+                detail = if (record.isAllDay) "全天计划；${record.detail}" else record.detail,
                 factStatus = FactStatus.Planned,
-                localDate = local.toLocalDate(),
-                time = local.toLocalTime().withSecond(0).withNano(0),
+                localDate = localDate,
+                time = if (record.isAllDay) null else local.toLocalTime().withSecond(0).withNano(0),
                 locatorUri = record.locatorUri,
                 mimeType = CALENDAR_EVENT_MIME,
                 locatorPermissionState = LocatorPermissionState.ProviderRead,
+                sourceInstanceKey = record.start.toEpochMilli().toString(),
             )
         }
-        return if (sourceRequests.isEmpty()) emptyList() else repository.captureSources(sourceRequests)
+        cancellation.beginCommit()
+        return try {
+            val imported = if (sourceRequests.isEmpty()) emptyList() else repository.captureSources(sourceRequests)
+            cancellation.completeCommit()
+            imported
+        } catch (error: Throwable) {
+            cancellation.failCommit()
+            throw error
+        }
     }
 
     private fun validate(request: CalendarImportRequest) {

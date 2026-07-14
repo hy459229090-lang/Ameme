@@ -26,6 +26,7 @@ class FakeMemoryRepository(
     private val events by lazy { seedEvents().toMutableList() }
     private val locators = mutableMapOf<String, SourceLocator>()
     private val pendingReleases = mutableMapOf<String, PendingSourceLocatorRelease>()
+    private val activeSourceInstances = mutableMapOf<String, String>()
 
     fun seedEvents(): List<MemoryEvent> {
         val today = LocalDate.now(clock)
@@ -110,6 +111,10 @@ class FakeMemoryRepository(
     }
 
     override fun captureSource(request: SourceCaptureRequest): MemoryEvent {
+        request.sourceIdentity()?.let { identity ->
+            val existingId = activeSourceInstances.entries.firstOrNull { it.value == identity }?.key
+            if (existingId != null) return events.first { it.id == existingId }
+        }
         return captureSources(listOf(request)).single()
     }
 
@@ -119,7 +124,11 @@ class FakeMemoryRepository(
             require(request.title.isNotBlank()) { "Source capture title must not be blank" }
             require(request.detail.isNotBlank()) { "Source capture detail must not be blank" }
         }
-        val captured = requests.map { request ->
+        val seenIdentities = activeSourceInstances.values.toMutableSet()
+        val uniqueRequests = requests.filter { request ->
+            request.sourceIdentity()?.let(seenIdentities::add) ?: true
+        }
+        val captured = uniqueRequests.map { request ->
             MemoryEvent(
                 id = "evt_synth_source_${captureCounter.incrementAndGet()}",
                 localDate = request.localDate,
@@ -137,6 +146,7 @@ class FakeMemoryRepository(
             request.locatorUri?.let { uri ->
                 locators[event.id] = SourceLocator(uri, request.locatorPermissionState)
             }
+            request.sourceIdentity()?.let { identity -> activeSourceInstances[event.id] = identity }
         }
         return captured.map { it.first }
     }
@@ -179,6 +189,7 @@ class FakeMemoryRepository(
     override fun deleteEvent(eventId: String): Boolean = events.removeAll { it.id == eventId }.also { deleted ->
         if (deleted) {
             val locator = locators.remove(eventId)
+            activeSourceInstances.remove(eventId)
             if (locator?.permissionState == LocatorPermissionState.PersistedRead) {
                 pendingReleases[eventId] = PendingSourceLocatorRelease(eventId, locator.uri)
             }
@@ -190,4 +201,10 @@ class FakeMemoryRepository(
     override fun pendingSourceLocatorReleases(): List<PendingSourceLocatorRelease> = pendingReleases.values.toList()
 
     override fun markSourceLocatorReleased(eventId: String): Boolean = pendingReleases.remove(eventId) != null
+
+    private fun SourceCaptureRequest.sourceIdentity(): String? {
+        val uri = locatorUri ?: return null
+        val instance = sourceInstanceKey ?: return null
+        return listOf(sourceKind.name, uri, instance).joinToString("\u0000")
+    }
 }

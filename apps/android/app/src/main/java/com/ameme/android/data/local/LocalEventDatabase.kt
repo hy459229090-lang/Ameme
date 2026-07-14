@@ -37,6 +37,7 @@ class LocalEventDatabase private constructor(
     }
 
     fun insertCaptured(event: MemoryEvent, source: SourceCaptureRequest? = null): MemoryEvent = inTransaction {
+        source?.let { findActiveSourceInstance(event, it) }?.let { return@inTransaction it }
         check(findCurrent(event.id, includeDeleted = true) == null) { "Event id already exists" }
         appendRevision(event, reason = "capture", state = STATE_ACTIVE)
         source?.let { insertSourceLocator(event.id, it) }
@@ -56,13 +57,16 @@ class LocalEventDatabase private constructor(
     fun insertCapturedSourceBatch(
         entries: List<Pair<MemoryEvent, SourceCaptureRequest>>,
     ): List<MemoryEvent> = inTransaction {
+        val inserted = mutableListOf<MemoryEvent>()
         entries.forEach { (event, source) ->
+            if (findActiveSourceInstance(event, source) != null) return@forEach
             check(findCurrent(event.id, includeDeleted = true) == null) { "Event id already exists" }
             appendRevision(event, reason = "source_batch_capture", state = STATE_ACTIVE)
             insertSourceLocator(event.id, source)
             refreshSearchIndex(event, STATE_ACTIVE)
+            inserted += event
         }
-        entries.map { it.first }
+        inserted
     }
 
     fun readPage(query: String, date: LocalDate?, cursor: String?, pageSize: Int): MemoryPage {
@@ -404,6 +408,11 @@ class LocalEventDatabase private constructor(
                 put("event_id", eventId)
                 put("source_kind", source.sourceKind.name)
                 put("locator_uri", source.locatorUri)
+                if (source.sourceInstanceKey == null) {
+                    putNull("source_instance_key")
+                } else {
+                    put("source_instance_key", source.sourceInstanceKey)
+                }
                 if (source.mimeType == null) putNull("mime_type") else put("mime_type", source.mimeType)
                 put("permission_state", source.locatorPermissionState.name)
                 put("state", STATE_ACTIVE)
@@ -411,6 +420,37 @@ class LocalEventDatabase private constructor(
                 put("updated_at", now)
             },
         )
+    }
+
+    private fun findActiveSourceInstance(event: MemoryEvent, source: SourceCaptureRequest): MemoryEvent? {
+        val locatorUri = source.locatorUri ?: return null
+        val instanceKey = source.sourceInstanceKey ?: return null
+        val existingId = database.rawQuery(
+            """
+                SELECT e.event_id
+                FROM source_locators s
+                JOIN events_current e
+                  ON e.space_id = s.space_id AND e.event_id = s.event_id
+                WHERE s.space_id = ? AND s.source_kind = ? AND s.locator_uri = ?
+                  AND (
+                    s.source_instance_key = ? OR
+                    (s.source_instance_key IS NULL AND e.local_date = ? AND COALESCE(e.local_time, '') = ?)
+                  )
+                  AND s.state = ? AND e.state = ?
+                LIMIT 1
+            """.trimIndent(),
+            arrayOf(
+                spaceId,
+                source.sourceKind.name,
+                locatorUri,
+                instanceKey,
+                event.localDate.toString(),
+                event.time?.toString().orEmpty(),
+                STATE_ACTIVE,
+                STATE_ACTIVE,
+            ),
+        ).use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
+        return existingId?.let { findCurrent(it, includeDeleted = false)?.event }
     }
 
     private fun refreshSearchIndex(event: MemoryEvent, state: String) {
@@ -492,7 +532,7 @@ class LocalEventDatabase private constructor(
     )
 
     companion object {
-        const val SCHEMA_VERSION = 4
+        const val SCHEMA_VERSION = 5
         const val STATE_ACTIVE = "ACTIVE"
         const val STATE_DELETED = "DELETED"
         const val DEFAULT_SPACE_ID = "space_personal"
@@ -547,19 +587,27 @@ class LocalEventDatabase private constructor(
                     createAppendOnlyTriggers(database)
                     recordMigration(database, 3, "create_v3")
                     createSourceLocatorTable(database)
-                    recordMigration(database, SCHEMA_VERSION, "create_v4_source_locators")
+                    recordMigration(database, 4, "create_v4_source_locators")
+                    migrateSourceLocatorInstances(database)
+                    recordMigration(database, SCHEMA_VERSION, "create_v5_source_instance_identity")
                     database.version = SCHEMA_VERSION
                 }
                 1 -> {
                     migrateV1ToV2(database)
                     migrateV2ToV3(database)
                     migrateV3ToV4(database)
+                    migrateV4ToV5(database)
                 }
                 2 -> {
                     migrateV2ToV3(database)
                     migrateV3ToV4(database)
+                    migrateV4ToV5(database)
                 }
-                3 -> migrateV3ToV4(database)
+                3 -> {
+                    migrateV3ToV4(database)
+                    migrateV4ToV5(database)
+                }
+                4 -> migrateV4ToV5(database)
                 SCHEMA_VERSION -> Unit
                 else -> error("Unsupported local event schema version ${database.version}")
             }
@@ -637,7 +685,13 @@ class LocalEventDatabase private constructor(
 
         private fun migrateV3ToV4(database: SQLiteDatabase) = inMigration(database) {
             createSourceLocatorTable(database)
-            recordMigration(database, SCHEMA_VERSION, "migrate_v3_to_v4_source_locators")
+            recordMigration(database, 4, "migrate_v3_to_v4_source_locators")
+            database.version = 4
+        }
+
+        private fun migrateV4ToV5(database: SQLiteDatabase) = inMigration(database) {
+            migrateSourceLocatorInstances(database)
+            recordMigration(database, SCHEMA_VERSION, "migrate_v4_to_v5_source_instance_identity")
             database.version = SCHEMA_VERSION
         }
 
@@ -746,6 +800,19 @@ class LocalEventDatabase private constructor(
             )
             database.execSQL(
                 "CREATE INDEX IF NOT EXISTS idx_source_locators_space_state ON source_locators(space_id, state)",
+            )
+        }
+
+        private fun migrateSourceLocatorInstances(database: SQLiteDatabase) {
+            if (!hasColumn(database, "source_locators", "source_instance_key")) {
+                database.execSQL("ALTER TABLE source_locators ADD COLUMN source_instance_key TEXT")
+            }
+            database.execSQL(
+                """
+                    CREATE UNIQUE INDEX IF NOT EXISTS idx_source_locators_active_instance
+                    ON source_locators(space_id, source_kind, locator_uri, source_instance_key)
+                    WHERE state = '$STATE_ACTIVE' AND source_instance_key IS NOT NULL
+                """.trimIndent(),
             )
         }
 

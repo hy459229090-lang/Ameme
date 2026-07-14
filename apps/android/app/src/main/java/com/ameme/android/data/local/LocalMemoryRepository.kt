@@ -61,6 +61,9 @@ class LocalMemoryRepository(
             require(URI.create(locator).scheme == "content") { "Only content URI locators are accepted" }
         }
         request.mimeType?.let { require(it.length <= 128) { "MIME type is too long" } }
+        request.sourceInstanceKey?.let { key ->
+            require(key.isNotBlank() && key.length <= 256) { "Source instance key is invalid" }
+        }
         return MemoryEvent(
             id = "evt_${UUID.randomUUID()}",
             localDate = request.localDate,

@@ -3,6 +3,7 @@ package com.ameme.android.data.source
 import java.time.Instant
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CalendarProviderQueryTest {
@@ -24,5 +25,15 @@ class CalendarProviderQueryTest {
         assertEquals("calendar_id IN (?,?)", query.selection)
         assertArrayEquals(arrayOf("2", "9"), query.selectionArgs)
         assertEquals(201, query.resultLimit)
+    }
+
+    @Test
+    fun physicalProviderRowsCannotExceedBudgetEvenWhenRowsWouldBeDiscarded() {
+        val budget = ProviderRowLimit(maximumRows = 2, sourceName = "synthetic provider")
+
+        budget.observeRow()
+        budget.observeRow()
+
+        assertTrue(runCatching { budget.observeRow() }.isFailure)
     }
 }

@@ -70,6 +70,7 @@ data class SourceCaptureRequest(
     val locatorUri: String? = null,
     val mimeType: String? = null,
     val locatorPermissionState: LocatorPermissionState = LocatorPermissionState.NoLocator,
+    val sourceInstanceKey: String? = null,
 )
 
 enum class SearchBackend {
