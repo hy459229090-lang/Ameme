@@ -578,6 +578,13 @@ class CoreOracle:
             if not row:
                 raise NotFound("restore revision not found")
             target = json.loads(row["snapshot_json"])
+            target_evidence, target_source_ids = self._validate_evidence(
+                target["space_id"], deepcopy(target["field_evidence"])
+            )
+            if target_source_ids != sorted(target["source_object_ids"]):
+                raise InvariantViolation(
+                    "restore revision evidence does not match its source snapshot"
+                )
             changes = {
                 "title": target["title"],
                 "description": target.get("description", ""),
@@ -587,7 +594,12 @@ class CoreOracle:
                 "undo_of_revision": restore_revision,
             }
             return self._append_event_revision_tx(
-                event_id, base_revision, changes, "user", "user_edit", None
+                event_id,
+                base_revision,
+                changes,
+                "user",
+                "user_edit",
+                target_evidence,
             )
 
         return self._command("undo_event", idempotency_key, payload, action)
@@ -692,13 +704,16 @@ class CoreOracle:
             source = self._source(source_object_id)
             if source["processing_state"] == "deleted":
                 raise InvariantViolation("source is already deleted without an idempotent replay key")
-            affected_events = [
+            affected_events = sorted(
                 row["event_id"]
                 for row in self.connection.execute(
-                    "SELECT DISTINCT event_id FROM field_evidence WHERE source_object_id = ?",
+                    "SELECT DISTINCT fe.event_id FROM field_evidence fe "
+                    "JOIN events_current ec ON ec.event_id = fe.event_id "
+                    "AND ec.revision = fe.revision "
+                    "WHERE fe.source_object_id = ? AND ec.state != 'deleted'",
                     (source_object_id,),
                 )
-            ]
+            )
             tombstone_id = self._next_id("tmb")
             now = self._now()
             self.connection.execute(
@@ -712,21 +727,49 @@ class CoreOracle:
             )
             self._append_locator_history(source_object_id, "deleted", reason, None, now)
             touched_dates: set[tuple[str, str, str, str]] = set()
+            retained_event_ids: list[str] = []
+            deleted_event_ids: list[str] = []
             for event_id in affected_events:
                 current = self._event_current(event_id)
-                self.connection.execute(
-                    "INSERT OR IGNORE INTO tombstones VALUES (?, 'event', ?, ?, ?)",
-                    (self._next_id("tmb"), event_id, reason, now),
+                remaining_evidence = self._evidence_after_source_deletion(
+                    current["field_evidence"], source_object_id
                 )
-                self._append_event_revision_tx(
-                    event_id,
-                    current["revision"],
-                    {"state": "deleted", "deletion_source_id": source_object_id},
-                    "system",
-                    "deletion_recompute",
-                    None,
-                    refresh=False,
-                )
+                if remaining_evidence:
+                    fact_status = self._fact_status_from_evidence(remaining_evidence)
+                    title, description = self._safe_recomputed_event_text(
+                        current, remaining_evidence
+                    )
+                    self._append_event_revision_tx(
+                        event_id,
+                        current["revision"],
+                        {
+                            "title": title,
+                            "description": description,
+                            "fact_status": fact_status,
+                            "state": "conflict" if fact_status == "conflict" else "active",
+                            "deletion_source_id": source_object_id,
+                        },
+                        "system",
+                        "deletion_recompute",
+                        remaining_evidence,
+                        refresh=False,
+                    )
+                    retained_event_ids.append(event_id)
+                else:
+                    self.connection.execute(
+                        "INSERT OR IGNORE INTO tombstones VALUES (?, 'event', ?, ?, ?)",
+                        (self._next_id("tmb"), event_id, reason, now),
+                    )
+                    self._append_event_revision_tx(
+                        event_id,
+                        current["revision"],
+                        {"state": "deleted", "deletion_source_id": source_object_id},
+                        "system",
+                        "deletion_recompute",
+                        None,
+                        refresh=False,
+                    )
+                    deleted_event_ids.append(event_id)
                 snapshot = self._event_current(event_id)
                 touched_dates.add(
                     (
@@ -736,13 +779,15 @@ class CoreOracle:
                         snapshot["time_range"].get("timezone", "UTC"),
                     )
                 )
-            self._recompute_episodes_after_deletion(set(affected_events), touched_dates)
+            self._recompute_episodes_after_deletion(set(deleted_event_ids), touched_dates)
             for owner_id, space_id, local_date, timezone_name in touched_dates:
                 self._refresh_ledger(owner_id, space_id, local_date, timezone_name)
             job_id = self._next_id("del")
             affected = {
                 "source_object_ids": [source_object_id],
                 "event_ids": affected_events,
+                "retained_event_ids": retained_event_ids,
+                "deleted_event_ids": deleted_event_ids,
                 "tombstone_precedence": True,
             }
             proof_hash = _hash(affected)
@@ -1095,6 +1140,85 @@ class CoreOracle:
                 }
             )
         return normalized, sorted(source_ids)
+
+    def _evidence_after_source_deletion(
+        self,
+        evidences: list[dict[str, Any]],
+        deleted_source_id: str,
+    ) -> list[dict[str, Any]]:
+        remaining: list[dict[str, Any]] = []
+        for evidence in evidences:
+            observations = []
+            for observation_id in evidence["observation_ids"]:
+                row = self.connection.execute(
+                    "SELECT observation_id, source_object_id, fact_status, confidence "
+                    "FROM observations "
+                    "WHERE observation_id = ?",
+                    (observation_id,),
+                ).fetchone()
+                if not row:
+                    raise NotFound(f"Observation not found: {observation_id}")
+                if row["source_object_id"] != deleted_source_id:
+                    observations.append(row)
+            if not observations:
+                continue
+            statuses = {row["fact_status"] for row in observations}
+            if "observed" in statuses:
+                status = "observed"
+            elif "user_asserted" in statuses:
+                status = "user_asserted"
+            elif "inferred" in statuses:
+                status = "inferred"
+            elif "planned" in statuses:
+                status = "planned"
+            else:
+                status = "unknown"
+            confidence = min(
+                [float(evidence["confidence"])]
+                + [float(row["confidence"]) for row in observations]
+            )
+            remaining.append(
+                {
+                    "field": evidence["field"],
+                    "observation_ids": sorted(
+                        row["observation_id"] for row in observations
+                    ),
+                    "confidence": confidence,
+                    "status": status,
+                }
+            )
+        return remaining
+
+    @staticmethod
+    def _fact_status_from_evidence(evidences: list[dict[str, Any]]) -> str:
+        statuses = {evidence["status"] for evidence in evidences}
+        if "conflict" in statuses:
+            return "conflict"
+        if "inferred" in statuses or "unknown" in statuses:
+            minimum_confidence = min(float(item["confidence"]) for item in evidences)
+            return (
+                "high_confidence_inference"
+                if minimum_confidence >= 0.7
+                else "low_confidence_candidate"
+            )
+        if "observed" in statuses:
+            return "confirmed"
+        if "user_asserted" in statuses:
+            return "user_asserted"
+        if "planned" in statuses:
+            return "planned"
+        return "low_confidence_candidate"
+
+    @staticmethod
+    def _safe_recomputed_event_text(
+        event: dict[str, Any], evidences: list[dict[str, Any]]
+    ) -> tuple[str, str]:
+        event_label = event["event_type"].replace("_", " ").strip().capitalize()
+        fields = ", ".join(sorted({item["field"] for item in evidences}))
+        return (
+            event_label,
+            f"Recomputed after source deletion from remaining evidence fields: {fields}.",
+        )
 
     def _insert_event_revision(
         self,

@@ -198,6 +198,66 @@ class CoreOracleTest(unittest.TestCase):
         self.assertEqual(snapshots[2]["fact_status"], "conflict")
         self.assertEqual(snapshots[3]["title"], "Edited river walk")
 
+    def test_undo_restores_target_revision_evidence_snapshot(self) -> None:
+        handles = self.load_day()
+        event_id = handles["records"]["river_walk"]["event"]["event_id"]
+        original = self.core.event_revision_snapshots(event_id)[0]
+        replacement_observation_id = handles["records"]["inferred_research"][
+            "observation"
+        ]["observation_id"]
+        replacement_source_id = handles["records"]["inferred_research"]["capture"][
+            "source_object_id"
+        ]
+        changed = self.core.append_event_revision(
+            event_id,
+            base_revision=1,
+            changes={
+                "title": "Temporary evidence replacement",
+                "fact_status": "high_confidence_inference",
+            },
+            actor="user",
+            reason="user_edit",
+            evidences=[
+                {
+                    "field": "action",
+                    "observation_ids": [replacement_observation_id],
+                    "confidence": 0.72,
+                    "status": "inferred",
+                }
+            ],
+            idempotency_key="undo-evidence-change-001",
+        )
+        changed_snapshot = self.core.event_revision_snapshots(event_id)[-1]
+        self.assertEqual(changed_snapshot["source_object_ids"], [replacement_source_id])
+
+        restored = self.core.undo_event(
+            event_id,
+            base_revision=changed["revision"],
+            restore_revision=1,
+            idempotency_key="undo-evidence-restore-001",
+        )
+
+        self.assertEqual(restored["revision"], 3)
+        snapshots = self.core.event_revision_snapshots(event_id)
+        self.assertEqual([item["revision"] for item in snapshots], [1, 2, 3])
+        self.assertEqual(snapshots[-1]["field_evidence"], original["field_evidence"])
+        self.assertEqual(snapshots[-1]["source_object_ids"], original["source_object_ids"])
+        compensation = self.core.connection.execute(
+            "SELECT actor, reason, changes_json FROM event_revisions "
+            "WHERE event_id = ? AND revision = 3",
+            (event_id,),
+        ).fetchone()
+        self.assertEqual(compensation["actor"], "user")
+        self.assertEqual(compensation["reason"], "user_edit")
+        self.assertEqual(json.loads(compensation["changes_json"])["undo_of_revision"], 1)
+        current = next(
+            event for event in self.today()["events"] if event["event_id"] == event_id
+        )
+        self.assertEqual(
+            {item["source_object_id"] for item in current["evidence_detail"]},
+            set(original["source_object_ids"]),
+        )
+
     def test_locator_degradation_is_traceable(self) -> None:
         handles = self.load_day()
         source_id = handles["records"]["inferred_research"]["capture"]["source_object_id"]
@@ -237,6 +297,93 @@ class CoreOracleTest(unittest.TestCase):
             self.core.connection.execute(
                 "UPDATE event_revisions SET reason = 'illegal' WHERE event_id = ?", (event_id,)
             )
+
+    def test_delete_one_source_recomputes_and_preserves_multi_source_event(self) -> None:
+        handles = self.load_day()
+        event_id = handles["records"]["river_walk"]["event"]["event_id"]
+        deleted_source_id = handles["records"]["river_walk"]["capture"][
+            "source_object_id"
+        ]
+        deleted_observation_id = handles["records"]["river_walk"]["observation"][
+            "observation_id"
+        ]
+        remaining_source_id = handles["records"]["inferred_research"]["capture"][
+            "source_object_id"
+        ]
+        remaining_observation_id = handles["records"]["inferred_research"][
+            "observation"
+        ]["observation_id"]
+        self.core.append_event_revision(
+            event_id,
+            base_revision=1,
+            changes={"title": "Synthetic event with two independent sources"},
+            actor="system",
+            reason="source_update",
+            evidences=[
+                {
+                    "field": "action",
+                    "observation_ids": [
+                        deleted_observation_id,
+                        remaining_observation_id,
+                    ],
+                    "confidence": 1.0,
+                    "status": "user_asserted",
+                },
+                {
+                    "field": "emotion",
+                    "observation_ids": [deleted_observation_id],
+                    "confidence": 1.0,
+                    "status": "user_asserted",
+                },
+            ],
+            idempotency_key="multi-source-event-001",
+        )
+
+        deletion = self.core.delete_source(
+            deleted_source_id, idempotency_key="delete-one-of-multiple-sources-001"
+        )
+
+        self.assertEqual(deletion["state"], "completed")
+        self.assertEqual(deletion["affected"]["retained_event_ids"], [event_id])
+        self.assertEqual(deletion["affected"]["deleted_event_ids"], [])
+        snapshots = self.core.event_revision_snapshots(event_id)
+        self.assertEqual([item["revision"] for item in snapshots], [1, 2, 3])
+        current = snapshots[-1]
+        self.assertEqual(current["state"], "active")
+        self.assertEqual(current["fact_status"], "high_confidence_inference")
+        self.assertEqual(current["source_object_ids"], [remaining_source_id])
+        self.assertEqual(
+            current["field_evidence"],
+            [
+                {
+                    "field": "action",
+                    "observation_ids": [remaining_observation_id],
+                    "confidence": 0.72,
+                    "status": "inferred",
+                }
+            ],
+        )
+        self.assertNotEqual(
+            current["title"], "Synthetic event with two independent sources"
+        )
+        revision_reason = self.core.connection.execute(
+            "SELECT reason FROM event_revisions WHERE event_id = ? AND revision = 3",
+            (event_id,),
+        ).fetchone()["reason"]
+        self.assertEqual(revision_reason, "deletion_recompute")
+        self.assertIsNone(
+            self.core.connection.execute(
+                "SELECT 1 FROM tombstones WHERE target_type = 'event' AND target_id = ?",
+                (event_id,),
+            ).fetchone()
+        )
+        self.assertIn(event_id, [event["event_id"] for event in self.today()["events"]])
+        self.assertEqual(self.today()["episodes"][0]["state"], "active")
+        self.core.rebuild()
+        rebuilt = next(
+            event for event in self.today()["events"] if event["event_id"] == event_id
+        )
+        self.assertEqual(rebuilt["source_object_ids"], [remaining_source_id])
 
     def test_delete_is_idempotent_only_with_same_key(self) -> None:
         handles = self.load_day()
