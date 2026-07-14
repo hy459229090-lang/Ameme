@@ -78,7 +78,10 @@ function validateEvent(value: unknown, localDate: string): StructuredEventProjec
   if (value.local_date !== localDate || typeof value.local_date !== "string") {
     throw new GatewayError("INVALID_REQUEST");
   }
-  if (typeof value.event_time !== "string" || !TIMESTAMP_WITH_ZONE.test(value.event_time)) {
+  if (
+    value.event_time !== null &&
+    (typeof value.event_time !== "string" || !TIMESTAMP_WITH_ZONE.test(value.event_time))
+  ) {
     throw new GatewayError("INVALID_REQUEST");
   }
   if (typeof value.event_type !== "string" || !EVENT_TYPES.has(value.event_type)) {
@@ -101,7 +104,7 @@ function validateEvent(value: unknown, localDate: string): StructuredEventProjec
     event_id: requireId(value.event_id),
     revision: requireInteger(value.revision),
     local_date: value.local_date,
-    event_time: value.event_time,
+    event_time: value.event_time as string | null,
     event_type: value.event_type as StructuredEventProjection["event_type"],
     title: requireString(value.title, LIMITS.maxTitleCodePoints),
     detail: requireString(value.detail, LIMITS.maxDetailCodePoints, true),

@@ -73,6 +73,7 @@ export class OpenAIResponsesProvider implements InferenceProvider {
             "Every summary item must cite one or more event_id values from the input.",
             "Low-confidence candidates must not be stated as confirmed facts.",
             "Events with fact_status=planned are plans, not completed facts; put them only in open_loops and never state that they happened.",
+            "event_time=null means the exact time is unknown or the event is all-day; never invent a clock time.",
             "If there are no events, return empty strings and empty arrays.",
           ].join(" "),
           input: JSON.stringify({

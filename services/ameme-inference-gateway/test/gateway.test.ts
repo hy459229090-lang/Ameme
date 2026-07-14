@@ -54,6 +54,9 @@ test("raw, restricted and unknown raw fields fail before provider invocation", a
   const rawField = syntheticRequest() as unknown as Record<string, unknown>;
   (rawField.events as Array<Record<string, unknown>>)[0]!.raw_content = "forbidden";
   await expectCode("INVALID_REQUEST", () => gateway.summarizeDay(rawField));
+  const naiveTime = syntheticRequest() as unknown as Record<string, unknown>;
+  (naiveTime.events as Array<Record<string, unknown>>)[0]!.event_time = "2026-07-14T10:00:00";
+  await expectCode("INVALID_REQUEST", () => gateway.summarizeDay(naiveTime));
   const inventedFactStatus = syntheticRequest() as unknown as Record<string, unknown>;
   (inventedFactStatus.events as Array<Record<string, unknown>>)[0]!.fact_status = "completed";
   await expectCode("INVALID_REQUEST", () => gateway.summarizeDay(inventedFactStatus));

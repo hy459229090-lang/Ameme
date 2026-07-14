@@ -70,6 +70,7 @@ test("OpenAI provider sends stateless strict schema, bounded budget and protecte
   assert.equal(seen[0]!.body.max_output_tokens, 800);
   assert.equal((seen[0]!.body.text as { format: { strict: boolean } }).format.strict, true);
   assert.match(String(seen[0]!.body.instructions), /planned are plans, not completed facts/);
+  assert.match(String(seen[0]!.body.instructions), /event_time=null.*never invent a clock time/);
   const safety = seen[0]!.body.safety_identifier as string;
   assert.match(safety, /^[0-9a-f]{64}$/);
   assert.doesNotMatch(safety, /subject_synthetic/);
@@ -77,6 +78,7 @@ test("OpenAI provider sends stateless strict schema, bounded budget and protecte
   const modelInput = String(seen[0]!.body.input);
   assert.doesNotMatch(modelInput, /subject_synthetic|ledger_synthetic|req_synthetic/);
   assert.match(modelInput, /evt_synthetic_result/);
+  assert.match(modelInput, /"event_time":null/);
 });
 
 test("OpenAI refusal and malformed output fail closed", async () => {

@@ -19,7 +19,7 @@ export interface StructuredEventProjection {
   event_id: string;
   revision: number;
   local_date: string;
-  event_time: string;
+  event_time: string | null;
   event_type:
     | "activity"
     | "communication"

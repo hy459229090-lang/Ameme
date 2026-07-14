@@ -4,7 +4,7 @@ Stateless MVP service for producing one strict daily summary from a caller-autho
 
 ## Boundary
 
-Accepted input is `ameme.day-event-projection.v1`: one ledger ID/revision, one local date/timezone, a privacy-scoped subject reference, and at most 100 structured Event projections. Every projection carries a bounded title/detail, evidence/fact state and sensitivity. Fact state keeps `planned` distinct: a calendar plan is not rewritten as something that happened, and summaries may surface it only as an open loop. `raw`, unknown fields, `restricted`, cross-date events, over-size requests and output budgets outside 256–1,200 tokens fail before provider invocation.
+Accepted input is `ameme.day-event-projection.v1`: one ledger ID/revision, one local date/timezone, a privacy-scoped subject reference, and at most 100 structured Event projections. Every projection carries a bounded title/detail, evidence/fact state and sensitivity. `event_time` is either a zoned timestamp or `null`; null preserves date-only, all-day or exact-time-unknown events and must never be replaced with an invented clock time. Fact state keeps `planned` distinct: a calendar plan is not rewritten as something that happened, and summaries may surface it only as an open loop. `raw`, unknown fields, `restricted`, cross-date events, over-size requests and output budgets outside 256–1,200 tokens fail before provider invocation.
 
 Output is `ameme.day-summary.v1`. The gateway validates provider output again, rejects invented event references, and binds the trusted `ledger_id`, `ledger_revision`, local date, `ameme.day-summary-rules.v1`, provider, model ID, provider-interface version and response ID. It does not write the summary to any store.
 
