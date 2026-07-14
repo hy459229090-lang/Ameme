@@ -72,6 +72,7 @@ export class OpenAIResponsesProvider implements InferenceProvider {
             "Do not invent events, relationships, emotions, causes, or outcomes.",
             "Every summary item must cite one or more event_id values from the input.",
             "Low-confidence candidates must not be stated as confirmed facts.",
+            "Events with fact_status=planned are plans, not completed facts; put them only in open_loops and never state that they happened.",
             "If there are no events, return empty strings and empty arrays.",
           ].join(" "),
           input: JSON.stringify({

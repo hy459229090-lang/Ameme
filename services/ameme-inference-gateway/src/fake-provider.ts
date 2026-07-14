@@ -13,13 +13,18 @@ export class DeterministicFakeProvider implements InferenceProvider {
     const ranked = [...request.events].sort(
       (left, right) => right.importance - left.importance || left.event_id.localeCompare(right.event_id),
     );
-    const highlights = ranked.slice(0, 3).map(item);
+    const highlights = ranked.filter((event) => event.fact_status !== "planned").slice(0, 3).map(item);
     const progress = ranked
       .filter((event) => event.event_type === "result" || event.event_type === "milestone")
       .slice(0, 3)
       .map(item);
     const openLoops = ranked
-      .filter((event) => event.event_type === "decision" || event.fact_status === "low_confidence_candidate")
+      .filter(
+        (event) =>
+          event.fact_status === "planned" ||
+          event.event_type === "decision" ||
+          event.fact_status === "low_confidence_candidate",
+      )
       .slice(0, 3)
       .map(item);
     const output = request.events.length === 0

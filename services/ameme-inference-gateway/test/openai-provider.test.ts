@@ -69,6 +69,7 @@ test("OpenAI provider sends stateless strict schema, bounded budget and protecte
   assert.deepEqual(seen[0]!.body.reasoning, { effort: "low" });
   assert.equal(seen[0]!.body.max_output_tokens, 800);
   assert.equal((seen[0]!.body.text as { format: { strict: boolean } }).format.strict, true);
+  assert.match(String(seen[0]!.body.instructions), /planned are plans, not completed facts/);
   const safety = seen[0]!.body.safety_identifier as string;
   assert.match(safety, /^[0-9a-f]{64}$/);
   assert.doesNotMatch(safety, /subject_synthetic/);

@@ -21,7 +21,7 @@ const EVENT_TYPES = new Set([
   "milestone",
   "experience",
 ]);
-const FACT_STATUS = new Set(["confirmed", "user_asserted", "low_confidence_candidate"]);
+const FACT_STATUS = new Set(["confirmed", "user_asserted", "low_confidence_candidate", "planned"]);
 const EVIDENCE_STATE = new Set(["observed", "user_asserted", "inferred"]);
 const ALLOWED_SENSITIVITY = new Set(["public", "personal", "confidential"]);
 
@@ -215,11 +215,22 @@ export function validateGeneratedSummary(value: unknown, events: StructuredEvent
       }
     }
   }
+  const highlights = validateSummaryItems(value.highlights, knownIds);
+  const progress = validateSummaryItems(value.progress, knownIds);
+  const openLoops = validateSummaryItems(value.open_loops, knownIds);
+  const plannedIds = new Set(
+    events.filter((event) => event.fact_status === "planned").map((event) => event.event_id),
+  );
+  if (
+    [...highlights, ...progress].some((item) => item.event_ids.some((eventId) => plannedIds.has(eventId)))
+  ) {
+    throw new GatewayError("PROVIDER_OUTPUT_INVALID", { httpStatus: 502 });
+  }
   return {
     headline: value.headline,
     overview: value.overview,
-    highlights: validateSummaryItems(value.highlights, knownIds),
-    progress: validateSummaryItems(value.progress, knownIds),
-    open_loops: validateSummaryItems(value.open_loops, knownIds),
+    highlights,
+    progress,
+    open_loops: openLoops,
   };
 }

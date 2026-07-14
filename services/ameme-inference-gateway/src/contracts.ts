@@ -30,7 +30,7 @@ export interface StructuredEventProjection {
     | "experience";
   title: string;
   detail: string;
-  fact_status: "confirmed" | "user_asserted" | "low_confidence_candidate";
+  fact_status: "confirmed" | "user_asserted" | "low_confidence_candidate" | "planned";
   evidence_state: "observed" | "user_asserted" | "inferred";
   sensitivity: AllowedSensitivity;
   importance: number;

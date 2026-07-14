@@ -38,6 +38,19 @@ export function syntheticRequest(): DaySummaryRequest {
         sensitivity: "personal",
         importance: 0.7,
       },
+      {
+        event_id: "evt_synthetic_plan",
+        revision: 1,
+        local_date: "2026-07-14",
+        event_time: "2026-07-14T15:00:00+08:00",
+        event_type: "activity",
+        title: "Synthetic review is planned",
+        detail: "This is a plan and has not happened.",
+        fact_status: "planned",
+        evidence_state: "user_asserted",
+        sensitivity: "personal",
+        importance: 0.8,
+      },
     ],
   };
 }
