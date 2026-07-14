@@ -148,3 +148,31 @@
 5. 正式用户证据、Mobile 真机能力、端到端实现、供应商/商店/法律证据均已有可执行任务和否决门槛，但未被文档伪造为通过。
 6. Gate 1 仍为 `hold`，Gate 2 未执行；M1–M6 全面研发获批，但完成/发布继续受对应 Gate/Spike 约束。
 7. 终检通过：Skill 官方结构、7 文件/14-case/14-risk、2,473 项机器契约、118 项工作区治理、30 个 Markdown 链接、Python compileall、成本脚本和 `git diff --check`；仅保留已有 LF→CRLF 工作区提示。
+
+## MVP 工程实现
+
+- 状态：`in_progress`
+- 目标：按 M1–M6 依赖把研发前正本变成可构建、可复跑、可恢复的真实实现；Gate 1/2、真实数据和公开发布边界保持不变。
+- 当前环境：Windows + Android SDK 可执行；iOS 源码、构建和真机证据等待产品负责人后续提供 Mac 环境。
+
+### 已集成首批切片
+
+- [x] C-001：冻结 v0.1 契约快照、breaking diff、正负 fixture、CI 和安全日志 canary。
+- [x] C-003/AND-001 局部：Kotlin contract round-trip/validator 与 Android Compose/Material 3 合成状态骨架。
+- [x] M2 参考证据：非生产 SQLite Core Oracle 跑通 Source→Event/Episode→DayLedger→Recall→删除/重建；不冒充 Mobile 生产库。
+- [x] SYNC-01：确定性同步协议、12 条冻结向量、冲突/删除/跨空间负向测试；不冒充真实 LAN。
+- [x] Agent 风险切片：本地 MCP Mock、统一 Skill、撤销/撤权/预算/injection 测试；不冒充真实宿主集成。
+- [x] 总控 Review：修复多来源删除、evidence undo、跨空间接收、Revision undo、Context 预算和 Android 数值边界后，按依赖集成到 main `852270f`。
+
+### 当前执行批次
+
+- [ ] DB-01 + AND-002 第一段：验证 Android SQLCipher、迁移/WAL/错误密钥/重启恢复，并将主动文字记录接入耐久 Local Node。
+- [ ] CORE-002/007/008 参考段：Raw Vault manifest、原子写入/hash/quota/TTL、耐久 processing/sync/delete queue 与 lineage impact 回归。
+- [ ] AI-001/002/004 第一段：Task registry、PromptEnvelope/policy gate、R0 时间/计划/去重规则与结构化 Event draft validator。
+- [ ] 合并后全链 Review：契约、Core、Sync、Agent、Android 构建/设备测试、治理与失败证据。
+
+### 当前门禁
+
+1. SQLCipher 若不能在 API 34+/16KB 页面约束下工作，保留失败证据并走 ADR 的安全回退评审，不允许静默改成明文 SQLite。
+2. Raw、日志、测试和 Git 只使用合成数据；密钥不得硬编码到 release 路径或日志。
+3. iOS 不因当前缺少 Mac 被标记为已完成；Android 通过也不能替代双端 M3 证据。

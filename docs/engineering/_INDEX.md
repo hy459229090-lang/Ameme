@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-尚未进入 MVP 工程实现。M1–M6 全面研发已获批；双端原生 + Schema、SQLCipher/Raw Vault/SourceLocator/FTS5、LAN Peer Sync、账户归属/透明设备密钥和分层 AI 已冻结为研发基线，Spike 负责验证或否决，Gate 继续约束验收与发布。
+MVP 工程实现已启动。main `852270f` 已集成契约质量基线、非生产 Core Oracle、同步协议模拟器、Agent MCP Mock 与 Android 原生 UI/契约骨架；生产 Local Node、真实 LAN、真实来源与 iOS 真机仍待实现/验证。双端原生 + Schema、SQLCipher/Raw Vault/SourceLocator/FTS5、LAN Peer Sync、账户归属/透明设备密钥和分层 AI 继续作为研发基线，Spike 负责验证或否决。
 
 ## 当前正本
 
@@ -28,3 +28,4 @@
 | 2026-07-13 | 新增 | 建立 MVP 接口/错误正本和可复跑机器契约包 |
 | 2026-07-13 | 新增 | 建立可估算工程任务、依赖里程碑和所有未验证技术 Spike 任务书 |
 | 2026-07-14 | 决策 | 接受 LAN/账户/SourceLocator/Agent 自动记忆技术基线与 M1–M6 全面研发；新增 Skill 运行契约、SKILL-01 和仓库内分发包 |
+| 2026-07-14 | 开工 | 集成 C-001、M2 Core Oracle、SYNC-01、Agent Mock、AND-001 与 Review 修复；启动 Android Local Node、Raw Vault/队列和 R0 AI 批次 |

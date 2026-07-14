@@ -5,12 +5,12 @@
 
 ## 当前阶段
 
-- 生命周期：Discovery / MVP 研发前基线已接受，M1–M6 全面研发获批，等待实施与外部证据。
+- 生命周期：Discovery Gate 仍在补证，MVP 工程实现已启动；M1–M6 全面研发获批，当前已集成首批契约、参考 Core、同步、Agent 与 Android 切片。
 - 当前 Gate：Gate 1 `hold`。产品主链已改为 DayLedger 事件覆盖优先；桌面 Spike 和 FORMALdoc 只能证明专业来源，通用来源与正式用户证据仍不足。
 - 产品 MVP：`今天` 为唯一默认主页，单悬浮记录按钮展开文字/语音/照片/导入，右上搜索进入统一历史日流；数据稀疏是默认状态。品牌为简洁、高效、安静、可信、流畅；双端使用原生控件。
-- Agent：仓库内统一 `ameme-memory` Skill 已形成六模式、`autonomous_memory` 授权内自动读写、宿主契约和 14-case 风险评测；真实宿主集成待 SKILL-01。
+- Agent：仓库内统一 `ameme-memory` Skill 与本地 MCP Mock 已形成六模式、授权内自动读写、撤销、预算控制和 14-case 风险评测；真实宿主与真实 Local Node 集成待 SKILL-01/AG-003。
 - 同步/账户：同账户已批准设备在 LAN 内点对点同步；身份服务不保存记忆内容；无用户密钥 UX，也无全设备丢失后的旧数据恢复。
-- 工程实现：尚未开始；M1–M6 全面研发获批，但 Gate/真机/Health/安全/发布证据仍是验收硬门。
+- 工程实现：已开始。main `852270f` 已包含 C-001 契约基线、非生产 M2 Core Oracle、SYNC-01 确定性协议模拟器、Agent MCP Mock、AND-001 Android 原生 UI/契约骨架及 Review 修复；这不等于生产 Local Node、真实 LAN、真实 Agent 集成或 M1/M2 里程碑全部完成。
 
 ## 进行中
 
@@ -21,6 +21,7 @@
 | MVP 范围与体验原则 | accepted | 品牌、单悬浮记录入口、双端页面、统一 Skill、六条旅程和指标已接受 |
 | MVP 三线并行设计与技术方案 | accepted | 产品、交互、契约、架构、安全、质量和工程计划完成全链审计 |
 | MVP 研发前准备 Goal | done | owner/local gap 清零；13 项正式决策已登记（ADR-003 被替代）；Skill/Schema/治理/链接/编译门禁通过，只保留 Spike/外部证据 |
+| MVP 工程实现 | in_progress | 下一批：Android SQLCipher/Local Node、Raw Vault/耐久队列、R0 AI 处理与跨组件测试；iOS 构建等待 Mac |
 | R0 用户与场景研究 | plan_ready | 按产品决策有意后置 |
 | R1 多端信息源调研 | plan_ready | 按产品决策有意后置，后续只做 MVP 定向补证 |
 | Event/每日事件记录模型 | plan_ready | v0.4 保留情绪/关系/重要性独立字段，但禁止其提高事实置信度或触发扩权 |
@@ -47,4 +48,4 @@
 
 ## 下一执行门
 
-研发前本地可完善项与负责人决策已关闭。下一步按依赖启动 M1–M6，优先落地 M1 Contract Runtime、M2 Local Core 和 LAN/Skill 风险 Spike；Gate 1 继续 `hold`，不能将研发授权或规格结论写成真实用户价值已验证。
+首批研发切片已集成并通过合并后回归。下一步优先把参考能力落到 Android 加密 Local Node、Raw Vault/耐久队列与 R0 AI 处理，再推进真实来源和 LAN/Agent 集成；iOS 代码与真机证据等待 Mac 环境。Gate 1 继续 `hold`，不能将研发进度写成真实用户价值已验证。
