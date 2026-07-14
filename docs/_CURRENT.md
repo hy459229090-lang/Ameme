@@ -7,7 +7,7 @@
 
 ## 当前阶段
 
-Ameme 已完成 MVP 研发前本地可完善准备与 D1–D10 最终拍板；差距矩阵 `needs_work = 0`、`needs_owner_review = 0`，全链结论为 `pass_with_external_evidence`。M1–M6 全面研发获批；当前已集成契约、参考 Core/Raw/队列与同步、独立 CoreOracle 参考宿主、R0 AI/固定评测，以及 Android SQLCipher Local Event Node、异步 I/O、Photo/Share/Calendar/Voice、v5 来源实例、检索与 10k/100k AVD 基线。Gate 1 仍为 `hold`、Gate 2 未执行，不能用合成评测和 AVD 进度替代真实用户、双端真机和生产实现证据。
+Ameme 已完成 MVP 研发前本地可完善准备与 D1–D10 最终拍板；差距矩阵 `needs_work = 0`、`needs_owner_review = 0`，全链结论为 `pass_with_external_evidence`。M1–M6 全面研发获批；当前已集成契约、参考 Core/Raw/队列与同步、独立 CoreOracle 参考宿主、R0 AI/固定评测、Android SQLCipher Local Event Node，以及 Agent Local Node v1 应用协议和 capture-only MCP→Android `create_event` 边界。生产认证/加密/发现、持久幂等、真实宿主、Raw/LAN、双端真机与 iOS 构建仍未完成。Gate 1 仍为 `hold`、Gate 2 未执行，不能用合成评测和 AVD 进度替代真实用户、双端真机和生产实现证据。
 
 ## 按问题查正本
 
@@ -40,7 +40,7 @@ Ameme 已完成 MVP 研发前本地可完善准备与 D1–D10 最终拍板；�
 | MVP 研发架构技术方案 | `architecture/MVP研发架构技术方案.md` | v0.6，技术实现默认栈与 Spike 边界已接受 |
 | MVP 领域契约与状态机 | `architecture/MVP领域契约与状态机.md` | v0.1，不变量、状态、冲突、Recall 与兼容候选 |
 | MVP 本地存储、同步与删除 | `architecture/MVP本地存储同步与删除协议.md` | v0.5，Android SQLCipher 4.15.0/v5、space/Revision/SourceLocator 与 10k/100k AVD 基线已验证；完整 Raw/LAN/删除仍待验证 |
-| MVP 接口、错误与 Agent 工具 | `engineering/MVP接口与错误契约.md` | v0.1，OpenAPI/MCP/幂等/分页/错误候选 |
+| MVP 接口、错误与 Agent 工具 | `engineering/MVP接口与错误契约.md` | v0.2，Agent Local Node v1 应用协议与 capture-only 实现边界已登记 |
 | MVP 机器契约 | `../packages/contracts/` | v0.1，JSON Schema/OpenAPI/合成夹具可复跑 |
 | MVP AI 路由与 Prompt | `architecture/MVP-AI任务路由与Prompt契约.md` | v0.1，任务分层、隐私门、回退与 Eval 候选 |
 | MVP 成本容量 SLO 与观测 | `architecture/MVP成本容量SLO与可观测性.md` | v0.2，LAN/local-first 成本、容量、SLO 与观测基线 |

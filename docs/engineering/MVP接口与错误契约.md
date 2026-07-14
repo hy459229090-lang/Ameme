@@ -1,9 +1,9 @@
-# Ameme MVP 接口、错误与 Agent 工具契约 v0.1
+# Ameme MVP 接口、错误与 Agent 工具契约 v0.2
 
 > 文档状态：已接受；HTTP/MCP 语义、幂等、分页和错误码为研发前实现契约\
-> 更新日期：2026-07-13\
+> 更新日期：2026-07-14\
 > OpenAPI：`../../packages/contracts/api/openapi.yaml`\
-> JSON Schema：`../../packages/contracts/schemas/ameme-domain.schema.json`
+> JSON Schema：`../../packages/contracts/schemas/ameme-domain.schema.json`、`../../packages/contracts/schemas/ameme-agent-local-node.schema.json`
 
 ## 1. 接口边界
 
@@ -52,6 +52,14 @@
 | `ameme.status` | grant id / job id | Grant、Deletion、sync 的非内容状态 | 不作为绕过数据权限的探针 |
 
 Skill 文档负责“何时调用”和对用户的确认文案，不能放长期 token；MCP host 的本地配置只保存可撤销凭据引用。
+
+### 4.1 Agent Local Node v1 当前实现边界
+
+`ameme.agent-local-node.v1` 是 MCP adapter 与 Local Node 之间的应用层协议，不是 LAN、HTTP 或设备发现协议。正本由严格 JSON Schema、[`agent-local-node-protocol`](../../packages/agent-local-node-protocol/) executable spec 和跨语言 conformance vector 共同约束：canonical UTF-8 JSON、payload/result SHA-256 digest、最小且由 payload 派生的请求 scope、可为请求超集的 verified Grant、请求绑定响应、域分离幂等槽与稳定错误码。未知字段、重复键、浮点数、非法 UTF-8、NUL 和 lone surrogate 均 fail closed；v1 只有 `TEMPORARILY_UNAVAILABLE`、`INTERNAL_ERROR` 可重试。
+
+当前 MCP `android-local-node` 后端与 Android 端点只实现 `create_event`。适配器必须显式选择并注入已认证 channel provider、endpoint/credential/session binding 引用和 expected device id；Android 必须获得 separately verified session、授权的 space/type/sensitivity/data class 与原子幂等 registry，才可写入 SQLCipher `MemoryRepository`。生产 Android factory 默认关闭；普通 CLI 不带 provider 会失败，不回退 Python Core 或 JSON Mock。其余 v1 operation 返回 `OPERATION_UNSUPPORTED`。
+
+当前通过的是应用层与本地持久化边界，不是生产通道。尚未实现或证明：设备配对与认证、credential 生命周期、LAN/NSD、socket、TLS/传输加密、会话重放保护、Android 后台生命周期、跨重启持久幂等，以及真实 Codex/Claude Code/Cursor 宿主。
 
 ## 5. 错误码目录
 

@@ -18,6 +18,7 @@ PYTHON_PATHS = [
     ROOT / "packages" / "core-reference",
     ROOT / "packages" / "sync-protocol" / "src",
     ROOT / "packages" / "ai-processing-reference",
+    ROOT / "packages" / "agent-local-node-protocol",
     ROOT / "services" / "ameme-mcp-mock",
     ROOT / "tests" / "agent",
 ]
@@ -35,6 +36,20 @@ COMMANDS = [
     (
         "agent_mock",
         [sys.executable, "-m", "unittest", "discover", "-s", "tests/agent", "-p", "test_*.py", "-v"],
+    ),
+    (
+        "agent_android_adapter",
+        [
+            sys.executable,
+            "-m",
+            "unittest",
+            "discover",
+            "-s",
+            "services/ameme-mcp-mock/tests",
+            "-p",
+            "test_*.py",
+            "-v",
+        ],
     ),
     (
         "ai_reference",

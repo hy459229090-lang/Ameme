@@ -40,3 +40,4 @@
 | 2026-07-14 | Android 证据 | API 36 AVD 验证 v4 SourceLocator、Photo Picker/ACTION_SEND 边界、Calendar planned 适配器、FTS5/LIKE 等价和 keyset 日期分页；不外推真机/16 KB/性能 |
 | 2026-07-14 | P1 修复 | 持久 URI 删除改为 `RELEASE_PENDING → RELEASED` 两阶段清理；启动/删除后重试，失败保留且按 space 隔离 |
 | 2026-07-14 | 容量/来源 | Android 升级 v5 来源实例幂等，接入 Calendar Provider/系统语音引用，完成异步 I/O、34 项普通 AVD 测试及 10k/100k 性能报告 |
+| 2026-07-14 | Agent 应用协议 | 冻结 `ameme.agent-local-node.v1`，Android capture-only 端点可写入 SQLCipher；不包含 LAN、认证、加密、发现或生产持久幂等 |

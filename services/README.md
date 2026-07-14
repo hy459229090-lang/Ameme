@@ -4,6 +4,6 @@ MVP 服务与本地服务边界目录。当前产品基线是设备本地 Event 
 
 当前实现：
 
-- `ameme-mcp-mock/`：Agent MCP/Skill 的本地、无云、合成数据 Mock；用于配对、授权交集、自动记录/召回、反馈、活动记录、撤销、撤权、过期和安全负向验证。目录内还提供显式选择的 CoreOracle 参考宿主子进程，用于验证进程/IPC 纵向闭环；它仍是 Python executable spec，不是生产 Native Core，也不连接 Android SQLCipher Local Node。
+- `ameme-mcp-mock/`：Agent MCP/Skill 的本地、无云、合成数据 Mock；用于配对、授权交集、自动记录/召回、反馈、活动记录、撤销、撤权、过期和安全负向验证。目录内还提供显式选择的 CoreOracle 参考宿主子进程，以及默认关闭、仅实现 `create_event` 的 Android Local Node 适配边界。两者都仍是 Python executable spec：前者不连接 Android SQLCipher，后者没有内置网络、认证、发现或加密通道，必须注入已认证 channel provider 才能启用。
 
 任何未来服务仍必须写清职责、API、数据范围、鉴权、可观测性、成本、部署、迁移和回滚。创建云资源、接入真实数据、加入外部模型/SDK 或发布生产配置均不属于当前 Mock 范围，并需要对应隐私、安全和发布确认。

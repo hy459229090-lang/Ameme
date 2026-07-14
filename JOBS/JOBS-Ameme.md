@@ -187,10 +187,17 @@
 - [x] CORE/AG 参考宿主边界：MCP 可显式启动独立 `ameme.core-oracle-host.v1` JSONL stdio 参考进程，挂起/畸形/崩溃有界失败；Android 仅冻结 transport port，不冒充真实 LAN Local Node。
 - [x] 合并后全链 Review：147 项 Python、28 项 Android JVM、34 项普通 AVD 设备测试、1 项 DB-01 性能测试、AI Eval 12/12、2,715/2,709 契约、14-case/14-risk Skill、35 个链接和 130 项治理检查通过。
 
+### 已集成第五批切片
+
+- [x] AG/CORE 应用协议：冻结 `ameme.agent-local-node.v1` 严格 JSONL envelope、canonical JSON、payload/result digest、最小请求 scope、Grant 超集授权、稳定错误与幂等槽；6 项协议单测、68 项校验和跨语言 golden vector 通过。该协议不包含发现、网络、认证或传输加密。
+- [x] MCP→Android 适配边界：默认后端仍为 JSON Mock；`android-local-node` 只能显式启用，必须注入已认证 channel provider 和凭据引用。当前仅实现 `create_event`，其余操作稳定返回 `OPERATION_UNSUPPORTED`，超时、绑定错误和畸形响应会关闭并毒化 channel；没有 Python socket/LAN fallback。
+- [x] Android `create_event`：经 separately verified session、Grant/space/type/sensitivity/data-class 检查和注入式原子幂等 registry 后写入真实 `MemoryRepository`；SQLCipher 关闭重开后仍可读。生产工厂默认关闭，当前 registry 仅测试进程内实现，不能声明跨重启幂等。
+- [x] 合并后全链 Review：167 项 Python、Android 37 项 JVM、lint/assemble、API 36 AVD 普通回归 35 项（34 通过、1 项 DB-01 性能用例按设计跳过）、AI Eval 12/12、2,715/2,709 契约、Agent Local Node 68 项校验、14-case/14-risk Skill、37 个链接和 132 项治理检查通过。
+
 ### 下一执行批次
 
-- [ ] CORE/AG 原生接合：把已验证 Store/对账语义映射到 Android SQLCipher Local Node，再接真实 Codex/Claude Code/Cursor host；Python CoreStore 只保留 Oracle。
-- [ ] SYNC-002/003：Android NSD/未来 iOS Network.framework 的发现、同账户设备认证、加密会话和冻结向量 conformance；iOS 部分等待 Mac。
+- [ ] CORE/AG 生产通道：实现设备认证、会话绑定、加密、重放保护、Android 生命周期和持久幂等 registry，再接真实 Codex/Claude Code/Cursor host；Python CoreStore 与注入 channel 只保留 Oracle/测试边界。
+- [ ] SYNC-002/003：Android NSD/未来 iOS Network.framework 的发现、同账户设备认证、加密会话和冻结向量 conformance；不得把应用层协议通过当作 LAN 通过，iOS 部分等待 Mac。
 - [ ] Android 设备矩阵：物理设备、16 KB page-size、OEM Calendar、系统录音结果授权、权限撤销、进程死亡、真实 Today/Search UI 性能与日期筛选优化。
 
 ### 当前门禁

@@ -53,4 +53,4 @@ Skill 使用语义版本；MCP 工具保持向后兼容的 minor 演进。破坏
 3. `SKILL-01` 用真实宿主 + MCP Mock 验证配对、上下文、写回、离线、注入和撤权。
 4. 实现完成后增加 API contract、幂等、权限交集、日志脱敏和跨宿主回归。
 
-当前状态是“研发前契约可开工”，不是“真实宿主集成已验证”。
+当前状态是：统一 Skill、MCP Mock/CoreOracle、`ameme.agent-local-node.v1` 应用协议和 capture-only MCP→Android SQLCipher 边界已具备合成/JVM/AVD 证据；生产认证通道、持久幂等、LAN/NSD、传输加密和真实 Codex/Claude Code/Cursor 宿主仍未实现，因此不能写成“真实宿主集成已验证”。

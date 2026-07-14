@@ -170,6 +170,8 @@ Recall 已增加不透明 keyset cursor 和日期分页。被测 SQLCipher 运�
 
 Android 清单同时保持 `allowBackup=false`，`data-extraction-rules` 对 cloud backup 和 device transfer 显式排除 root/file/database/sharedpref/external 及四个 device-protected data domain；编译后 XML 资源由设备测试核对。该配置用于避免 SQLCipher DB 和 wrapped-key blob 被系统备份或 D2D 搬迁，仍需后续厂商/真机矩阵验证：<https://developer.android.com/identity/data/autobackup>。
 
+Agent 本地应用层已接入同一个 SQLCipher repository：`ameme.agent-local-node.v1` 的 `create_event` 在 separately verified session、最小请求 scope、sensitivity/data class 授权、canonical payload digest 和注入式原子幂等检查通过后，只创建初始 Revision `1`；设备测试证明写入在关闭并重建 repository 后仍可读。生产 endpoint 默认关闭，测试 registry 不跨进程重启；append revision、undo、持久幂等、LAN/NSD、认证、加密和真实宿主均不在这条证据内。
+
 该证据仅关闭“最小本地 Event 闭环可运行”的实现问题，没有关闭完整协议或 DB-01：
 
 - 重建测试是关闭数据库并重新构造 repository，不等于操作系统杀进程/崩溃恢复；
@@ -177,6 +179,7 @@ Android 清单同时保持 `allowBackup=false`，`data-extraction-rules` 对 clo
 - 当前删除是追加 tombstone 并更新本机投影，尚未实现物理清除、影响图、peer ack 和删除证明；
 - SourceLocator 目前覆盖 Photo Picker/ACTION_SEND/Calendar/Voice 元数据、实例幂等和授权生命周期，未覆盖可用性复核、fingerprint、Raw Vault 或跨设备行为；
 - Raw Vault、durable job/outbox、完整 lineage/审计和 LAN sync 尚未进入该切片；
+- Agent `create_event` 仅完成应用层到 repository 的 capture-only 接合；生产认证/加密/发现、跨重启幂等、append/undo 和真实宿主仍待实现；
 - v1→v2→v3→v4→v5 已验证成功迁移与 legacy space 回填，但故障注入、加密快照和失败回滚仍属于 MIG-01。
 
 ## 10. 必须执行的 Spike

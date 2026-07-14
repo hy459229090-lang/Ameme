@@ -10,7 +10,7 @@
 | MVP 范围与体验原则 | accepted | Gate 1 hold | 品牌、单悬浮记录入口、统一 Skill、旅程和指标已接受；`JOBS-Ameme.md#mvp-范围与体验原则` |
 | MVP 三线并行设计与技术方案 | accepted | M1–M6 authorized / Gate 1 hold | 产品、交互、契约、架构、安全、质量和工程计划完成全链审计；`JOBS-Ameme.md#mvp-三线并行设计与技术方案` |
 | MVP 研发前准备 Goal | done | M1–M6 authorized / Gate 1 hold | owner/local gap 清零且终检通过，只保留 Spike 与外部证据；`JOBS-Ameme.md#mvp-研发前准备-goal` |
-| MVP 工程实现 | in_progress | M1–M6 authorized / Gate 1 hold | 第四批已关闭 Android 异步 I/O、Calendar/Voice 与 10k/100k AVD 基线，并形成 CoreOracle 独立宿主边界；下一批推进真实 Agent→Android、LAN 与物理设备，iOS 等待 Mac；`JOBS-Ameme.md#mvp-工程实现` |
+| MVP 工程实现 | in_progress | M1–M6 authorized / Gate 1 hold | 第五批已冻结 Agent Local Node v1 应用协议并接通 capture-only MCP→Android SQLCipher 边界；下一批实现认证/加密/发现、持久幂等与物理设备，iOS 等待 Mac；`JOBS-Ameme.md#mvp-工程实现` |
 | Prototype 候选评审 | plan_ready | Gate 1 hold | D1–D10 已回填，等待 Gate 1 输入与实施证据；`JOBS-Ameme.md#prototype-候选评审` |
 
 ## 状态定义
