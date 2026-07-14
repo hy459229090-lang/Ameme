@@ -6,6 +6,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 import hashlib
 import hmac
+import secrets
 from typing import Any, Iterable, Mapping
 
 from .errors import ErrorCode, ProcessingError
@@ -41,7 +42,14 @@ class _CacheEntry:
 class ScopedAIRuntime:
     """Reference-only budget, cache and batch controls bound to authorization scope."""
 
-    def __init__(self, observer: SafeObserver, *, scope_hmac_key: bytes) -> None:
+    def __init__(
+        self,
+        observer: SafeObserver,
+        *,
+        scope_hmac_key: bytes | None = None,
+    ) -> None:
+        if scope_hmac_key is None:
+            scope_hmac_key = secrets.token_bytes(32)
         if len(scope_hmac_key) < 16:
             raise ValueError("scope_hmac_key must contain at least 16 bytes")
         self.observer = observer

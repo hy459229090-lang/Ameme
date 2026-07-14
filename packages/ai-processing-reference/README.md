@@ -41,7 +41,7 @@ Rules execute in this order; a later rule cannot weaken an earlier boundary:
 
 Cache keys and batch tickets include task/input/schema/prompt/policy/adapter versions plus an HMAC-derived `space + purpose` scope. Cache hits still rerun the current policy gate and provider candidate validator; cache entries and batch tickets also compare the current policy/revocation generations instead of trusting invalidation cleanup alone. Deletion or revocation removes matching cached/batched work and leaves a runtime block so an older snapshot cannot replay it.
 
-`ScopedAIRuntime` requires an HMAC key. This non-production reference defaults to `SYNTHETIC_TEST_SCOPE_HMAC_KEY`, a committed fixed key that is safe only for deterministic synthetic tests. Production code must inject a non-content secret from its device/server key boundary, rotate it under an approved migration, and never log or commit it.
+`ScopedAIRuntime` generates a fresh 32-byte HMAC key for each default instance, so independently constructed references cannot share predictable scope hashes. The exported `SYNTHETIC_TEST_SCOPE_HMAC_KEY` is a committed fixed key that the Eval and tests inject explicitly and is safe only for deterministic synthetic work. Production code that needs stable cache/batch scope across process restarts must inject a non-content secret from its device/server key boundary, rotate it under an approved migration, and never log or commit it.
 
 `SafeObserver` accepts only categorical route/budget/cache/batch states, non-negative counts, approved identifiers and 64-character digests. It rejects body/raw/prompt/query/URL/token/secret/path/exception fields, nested values and free-form error text. The observer never contains cached/provider response bodies.
 

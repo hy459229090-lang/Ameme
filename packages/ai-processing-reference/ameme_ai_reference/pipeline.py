@@ -19,7 +19,7 @@ from .policy import PrivacyPolicyGate
 from .provider import ProviderAdapter
 from .registry import TaskRegistry, default_registry
 from .rules import build_event_draft, draft_from_provider_candidate
-from .runtime import SYNTHETIC_TEST_SCOPE_HMAC_KEY, ScopedAIRuntime
+from .runtime import ScopedAIRuntime
 from .schema import MachineContract
 
 
@@ -50,10 +50,7 @@ class AIProcessingReference:
         )
         if runtime is not None and runtime.observer is not self.observer:
             raise ValueError("runtime and reference must share the same SafeObserver")
-        self.runtime = runtime or ScopedAIRuntime(
-            self.observer,
-            scope_hmac_key=SYNTHETIC_TEST_SCOPE_HMAC_KEY,
-        )
+        self.runtime = runtime or ScopedAIRuntime(self.observer)
         self.gate = PrivacyPolicyGate()
 
     def create_candidate(

@@ -81,6 +81,22 @@ class AIRuntimeTest(unittest.TestCase):
             synthetic_fixture_id=fixture_id,
         )
 
+    def test_default_scope_keys_are_unique_and_explicit_keys_are_repeatable(self) -> None:
+        first_default = AIProcessingReference()
+        second_default = AIProcessingReference()
+        self.assertNotEqual(
+            first_default.runtime.scope_hash(self.context),
+            second_default.runtime.scope_hash(self.context),
+        )
+
+        fixed_key = b"fixed-synthetic-runtime-test-key-v1"
+        first_fixed = ScopedAIRuntime(SafeObserver(), scope_hmac_key=fixed_key)
+        second_fixed = ScopedAIRuntime(SafeObserver(), scope_hmac_key=fixed_key)
+        self.assertEqual(
+            first_fixed.scope_hash(self.context),
+            second_fixed.scope_hash(self.context),
+        )
+
     def test_cache_hit_revalidates_and_deleted_evidence_never_replays(self) -> None:
         provider = FakeSyntheticProvider(
             {"cache": deepcopy(self.fixture["fake_provider_candidate"])}

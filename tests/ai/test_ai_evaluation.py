@@ -76,6 +76,37 @@ class AIEvaluationTest(unittest.TestCase):
         )
         self.assertEqual(failed_case["failed_assertion_ids"], ["fact_status"])
 
+    def test_dataset_metadata_cannot_inject_report_content(self) -> None:
+        fixture = json.loads(FIXED_EVAL.read_text(encoding="utf-8"))
+        for field, malicious_value in (
+            ("dataset_version", "1-user-content-secret"),
+            ("claim", "synthetic_reference_regression_only-user-content-secret"),
+        ):
+            tampered = deepcopy(fixture)
+            tampered[field] = malicious_value
+            with self.subTest(field=field), TemporaryDirectory() as directory:
+                path = Path(directory) / "tampered-metadata.json"
+                path.write_text(
+                    json.dumps(tampered, ensure_ascii=False),
+                    encoding="utf-8",
+                )
+                with self.assertRaises(ValueError):
+                    self.run_report(path)
+
+    def test_dataset_version_rejects_non_positive_and_boolean_values(self) -> None:
+        fixture = json.loads(FIXED_EVAL.read_text(encoding="utf-8"))
+        for invalid_version in (0, -1, True):
+            tampered = deepcopy(fixture)
+            tampered["dataset_version"] = invalid_version
+            with (
+                self.subTest(version=invalid_version),
+                TemporaryDirectory() as directory,
+            ):
+                path = Path(directory) / "invalid-version.json"
+                path.write_text(json.dumps(tampered), encoding="utf-8")
+                with self.assertRaises(ValueError):
+                    self.run_report(path)
+
 
 if __name__ == "__main__":
     unittest.main()

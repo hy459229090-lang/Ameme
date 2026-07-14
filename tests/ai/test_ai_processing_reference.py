@@ -17,6 +17,9 @@ from ameme_ai_reference import (  # noqa: E402
     MachineContract,
     PolicyContext,
     ProcessingError,
+    SYNTHETIC_TEST_SCOPE_HMAC_KEY,
+    SafeObserver,
+    ScopedAIRuntime,
     build_event_draft,
     decide_merge,
     default_registry,
@@ -619,14 +622,31 @@ class AIProcessingReferenceTest(unittest.TestCase):
         self.assertEqual(draft.candidate["status"], "candidate")
 
     def test_repeated_runs_are_byte_deterministic(self) -> None:
-        first = self.reference.create_candidate([self.observation("sparse")], context=self.context)
-        second_reference = AIProcessingReference()
+        first_observer = SafeObserver()
+        first_reference = AIProcessingReference(
+            observer=first_observer,
+            runtime=ScopedAIRuntime(
+                first_observer,
+                scope_hmac_key=SYNTHETIC_TEST_SCOPE_HMAC_KEY,
+            ),
+        )
+        second_observer = SafeObserver()
+        second_reference = AIProcessingReference(
+            observer=second_observer,
+            runtime=ScopedAIRuntime(
+                second_observer,
+                scope_hmac_key=SYNTHETIC_TEST_SCOPE_HMAC_KEY,
+            ),
+        )
+        first = first_reference.create_candidate(
+            [self.observation("sparse")], context=self.context
+        )
         second = second_reference.create_candidate(
             [self.observation("sparse")], context=self.context
         )
         self.assertEqual(dict(first.candidate), dict(second.candidate))
         self.assertEqual(first.fact_confidence, second.fact_confidence)
-        self.assertEqual(self.reference.observer.records, second_reference.observer.records)
+        self.assertEqual(first_observer.records, second_observer.records)
 
 
 if __name__ == "__main__":

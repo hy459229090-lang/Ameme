@@ -36,6 +36,12 @@ EVAL_CATEGORIES = (
 REPORT_KIND = "synthetic_reference_differential"
 REPORT_CLAIM = "synthetic_reference_regression_only"
 REPORT_IDENTIFIER = re.compile(r"^[a-z][a-z0-9_.:-]{0,127}$")
+DATASET_CLAIMS = frozenset(
+    {
+        "synthetic_reference_regression_only",
+        "synthetic_reference_attack_delete_regression_only",
+    }
+)
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -57,7 +63,7 @@ def run_synthetic_differential(
     hard_gates: dict[str, int] = {}
 
     for _, dataset in datasets:
-        _require_report_identifier(dataset["dataset_id"])
+        _validate_dataset_metadata(dataset)
         for case in dataset["cases"]:
             category = str(case["category"])
             if category not in matrix:
@@ -138,6 +144,16 @@ def run_synthetic_differential(
             "summary_generation_remains_unimplemented",
         ],
     }
+
+
+def _validate_dataset_metadata(dataset: Mapping[str, Any]) -> None:
+    _require_report_identifier(dataset["dataset_id"])
+    version = dataset["dataset_version"]
+    if isinstance(version, bool) or not isinstance(version, int) or version <= 0:
+        raise ValueError("dataset_version must be a positive integer")
+    claim = dataset["claim"]
+    if not isinstance(claim, str) or claim not in DATASET_CLAIMS:
+        raise ValueError("dataset claim must be an approved synthetic reference claim")
 
 
 def _run_case(
