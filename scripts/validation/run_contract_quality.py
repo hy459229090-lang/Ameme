@@ -14,6 +14,8 @@ ROOT = Path(__file__).resolve().parents[2]
 COMMANDS = [
     [sys.executable, "scripts/validation/check_contract_compatibility.py"],
     [sys.executable, "scripts/validation/validate_contracts.py"],
+    [sys.executable, "scripts/validation/validate_agent_local_node_protocol.py"],
+    [sys.executable, "-m", "unittest", "discover", "-s", "packages/agent-local-node-protocol/tests", "-p", "test_*.py", "-v"],
     [sys.executable, "-m", "unittest", "discover", "-s", "tests/contracts", "-p", "test_*.py", "-v"],
     [sys.executable, "-m", "unittest", "discover", "-s", "tests/harness", "-p", "test_*.py", "-v"],
     [sys.executable, "-m", "unittest", "discover", "-s", "tests/security/contract", "-p", "test_*.py", "-v"],

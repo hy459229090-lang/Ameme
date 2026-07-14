@@ -1,0 +1,287 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ameme.local/contracts/ameme-agent-local-node.schema.json",
+  "title": "Ameme Agent Local Node Wire Protocol v1",
+  "description": "Language-neutral JSONL application RPC envelope between an Agent adapter and an authenticated Local Node session.",
+  "$comment": "UTF-8 without BOM; duplicate keys, floats, NaN/Infinity, unknown fields and unsupported versions fail closed. Request lines are at most 65536 bytes, canonical payloads 32768 bytes, and response lines 524288 bytes. This schema does not define discovery, authentication, encryption or LAN transport.",
+  "oneOf": [
+    {"$ref": "#/$defs/RequestEnvelope"},
+    {"$ref": "#/$defs/ResponseEnvelope"}
+  ],
+  "$defs": {
+    "ProtocolVersion": {
+      "const": "ameme.agent-local-node.v1"
+    },
+    "Identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "Timestamp": {
+      "type": "string",
+      "maxLength": 64,
+      "format": "date-time"
+    },
+    "Digest": {
+      "type": "string",
+      "pattern": "^sha256_[0-9a-f]{64}$"
+    },
+    "IdempotencySlot": {
+      "type": "string",
+      "pattern": "^idem_[0-9a-f]{64}$",
+      "$comment": "The caller-controlled raw key must never appear on the wire."
+    },
+    "MemoryType": {
+      "type": "string",
+      "enum": ["event", "revision"]
+    },
+    "SpaceList": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 8,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/Identifier"},
+      "$comment": "Items must be lexicographically sorted before canonical encoding."
+    },
+    "MemoryTypeList": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 8,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/MemoryType"},
+      "$comment": "Items must be lexicographically sorted before canonical encoding."
+    },
+    "Operation": {
+      "type": "string",
+      "enum": [
+        "append_revision",
+        "create_event",
+        "get_event",
+        "set_policy_blocked",
+        "undo_capture",
+        "visible_events"
+      ]
+    },
+    "ErrorCode": {
+      "type": "string",
+      "enum": [
+        "AUTH_REQUIRED",
+        "DATA_TYPE_DENIED",
+        "GRANT_EXPIRED",
+        "GRANT_REVOKED",
+        "IDEMPOTENCY_CONFLICT",
+        "INTERNAL_ERROR",
+        "INVALID_REQUEST",
+        "NOT_VISIBLE",
+        "OPERATION_UNSUPPORTED",
+        "PAYLOAD_DIGEST_MISMATCH",
+        "PAYLOAD_TOO_LARGE",
+        "PURPOSE_DENIED",
+        "RESPONSE_REQUEST_MISMATCH",
+        "RESULT_DIGEST_MISMATCH",
+        "REVISION_CONFLICT",
+        "SCHEMA_UNSUPPORTED",
+        "SCOPE_MISMATCH",
+        "SPACE_DENIED",
+        "TEMPORARILY_UNAVAILABLE"
+      ]
+    },
+    "Control": {
+      "type": "object",
+      "required": [
+        "caller_id",
+        "grant_id",
+        "purpose",
+        "spaces",
+        "memory_types",
+        "operation",
+        "idempotency_slot",
+        "payload_digest"
+      ],
+      "properties": {
+        "caller_id": {"$ref": "#/$defs/Identifier"},
+        "grant_id": {"$ref": "#/$defs/Identifier"},
+        "purpose": {"$ref": "#/$defs/Identifier"},
+        "spaces": {"$ref": "#/$defs/SpaceList"},
+        "memory_types": {"$ref": "#/$defs/MemoryTypeList"},
+        "operation": {"$ref": "#/$defs/Operation"},
+        "idempotency_slot": {"$ref": "#/$defs/IdempotencySlot"},
+        "payload_digest": {"$ref": "#/$defs/Digest"}
+      },
+      "additionalProperties": false,
+      "$comment": "spaces and memory_types are the minimal scope of this request and must exactly equal the scope derived from payload. An authenticated Grant may be a superset."
+    },
+    "GetEventPayload": {
+      "type": "object",
+      "required": ["event_id", "space", "memory_type"],
+      "properties": {
+        "event_id": {"$ref": "#/$defs/Identifier"},
+        "space": {"$ref": "#/$defs/Identifier"},
+        "memory_type": {"$ref": "#/$defs/MemoryType"}
+      },
+      "additionalProperties": false
+    },
+    "CreateEventPayload": {
+      "type": "object",
+      "required": [
+        "space",
+        "memory_type",
+        "content",
+        "event_type",
+        "evidence_state",
+        "fact_status",
+        "sensitivity",
+        "data_class",
+        "now"
+      ],
+      "properties": {
+        "space": {"$ref": "#/$defs/Identifier"},
+        "memory_type": {"const": "event"},
+        "content": {"type": "string", "minLength": 1, "maxLength": 4000},
+        "event_type": {
+          "type": "string",
+          "enum": ["activity", "communication", "decision", "result", "state_change", "milestone", "experience"]
+        },
+        "evidence_state": {"type": "string", "enum": ["observed", "user_asserted", "inferred"]},
+        "fact_status": {"type": "string", "enum": ["confirmed", "user_asserted", "low_confidence_candidate"]},
+        "sensitivity": {"type": "string", "enum": ["public", "personal", "confidential", "restricted"]},
+        "data_class": {"const": "structured"},
+        "now": {"$ref": "#/$defs/Timestamp"},
+        "event_time": {"$ref": "#/$defs/Timestamp"}
+      },
+      "additionalProperties": false
+    },
+    "AppendRevisionPayload": {
+      "type": "object",
+      "required": ["event_id", "space", "memory_type", "content", "evidence_state", "fact_status", "now"],
+      "properties": {
+        "event_id": {"$ref": "#/$defs/Identifier"},
+        "space": {"$ref": "#/$defs/Identifier"},
+        "memory_type": {"const": "revision"},
+        "content": {"type": "string", "minLength": 1, "maxLength": 4000},
+        "evidence_state": {"type": "string", "enum": ["observed", "user_asserted", "inferred"]},
+        "fact_status": {"type": "string", "enum": ["confirmed", "user_asserted", "low_confidence_candidate"]},
+        "now": {"$ref": "#/$defs/Timestamp"}
+      },
+      "additionalProperties": false
+    },
+    "UndoCapturePayload": {
+      "type": "object",
+      "required": ["undo_token", "space", "memory_type", "now"],
+      "properties": {
+        "undo_token": {"$ref": "#/$defs/Identifier"},
+        "space": {"$ref": "#/$defs/Identifier"},
+        "memory_type": {"$ref": "#/$defs/MemoryType"},
+        "now": {"$ref": "#/$defs/Timestamp"}
+      },
+      "additionalProperties": false
+    },
+    "VisibleEventsPayload": {
+      "type": "object",
+      "required": ["spaces", "memory_types", "allow_high_risk", "limit"],
+      "properties": {
+        "spaces": {"$ref": "#/$defs/SpaceList"},
+        "memory_types": {"$ref": "#/$defs/MemoryTypeList"},
+        "query": {"type": "string", "maxLength": 1000},
+        "allow_high_risk": {"type": "boolean"},
+        "limit": {"type": "integer", "minimum": 1, "maximum": 100},
+        "start_at": {"$ref": "#/$defs/Timestamp"},
+        "end_at": {"$ref": "#/$defs/Timestamp"}
+      },
+      "additionalProperties": false
+    },
+    "SetPolicyBlockedPayload": {
+      "type": "object",
+      "required": ["event_id", "space", "memory_type"],
+      "properties": {
+        "event_id": {"$ref": "#/$defs/Identifier"},
+        "space": {"$ref": "#/$defs/Identifier"},
+        "memory_type": {"const": "event"}
+      },
+      "additionalProperties": false
+    },
+    "RequestEnvelope": {
+      "type": "object",
+      "required": ["protocol_version", "request_id", "control", "payload"],
+      "properties": {
+        "protocol_version": {"$ref": "#/$defs/ProtocolVersion"},
+        "request_id": {"$ref": "#/$defs/Identifier"},
+        "control": {"$ref": "#/$defs/Control"},
+        "payload": {"type": "object"}
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {"properties": {"control": {"properties": {"operation": {"const": "get_event"}}}}},
+          "then": {"properties": {"payload": {"$ref": "#/$defs/GetEventPayload"}}}
+        },
+        {
+          "if": {"properties": {"control": {"properties": {"operation": {"const": "create_event"}}}}},
+          "then": {"properties": {"payload": {"$ref": "#/$defs/CreateEventPayload"}}}
+        },
+        {
+          "if": {"properties": {"control": {"properties": {"operation": {"const": "append_revision"}}}}},
+          "then": {"properties": {"payload": {"$ref": "#/$defs/AppendRevisionPayload"}}}
+        },
+        {
+          "if": {"properties": {"control": {"properties": {"operation": {"const": "undo_capture"}}}}},
+          "then": {"properties": {"payload": {"$ref": "#/$defs/UndoCapturePayload"}}}
+        },
+        {
+          "if": {"properties": {"control": {"properties": {"operation": {"const": "visible_events"}}}}},
+          "then": {"properties": {"payload": {"$ref": "#/$defs/VisibleEventsPayload"}}}
+        },
+        {
+          "if": {"properties": {"control": {"properties": {"operation": {"const": "set_policy_blocked"}}}}},
+          "then": {"properties": {"payload": {"$ref": "#/$defs/SetPolicyBlockedPayload"}}}
+        }
+      ]
+    },
+    "Error": {
+      "type": "object",
+      "required": ["code", "retryable"],
+      "properties": {
+        "code": {"$ref": "#/$defs/ErrorCode"},
+        "retryable": {"type": "boolean"}
+      },
+      "additionalProperties": false,
+      "$comment": "NOT_VISIBLE must not carry target identity, existence, authorization or deletion details."
+    },
+    "ResponseEnvelope": {
+      "type": "object",
+      "required": ["protocol_version", "request_id", "status", "result", "result_digest", "error"],
+      "properties": {
+        "protocol_version": {"$ref": "#/$defs/ProtocolVersion"},
+        "request_id": {"$ref": "#/$defs/Identifier"},
+        "status": {"type": "string", "enum": ["ok", "error"]},
+        "result": {"type": ["object", "null"]},
+        "result_digest": {"oneOf": [{"$ref": "#/$defs/Digest"}, {"type": "null"}]},
+        "error": {"oneOf": [{"$ref": "#/$defs/Error"}, {"type": "null"}]}
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {"properties": {"status": {"const": "ok"}}},
+          "then": {
+            "properties": {
+              "result": {"type": "object"},
+              "result_digest": {"$ref": "#/$defs/Digest"},
+              "error": {"type": "null"}
+            }
+          }
+        },
+        {
+          "if": {"properties": {"status": {"const": "error"}}},
+          "then": {
+            "properties": {
+              "result": {"type": "null"},
+              "result_digest": {"type": "null"},
+              "error": {"$ref": "#/$defs/Error"}
+            }
+          }
+        }
+      ]
+    }
+  }
+}

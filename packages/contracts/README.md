@@ -5,6 +5,7 @@ This directory is the machine-readable source of truth for MVP domain objects an
 ## Contents
 
 - `schemas/ameme-domain.schema.json`: JSON Schema 2020-12 definitions for immutable inputs, source locators, events, day ledgers, recall, grants, sync, deletion, export and derived outputs.
+- `schemas/ameme-agent-local-node.schema.json`: strict JSON Schema 2020-12 request/response envelope for the versioned Agent-to-Local-Node application RPC. Its request scope is minimal and payload-derived; an authenticated Grant may be a superset.
 - `api/openapi.yaml`: transport contract; business invariants remain in the domain schema and architecture docs.
 - `examples/synthetic-day.json`: non-personal synthetic contract bundle used by validation and tests.
 - `examples/invalid-contracts.json`: mutation-based negative fixtures proving required/security fields cannot be silently ignored.
@@ -15,6 +16,7 @@ This directory is the machine-readable source of truth for MVP domain objects an
 - `../../tests/contracts/`: generated positive/required/unknown/enum checks for every public object plus cross-object invariants.
 - `../../tests/harness/`: fixed clock, deterministic IDs, deterministic fault injection and allow-list logger harness.
 - `../../tests/security/contract/`: synthetic canary tests for body, secret, path, coordinate and URL-query leakage.
+- `../agent-local-node-protocol/`: non-production Python executable specification and tests for canonical JSON, digests, exact request scope, stable errors and deterministic wire vectors.
 
 ## Versioning rules
 
@@ -24,6 +26,7 @@ This directory is the machine-readable source of truth for MVP domain objects an
 4. Unknown optional fields are preserved across sync when possible. Security decisions use only understood fields.
 5. API clients send `Idempotency-Key` for writes. Reusing a key with different content returns `IDEMPOTENCY_CONFLICT`.
 6. `SourceLocator` is an opaque, device-scoped index to an original local/system object; it is not a portable absolute path and must degrade to moved/missing/revoked instead of fabricating availability.
+7. `ameme.agent-local-node.v1` rejects unknown versions/fields, duplicate keys, floats and invalid UTF-8. Wire changes require a new reviewed protocol version and regenerated cross-language vectors; the schema does not prove discovery, authentication, encryption or LAN behavior.
 
 ## Baseline and breaking changes
 
@@ -44,6 +47,8 @@ Individual gates remain runnable for diagnosis:
 ```powershell
 python scripts/validation/check_contract_compatibility.py
 python scripts/validation/validate_contracts.py
+python scripts/validation/validate_agent_local_node_protocol.py
+python scripts/validation/generate_agent_local_node_vectors.py --check
 python -m unittest discover -s tests/contracts -p "test_*.py" -v
 python -m unittest discover -s tests/harness -p "test_*.py" -v
 python -m unittest discover -s tests/security/contract -p "test_*.py" -v
