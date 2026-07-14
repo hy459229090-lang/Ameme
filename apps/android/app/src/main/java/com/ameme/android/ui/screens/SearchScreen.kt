@@ -32,13 +32,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.ameme.android.data.MemoryRepository
 import com.ameme.android.data.MemoryIoExecutor
-import com.ameme.android.data.runCatchingCancellable
 import com.ameme.android.domain.ExperienceMode
 import com.ameme.android.domain.DayGroup
 import com.ameme.android.domain.MemoryEvent
@@ -49,6 +49,8 @@ import com.ameme.android.ui.displayDate
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -65,23 +67,50 @@ fun SearchScreen(
     var selectedDate by remember { mutableStateOf<LocalDate?>(null) }
     var showCalendar by remember { mutableStateOf(false) }
     var page by remember(repository) { mutableStateOf<com.ameme.android.domain.MemoryPage?>(null) }
-    var searchInFlight by remember { mutableStateOf(false) }
+    var initialSearchInFlight by remember { mutableStateOf(false) }
+    var loadMoreInFlight by remember { mutableStateOf(false) }
     var searchFailed by remember { mutableStateOf(false) }
+    var loadMoreJob by remember { mutableStateOf<Job?>(null) }
+    val coordinator = remember { SearchRequestCoordinator() }
+    val latestRepository by rememberUpdatedState(repository)
+    val latestQuery by rememberUpdatedState(query)
+    val latestDate by rememberUpdatedState(selectedDate)
     val scope = rememberCoroutineScope()
+    val searchInFlight = initialSearchInFlight || loadMoreInFlight
+
+    fun latestIdentity() = SearchRequestIdentity(latestRepository, latestQuery, latestDate)
+
+    fun invalidateFor(identity: SearchRequestIdentity) {
+        coordinator.begin(identity)
+        loadMoreJob?.cancel()
+        loadMoreJob = null
+        loadMoreInFlight = false
+        page = null
+    }
 
     LaunchedEffect(repository, query, selectedDate) {
-        searchInFlight = true
+        val identity = SearchRequestIdentity(repository, query, selectedDate)
+        val token = coordinator.begin(identity)
+        loadMoreJob?.cancel()
+        loadMoreJob = null
+        loadMoreInFlight = false
+        page = null
+        initialSearchInFlight = true
         searchFailed = false
-        if (query.isNotBlank()) delay(SEARCH_DEBOUNCE_MS)
-        runCatchingCancellable {
-            ioExecutor.searchPage(repository, query, selectedDate, cursor = null, pageSize = PAGE_SIZE)
-        }.onSuccess {
-            page = it
-        }.onFailure {
-            page = null
-            searchFailed = true
+        try {
+            if (query.isNotBlank()) delay(SEARCH_DEBOUNCE_MS)
+            val result = ioExecutor.searchPage(repository, query, selectedDate, cursor = null, pageSize = PAGE_SIZE)
+            coordinator.commitIfCurrent(token, latestIdentity()) { page = result }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Throwable) {
+            coordinator.commitIfCurrent(token, latestIdentity()) {
+                page = null
+                searchFailed = true
+            }
+        } finally {
+            if (coordinator.isCurrent(token, latestIdentity())) initialSearchInFlight = false
         }
-        searchInFlight = false
     }
     val rawGroups = page?.events.orEmpty()
         .groupBy(MemoryEvent::localDate)
@@ -113,13 +142,21 @@ fun SearchScreen(
         ) {
             OutlinedTextField(
                 value = query,
-                onValueChange = { query = it },
+                onValueChange = { updated ->
+                    if (updated != query) {
+                        query = updated
+                        invalidateFor(SearchRequestIdentity(repository, updated, selectedDate))
+                    }
+                },
                 modifier = Modifier.fillMaxWidth(),
                 label = { Text("搜索历史记录") },
                 leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
                 trailingIcon = {
                     if (query.isNotEmpty()) {
-                        IconButton(onClick = { query = "" }) {
+                        IconButton(onClick = {
+                            query = ""
+                            invalidateFor(SearchRequestIdentity(repository, "", selectedDate))
+                        }) {
                             Icon(Icons.Outlined.Clear, contentDescription = "清除搜索词")
                         }
                     }
@@ -135,7 +172,10 @@ fun SearchScreen(
                     Text(selectedDate?.displayDate() ?: "选择日期", modifier = Modifier.padding(start = 8.dp))
                 }
                 if (selectedDate != null) {
-                    TextButton(onClick = { selectedDate = null }) { Text("清除日期") }
+                    TextButton(onClick = {
+                        selectedDate = null
+                        invalidateFor(SearchRequestIdentity(repository, query, null))
+                    }) { Text("清除日期") }
                 }
             }
             Text(
@@ -195,25 +235,38 @@ fun SearchScreen(
                             OutlinedButton(
                                 onClick = {
                                     val current = page ?: return@OutlinedButton
-                                    if (!searchInFlight) {
-                                        searchInFlight = true
-                                        scope.launch {
-                                            runCatchingCancellable {
-                                                ioExecutor.searchPage(
+                                    if (!initialSearchInFlight && !loadMoreInFlight) {
+                                        val identity = SearchRequestIdentity(repository, query, selectedDate)
+                                        val token = coordinator.current(identity) ?: return@OutlinedButton
+                                        loadMoreInFlight = true
+                                        loadMoreJob = scope.launch {
+                                            try {
+                                                val next = ioExecutor.searchPage(
                                                     repository,
                                                     query,
                                                     selectedDate,
                                                     current.nextCursor,
                                                     PAGE_SIZE,
                                                 )
-                                            }.onSuccess { next ->
-                                                page = current.copy(
-                                                    events = current.events + next.events,
-                                                    nextCursor = next.nextCursor,
-                                                    searchBackend = next.searchBackend,
-                                                )
-                                            }.onFailure { searchFailed = true }
-                                            searchInFlight = false
+                                                coordinator.commitIfCurrent(token, latestIdentity()) {
+                                                    page = current.copy(
+                                                        events = current.events + next.events,
+                                                        nextCursor = next.nextCursor,
+                                                        searchBackend = next.searchBackend,
+                                                    )
+                                                }
+                                            } catch (cancelled: CancellationException) {
+                                                throw cancelled
+                                            } catch (_: Throwable) {
+                                                coordinator.commitIfCurrent(token, latestIdentity()) {
+                                                    searchFailed = true
+                                                }
+                                            } finally {
+                                                if (coordinator.isCurrent(token, latestIdentity())) {
+                                                    loadMoreInFlight = false
+                                                    loadMoreJob = null
+                                                }
+                                            }
                                         }
                                     }
                                 },
@@ -240,6 +293,7 @@ fun SearchScreen(
             onDismiss = { showCalendar = false },
             onSelected = {
                 selectedDate = it
+                invalidateFor(SearchRequestIdentity(repository, query, it))
                 showCalendar = false
             },
         )
