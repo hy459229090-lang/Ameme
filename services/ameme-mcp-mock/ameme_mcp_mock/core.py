@@ -11,7 +11,13 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Iterable
 
-from .store import JsonStore
+from .event_store import (
+    EventNodeConflict,
+    EventNodeIdempotencyConflict,
+    EventNodeNotVisible,
+    EventNodeScope,
+    EventNodeStore,
+)
 
 
 AUTONOMOUS_PURPOSE = "autonomous_memory"
@@ -77,7 +83,7 @@ class AmemeMock:
 
     def __init__(
         self,
-        store: JsonStore,
+        store: EventNodeStore,
         *,
         clock: Callable[[], datetime] | None = None,
         offline: bool = False,
@@ -248,7 +254,12 @@ class AmemeMock:
         if len(arguments["idempotency_key"]) < 8:
             raise MockError("INVALID_ARGUMENT", "idempotency_key_too_short")
         memory_type = arguments["memory_type"]
-        self._authorize(arguments, [arguments["space"]], [memory_type], autonomous=True)
+        grant = self._authorize(
+            arguments, [arguments["space"]], [memory_type], autonomous=True
+        )
+        scope = self._event_scope(
+            grant, arguments, [arguments["space"]], [memory_type]
+        )
         self._high_risk_gate(arguments, autonomous=True)
 
         payload_hash = _digest(
@@ -280,45 +291,35 @@ class AmemeMock:
         now = _iso(self.clock())
         previous_event_snapshot: dict[str, Any] | None = None
         if memory_type == "revision":
-            target_event = self.store.state["events"].get(arguments.get("target_event_id"))
-            if target_event:
-                previous_event_snapshot = deepcopy(target_event)
-            result = self._create_revision(arguments, evidence_state, now)
+            if arguments.get("target_event_id"):
+                previous_event_snapshot = self.store.get_event(
+                    arguments["target_event_id"],
+                    scope=scope,
+                    space=arguments["space"],
+                    memory_type="revision",
+                )
+            result = self._create_revision(
+                arguments, scope, evidence_state, fact_status, now
+            )
         elif memory_type == "event":
-            event_id = _identifier("evt")
-            event = {
-                "schema_version": 1,
-                "event_id": event_id,
-                "owner_id": "user_synthetic",
-                "space_id": arguments["space"],
-                "event_type": arguments.get("event_type", "result"),
-                "time_range": {
-                    "start": arguments.get("event_time", now),
-                    "precision": "minute",
-                },
-                "title": str(arguments["content"])[:200],
-                "description": str(arguments["content"])[:4000],
-                "fact_status": fact_status,
-                "field_evidence": [
-                    {
-                        "field": "description",
-                        "observation_ids": [f"obs_{event_id[4:]}"],
-                        "confidence": 1.0 if evidence_state in {"observed", "user_asserted"} else 0.5,
-                        "status": evidence_state,
-                    }
-                ],
-                "evidence_state": evidence_state,
-                "source_object_ids": [f"src_{event_id[4:]}"],
-                "revision": 1,
-                "sensitivity": arguments.get("sensitivity", "personal"),
-                "data_class": arguments.get("data_class", "structured"),
-                "memory_type": "event",
-                "state": "active",
-                "created_at": now,
-                "updated_at": now,
-            }
-            self.store.state["events"][event_id] = event
-            result = {"object_type": "event", "event_id": event_id, "revision": 1}
+            try:
+                result = self.store.create_event(
+                    scope=scope,
+                    space=arguments["space"],
+                    content=str(arguments["content"]),
+                    event_time=arguments.get("event_time"),
+                    event_type=arguments.get("event_type", "result"),
+                    evidence_state=evidence_state,
+                    fact_status=fact_status,
+                    sensitivity=arguments.get("sensitivity", "personal"),
+                    data_class=arguments.get("data_class", "structured"),
+                    now=now,
+                    idempotency_key=arguments["idempotency_key"],
+                )
+            except EventNodeIdempotencyConflict as exc:
+                raise MockError(
+                    "IDEMPOTENCY_CONFLICT", "idempotency_key_payload_changed"
+                ) from exc
         else:
             raise MockError("DATA_TYPE_DENIED", "capture_only_creates_event_or_revision")
 
@@ -327,25 +328,27 @@ class AmemeMock:
         undo_record = {
             "caller_id": arguments["caller_id"],
             "grant_id": arguments["grant_id"],
+            "space_id": arguments["space"],
             "target_event_id": undo_target,
             "created_object_type": result["object_type"],
             "created_object_id": result.get("event_revision_id", undo_target),
+            "created_revision": result["revision"],
             "expires_at": _iso(self.clock() + timedelta(minutes=UNDO_TTL_MINUTES)),
             "used": False,
         }
         if previous_event_snapshot is not None:
             undo_record["previous_event_snapshot"] = previous_event_snapshot
+        store_lineage = result.pop("_undo_lineage", None)
+        if store_lineage is not None:
+            undo_record["store_lineage"] = store_lineage
         self.store.state["undo"][undo_token] = undo_record
         delivery_state = "queued" if self.offline or arguments.get("simulate_offline") else "local_only"
         if delivery_state == "queued":
-            self.store.state["queue"].append(
-                {
-                    "queue_id": _identifier("que"),
-                    "object_type": result["object_type"],
-                    "object_id": result.get("event_id") or result.get("event_revision_id"),
-                    "state": "queued",
-                    "created_at": now,
-                }
+            self.store.enqueue_delivery(
+                object_type=result["object_type"],
+                object_id=result.get("event_id") or result.get("event_revision_id"),
+                now=now,
+                idempotency_key=arguments["idempotency_key"],
             )
         response = {
             **result,
@@ -366,43 +369,56 @@ class AmemeMock:
         self.store.save()
         return response
 
-    def _create_revision(self, arguments: dict[str, Any], evidence_state: str, now: str) -> dict[str, Any]:
+    def _create_revision(
+        self,
+        arguments: dict[str, Any],
+        scope: EventNodeScope,
+        evidence_state: str,
+        fact_status: str,
+        now: str,
+    ) -> dict[str, Any]:
         _required(arguments, "target_event_id")
-        event = self.store.state["events"].get(arguments["target_event_id"])
-        if not event or event["state"] != "active" or event["space_id"] != arguments["space"]:
-            raise MockError("AUTH_REQUIRED", "target_not_visible")
-        revision_number = int(event["revision"]) + 1
-        revision_id = _identifier("evr")
-        revision = {
-            "schema_version": 1,
-            "event_revision_id": revision_id,
-            "event_id": event["event_id"],
-            "revision": revision_number,
-            "actor": "agent",
-            "reason": "user_addendum" if evidence_state == "user_asserted" else "model_recompute",
-            "changes": {"description": str(arguments["content"])[:4000], "evidence_state": evidence_state},
-            "created_at": now,
-        }
-        self.store.state["revisions"][revision_id] = revision
-        event["description"] = str(arguments["content"])[:4000]
-        event["revision"] = revision_number
-        event["revision_head_id"] = revision_id
-        event["evidence_state"] = evidence_state
-        event["updated_at"] = now
-        return {
-            "object_type": "revision",
-            "event_revision_id": revision_id,
-            "target_event_id": event["event_id"],
-            "revision": revision_number,
-        }
+        try:
+            return self.store.append_revision(
+                scope=scope,
+                space=arguments["space"],
+                event_id=arguments["target_event_id"],
+                content=str(arguments["content"]),
+                evidence_state=evidence_state,
+                fact_status=fact_status,
+                now=now,
+                idempotency_key=arguments["idempotency_key"],
+            )
+        except EventNodeNotVisible as exc:
+            raise MockError("AUTH_REQUIRED", "target_not_visible") from exc
+        except EventNodeIdempotencyConflict as exc:
+            raise MockError(
+                "IDEMPOTENCY_CONFLICT", "idempotency_key_payload_changed"
+            ) from exc
+        except EventNodeConflict as exc:
+            raise MockError("UNDO_CONFLICT", "revision_base_is_not_current") from exc
 
     def _undo_capture(self, arguments: dict[str, Any]) -> dict[str, Any]:
         _required(arguments, "caller_id", "grant_id", "purpose", "space", "memory_type", "undo_token")
-        self._authorize(arguments, [arguments["space"]], [arguments["memory_type"]], autonomous=True)
+        grant = self._authorize(
+            arguments,
+            [arguments["space"]],
+            [arguments["memory_type"]],
+            autonomous=True,
+        )
+        scope = self._event_scope(
+            grant,
+            arguments,
+            [arguments["space"]],
+            [arguments["memory_type"]],
+        )
         undo = self.store.state["undo"].get(arguments["undo_token"])
         if not undo or undo["caller_id"] != arguments["caller_id"] or undo["grant_id"] != arguments["grant_id"]:
             raise MockError("AUTH_REQUIRED", "undo_not_visible")
-        if undo.get("created_object_type") != arguments["memory_type"]:
+        if (
+            undo.get("space_id") != arguments["space"]
+            or undo.get("created_object_type") != arguments["memory_type"]
+        ):
             raise MockError("DATA_TYPE_DENIED", "undo_object_type_mismatch")
         if undo["used"]:
             replay = deepcopy(undo["result"])
@@ -411,70 +427,20 @@ class AmemeMock:
         if _parse(undo["expires_at"]) <= self.clock():
             raise MockError("CONTEXT_EXPIRED", "undo_window_expired")
 
-        created_object_type = undo["created_object_type"]
-        created_object_id = undo["created_object_id"]
-        event = self.store.state["events"].get(undo["target_event_id"])
         now = _iso(self.clock())
-        result: dict[str, Any]
-        if created_object_type == "event":
-            if not event or event.get("event_id") != created_object_id:
-                raise MockError("AUTH_REQUIRED", "undo_event_not_visible")
-            event["state"] = "deleted"
-            event["updated_at"] = now
-            result = {
-                "state": "undone",
-                "target_event_id": event["event_id"],
-                "undone_object_type": "event",
-                "undone_object_id": created_object_id,
-                "activity_visible": True,
-            }
-        elif created_object_type == "revision":
-            created_revision = self.store.state["revisions"].get(created_object_id)
-            previous_snapshot = undo.get("previous_event_snapshot")
-            if (
-                not event
-                or not created_revision
-                or created_revision.get("event_id") != event.get("event_id")
-                or not isinstance(previous_snapshot, dict)
-            ):
-                raise MockError("AUTH_REQUIRED", "undo_revision_not_visible")
-            if event.get("revision_head_id") != created_object_id:
-                raise MockError("UNDO_CONFLICT", "undo_revision_is_not_current_head")
-
-            compensation_revision_id = _identifier("evr")
-            compensation_revision_number = int(event["revision"]) + 1
-            compensation_revision = {
-                "schema_version": 1,
-                "event_revision_id": compensation_revision_id,
-                "event_id": event["event_id"],
-                "base_revision_id": created_object_id,
-                "revision": compensation_revision_number,
-                "actor": "system",
-                "reason": "user_edit",
-                "changes": {
-                    "description": previous_snapshot.get("description"),
-                    "evidence_state": previous_snapshot.get("evidence_state"),
-                    "undo": {"compensates_revision_id": created_object_id},
-                },
-                "created_at": now,
-            }
-            self.store.state["revisions"][compensation_revision_id] = compensation_revision
-
-            restored_event = deepcopy(previous_snapshot)
-            restored_event["revision"] = compensation_revision_number
-            restored_event["revision_head_id"] = compensation_revision_id
-            restored_event["updated_at"] = now
-            self.store.state["events"][event["event_id"]] = restored_event
-            result = {
-                "state": "undone",
-                "target_event_id": event["event_id"],
-                "undone_object_type": "revision",
-                "undone_object_id": created_object_id,
-                "compensation_revision_id": compensation_revision_id,
-                "activity_visible": True,
-            }
-        else:
-            raise MockError("INVALID_ARGUMENT", "undo_object_type_unknown")
+        try:
+            result = self.store.undo_capture(
+                undo,
+                scope=scope,
+                space=arguments["space"],
+                memory_type=arguments["memory_type"],
+                now=now,
+                idempotency_key=arguments["undo_token"],
+            )
+        except EventNodeNotVisible as exc:
+            raise MockError("AUTH_REQUIRED", "undo_target_not_visible") from exc
+        except EventNodeConflict as exc:
+            raise MockError("UNDO_CONFLICT", "undo_revision_is_not_current_head") from exc
 
         undo["used"] = True
         undo["result"] = deepcopy(result)
@@ -487,10 +453,14 @@ class AmemeMock:
         spaces = self._bounded_values(arguments["spaces"])
         memory_types = self._bounded_values(arguments["memory_types"])
         autonomous = arguments.get("invocation", "explicit") == "autonomous"
-        self._authorize(arguments, spaces, memory_types, autonomous=autonomous)
+        grant = self._authorize(
+            arguments, spaces, memory_types, autonomous=autonomous
+        )
+        scope = self._event_scope(grant, arguments, spaces, memory_types)
         allow_high_risk = self._high_risk_gate(arguments, autonomous=autonomous)
         start_at, end_at = self._requested_time_range(arguments.get("time_range"))
         events, risk_filtered = self._visible_events(
+            scope,
             spaces,
             memory_types,
             arguments.get("query"),
@@ -528,7 +498,10 @@ class AmemeMock:
         space = arguments["space"]
         memory_types = self._bounded_values(arguments["memory_types"])
         autonomous = arguments.get("invocation", "autonomous") == "autonomous"
-        self._authorize(arguments, [space], memory_types, autonomous=autonomous)
+        grant = self._authorize(
+            arguments, [space], memory_types, autonomous=autonomous
+        )
+        scope = self._event_scope(grant, arguments, [space], memory_types)
         allow_high_risk = self._high_risk_gate(arguments, autonomous=autonomous)
         days = int(arguments.get("time_window_days", DEFAULT_CONTEXT_DAYS))
         item_budget = int(arguments.get("item_budget", DEFAULT_CONTEXT_ITEMS))
@@ -538,6 +511,7 @@ class AmemeMock:
         item_budget = min(max(item_budget, 1), DEFAULT_CONTEXT_ITEMS)
         token_budget = min(max(token_budget, 1), DEFAULT_CONTEXT_TOKENS)
         events, risk_filtered = self._visible_events(
+            scope,
             [space],
             memory_types,
             arguments.get("query"),
@@ -664,7 +638,18 @@ class AmemeMock:
         if arguments["action"] in {"delete", "erase", "purge"}:
             raise MockError("DELETION_CONFIRMATION_REQUIRED", "use_dedicated_deletion_flow")
         autonomous_revision = arguments["action"] == "correct"
-        self._authorize(arguments, [arguments["space"]], [arguments["memory_type"]], autonomous=autonomous_revision)
+        grant = self._authorize(
+            arguments,
+            [arguments["space"]],
+            [arguments["memory_type"]],
+            autonomous=autonomous_revision,
+        )
+        scope = self._event_scope(
+            grant,
+            arguments,
+            [arguments["space"]],
+            [arguments["memory_type"]],
+        )
         payload_hash = _digest({key: arguments.get(key) for key in sorted(arguments) if key != "idempotency_key"})
         prior = self.store.state["idempotency"].get(arguments["idempotency_key"])
         if prior:
@@ -682,7 +667,6 @@ class AmemeMock:
             "user_statement": arguments.get("user_statement"),
             "created_at": _iso(self.clock()),
         }
-        self.store.state["feedback"][feedback_id] = feedback
         delivery_state = "queued" if self.offline or arguments.get("simulate_offline") else "local_only"
         result: dict[str, Any] = {
             "feedback_id": feedback_id,
@@ -698,20 +682,29 @@ class AmemeMock:
                 "target_event_id": arguments["target_id"],
                 "content": arguments.get("user_statement", "User correction"),
             }
-            result.update(self._create_revision(revision_arguments, "user_asserted", _iso(self.clock())))
+            result.update(
+                self._create_revision(
+                    revision_arguments,
+                    scope,
+                    "user_asserted",
+                    "user_asserted",
+                    _iso(self.clock()),
+                )
+            )
         if arguments["action"] == "policy_violation":
-            event = self.store.state["events"].get(arguments["target_id"])
-            if event:
-                event["policy_blocked"] = True
+            self.store.set_policy_blocked(
+                arguments["target_id"],
+                scope=scope,
+                space=arguments["space"],
+                memory_type=arguments["memory_type"],
+            )
+        self.store.state["feedback"][feedback_id] = feedback
         if delivery_state == "queued":
-            self.store.state["queue"].append(
-                {
-                    "queue_id": _identifier("que"),
-                    "object_type": "feedback",
-                    "object_id": feedback_id,
-                    "state": "queued",
-                    "created_at": _iso(self.clock()),
-                }
+            self.store.enqueue_delivery(
+                object_type="feedback",
+                object_id=feedback_id,
+                now=_iso(self.clock()),
+                idempotency_key=arguments["idempotency_key"],
             )
         self.store.state["idempotency"][arguments["idempotency_key"]] = {
             "payload_hash": payload_hash,
@@ -746,7 +739,7 @@ class AmemeMock:
         return {
             "connection_state": "offline" if self.offline else ("ready" if any(item["state"] == "active" for item in visible_grants) else "unpaired"),
             "grants": visible_grants,
-            "queued_count": len(self.store.state["queue"]),
+            "queued_count": self.store.queued_count(),
             "recent_activity": activities[-20:],
             "recovery_action": "retry_when_online" if self.offline else None,
         }
@@ -788,6 +781,23 @@ class AmemeMock:
                 self._deny(arguments, spaces, memory_types, "CONSENT_REQUIRED", "autonomous_grant_not_exact")
         return grant
 
+    @staticmethod
+    def _event_scope(
+        grant: dict[str, Any],
+        arguments: dict[str, Any],
+        spaces: Iterable[str],
+        memory_types: Iterable[str],
+    ) -> EventNodeScope:
+        """Build a defensive store scope only after `_authorize` succeeds."""
+        return EventNodeScope(
+            owner_id=grant["owner_id"],
+            caller_id=arguments["caller_id"],
+            grant_id=grant["grant_id"],
+            purpose=arguments["purpose"],
+            spaces=tuple(sorted(set(spaces))),
+            memory_types=tuple(sorted(set(memory_types))),
+        )
+
     def _high_risk_gate(self, arguments: dict[str, Any], *, autonomous: bool) -> bool:
         sensitivity = str(arguments.get("sensitivity", "personal")).lower()
         data_class = str(arguments.get("data_class", "structured")).lower()
@@ -803,6 +813,7 @@ class AmemeMock:
 
     def _visible_events(
         self,
+        scope: EventNodeScope,
         spaces: Iterable[str],
         memory_types: Iterable[str],
         query: str | None,
@@ -811,34 +822,15 @@ class AmemeMock:
         start_at: datetime | None = None,
         end_at: datetime | None = None,
     ) -> tuple[list[dict[str, Any]], bool]:
-        allowed_spaces = set(spaces)
-        allowed_types = set(memory_types)
-        query_folded = (query or "").casefold()
-        result = []
-        risk_filtered = False
-        for event in self.store.state["events"].values():
-            if event.get("state") != "active" or event.get("policy_blocked"):
-                continue
-            if event.get("space_id") not in allowed_spaces or event.get("memory_type", "event") not in allowed_types:
-                continue
-            if not allow_high_risk and (
-                event.get("sensitivity") == "restricted" or event.get("data_class") == "raw"
-            ):
-                risk_filtered = True
-                continue
-            event_time_value = event.get("time_range", {}).get("start") or event.get("created_at")
-            if event_time_value:
-                event_time = _parse(event_time_value)
-                if start_at and event_time < start_at:
-                    continue
-                if end_at and event_time > end_at:
-                    continue
-            body = f"{event.get('title', '')}\n{event.get('description', '')}".casefold()
-            if query_folded and query_folded not in body:
-                continue
-            result.append(event)
-        result.sort(key=lambda item: item.get("updated_at") or item.get("created_at") or "", reverse=True)
-        return result, risk_filtered
+        return self.store.visible_events(
+            scope=scope,
+            spaces=spaces,
+            memory_types=memory_types,
+            query=query,
+            allow_high_risk=allow_high_risk,
+            start_at=start_at,
+            end_at=end_at,
+        )
 
     @staticmethod
     def _requested_time_range(value: Any) -> tuple[datetime | None, datetime | None]:

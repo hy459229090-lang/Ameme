@@ -4,15 +4,19 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Any
+from typing import Any, Callable
 
 
 ROOT = Path(__file__).resolve().parents[2]
 SERVICE_ROOT = ROOT / "services" / "ameme-mcp-mock"
+CORE_ROOT = ROOT / "packages" / "core-reference"
 if str(SERVICE_ROOT) not in sys.path:
     sys.path.insert(0, str(SERVICE_ROOT))
+if str(CORE_ROOT) not in sys.path:
+    sys.path.insert(0, str(CORE_ROOT))
 
 from ameme_mcp_mock import AmemeMock, JsonStore  # noqa: E402
+from ameme_mcp_mock.core_store import CoreEventNodeStore  # noqa: E402
 
 
 FIXED_NOW = datetime(2026, 7, 14, 4, 0, tzinfo=timezone.utc)
@@ -20,13 +24,50 @@ SEED = ROOT / "tests" / "fixtures" / "agent" / "synthetic-memories.json"
 
 
 class Harness:
-    def __init__(self, *, offline: bool = False, seed: bool = True) -> None:
+    def __init__(
+        self,
+        *,
+        offline: bool = False,
+        seed: bool = True,
+        backend: str = "json",
+        fault_injector: Callable[[str], None] | None = None,
+    ) -> None:
         self.temp = TemporaryDirectory()
-        seed_path = SEED if seed else None
-        self.store = JsonStore(Path(self.temp.name) / "state.json", seed_path)
-        self.mock = AmemeMock(self.store, clock=lambda: FIXED_NOW, offline=offline)
+        self.root = Path(self.temp.name)
+        self.offline = offline
+        self.backend = backend
+        self.seed = seed
+        self.fault_injector = fault_injector
+        self._open()
+
+    def _open(self) -> None:
+        if self.backend == "json":
+            seed_path = SEED if self.seed else None
+            self.store = JsonStore(self.root / "state.json", seed_path)
+        elif self.backend == "core":
+            if self.seed:
+                raise ValueError("CoreEventNodeStore tests must capture synthetic data through public commands")
+            self.store = CoreEventNodeStore(
+                self.root / "control.json",
+                self.root / "core.sqlite3",
+                clock=lambda: FIXED_NOW,
+                fault_injector=self.fault_injector,
+            )
+        else:
+            raise ValueError(f"unknown Harness backend: {self.backend}")
+        self.mock = AmemeMock(
+            self.store, clock=lambda: FIXED_NOW, offline=self.offline
+        )
+
+    def restart(
+        self, *, fault_injector: Callable[[str], None] | None = None
+    ) -> None:
+        self.store.close()
+        self.fault_injector = fault_injector
+        self._open()
 
     def close(self) -> None:
+        self.store.close()
         self.temp.cleanup()
 
     def exact_grant(

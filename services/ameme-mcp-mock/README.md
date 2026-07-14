@@ -1,6 +1,16 @@
 # Ameme MCP local mock
 
-本目录提供 Agent 入口第一版的无云 MCP 服务。它只使用本地 JSON 状态和合成夹具，不包含登录、生产鉴权、记忆云、外部模型或第三方 Agent 市场能力。
+本目录提供 Agent 入口第一版的无云 MCP 服务。默认运行方式使用本地 JSON 合成夹具，不包含登录、生产鉴权、记忆云、外部模型或第三方 Agent 市场能力。
+
+## 存储边界
+
+- `EventNodeStore` 是 Mock 业务层与 Event/Revision 持久化之间的明确接口。`AmemeMock` 仍负责 pairing、Grant、exact scope、撤权/过期、风险策略、反馈、ContextPack、活动和 MCP 幂等；Store 只在授权成功后接收请求。
+- 每次 Store 调用携带已授权请求范围形成的 `EventNodeScope`，适配器再次核对 owner、space 和 memory type。Scope 不写入 Event/Revision 正文，也不能代替 Mock 的授权判断。
+- `JsonStore` 仅是保留现有行为的 **非生产合成夹具后端**，不是移动端数据库、服务端数据库或发布候选实现。
+- `CoreEventNodeStore` 仅用于合成集成测试。它只调用 `packages/core-reference` 的公开命令，把 capture/revision/undo 映射为 Source → Observation → Event/Revision → Tombstone/Lineage，并让离线交付进入 Core durable sync queue；它不直写 SQLite。
+- Python `CoreOracle` 仍是非生产语义参考和测试 Oracle，不能作为 Android、iOS、桌面或云端生产 runtime，也不证明 SQLCipher、Keychain/Keystore、真实同步或宿主集成完成。
+
+Core SQLite 与 Mock control JSON 不是同一事务。测试适配器不伪造跨库原子性，而是在 control 中保存不含正文的操作日志：`prepared/retry_pending/failed → core_committed`。日志只含语义哈希、对象 ID、revision/source lineage、尝试次数和对账状态。重启后使用同一 idempotency key 重放 Core 公共命令；Core 成功前不会写最终 MCP 幂等成功记录。永久领域错误标记 `failed`，可重试的 SQLite 运行错误标记 `retry_pending`，且每个 key 独立，不阻塞同一 scope 的其他操作。
 
 ## 能力和安全边界
 
@@ -54,10 +64,11 @@ MCP 宿主的最小配置语义如下；具体配置键由宿主 adapter 决定�
 ```powershell
 python scripts/dev/agent/smoke_mcp_mock.py
 python -m unittest discover -s tests/agent -p "test_*.py" -v
+python -m unittest discover -s tests/agent -p "test_core_store_integration.py" -v
 python scripts/validation/validate_ameme_skill.py
 ```
 
-本地状态默认写入 `.tmp/ameme-mcp-mock/state.json`，该目录已被 `.gitignore` 排除。测试使用临时目录并只加载 `tests/fixtures/agent/` 中的合成数据。
+本地默认 Mock 状态写入 `.tmp/ameme-mcp-mock/state.json`，该目录已被 `.gitignore` 排除。CoreStore 集成测试在临时目录中分别创建 control JSON 和 Core SQLite，只通过测试生成合成数据，不读取或提交真实个人数据。
 
 ## 已知契约缺口
 
