@@ -164,12 +164,19 @@
 - [x] Agent 风险切片：本地 MCP Mock、统一 Skill、撤销/撤权/预算/injection 测试；不冒充真实宿主集成。
 - [x] 总控 Review：修复多来源删除、evidence undo、跨空间接收、Revision undo、Context 预算和 Android 数值边界后，按依赖集成到 main `852270f`。
 
-### 当前执行批次
+### 已集成第二批切片
 
-- [ ] DB-01 + AND-002 第一段：验证 Android SQLCipher、迁移/WAL/错误密钥/重启恢复，并将主动文字记录接入耐久 Local Node。
-- [ ] CORE-002/007/008 参考段：Raw Vault manifest、原子写入/hash/quota/TTL、耐久 processing/sync/delete queue 与 lineage impact 回归。
-- [ ] AI-001/002/004 第一段：Task registry、PromptEnvelope/policy gate、R0 时间/计划/去重规则与结构化 Event draft validator。
-- [ ] 合并后全链 Review：契约、Core、Sync、Agent、Android 构建/设备测试、治理与失败证据。
+- [x] DB-01 + AND-002 第一段：Android 固定官方 SQLCipher 4.15.0，接入 Keystore 包裹随机库密钥、WAL、错误密钥拒绝、v1→v2→v3 非破坏迁移、space 隔离、数据库级 Revision 不可改删、重建/日期关键词读取和 Tombstone 删除；API 36 AVD 13/13，通过不代表真机、16 KB 或容量性能完成。
+- [x] CORE-002/007/008 参考段：非生产 Core Oracle 增加 Raw Vault manifest/AES-GCM、耐久 processing/sync/delete queue、两阶段可恢复删除、AAD v2 元数据绑定、TTL 与 deletion proof 故障恢复；未落入移动端生产节点。
+- [x] AI-001/002/004 第一段：增加 Task registry、PromptEnvelope、显式 Provider allow-list、R0 时间/计划/去重规则、EventCandidate 结构化/evidence validator 和安全回退；无真实模型、完整 Grant 或 Summary 质量结论。
+- [x] 合并后全链 Review：125 项 Python 测试、2,715 项兼容检查、2,709 项契约检查、5 个契约质量门、14-case/14-risk Skill、32 个 Markdown 链接、128 项治理、Android JVM/lint/assemble 与 API 36 AVD 13 项设备测试通过。
+
+### 下一执行批次
+
+- [ ] AND-003/004 第一段：Android Photo Picker/Share/文字与语音显式入口、Calendar scoped adapter 与 planned 语义；不申请无关后台权限。
+- [ ] DB-01 后续证据：FTS5/日期分页、10k/100k 合成容量、启动/检索/迁移指标；16 KB 和物理真机保留给设备矩阵。
+- [ ] AI-005/006 第一段：固定 eval/攻击删除集、差异报告和预算/批处理/路由观测；真实 Provider 仍受 PIA/供应商准入门控制。
+- [ ] SKILL-01/AG-003 可在 Windows 完成的部分：把 MCP Mock 接到本地 Event Node 测试适配层，复跑授权、撤销、离线和注入；真实 Codex/Claude Code/Cursor 宿主证据单独保存。
 
 ### 当前门禁
 

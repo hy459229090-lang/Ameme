@@ -12,4 +12,8 @@
 
 Python 也可使用 `# 用途：` / `# 输入：` / `# 输出：`。
 
-当前入口：`governance/check_workspace.py`。
+当前入口：
+
+- `validation/run_workspace_validation.py`：完整无网络 Python/契约/Skill/文档/治理基线；
+- `governance/check_workspace.py`：仅工作区结构与治理规则；
+- `validation/run_contract_quality.py`：仅机器契约质量基线。

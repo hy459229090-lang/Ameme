@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-MVP 工程实现已启动。main `852270f` 已集成契约质量基线、非生产 Core Oracle、同步协议模拟器、Agent MCP Mock 与 Android 原生 UI/契约骨架；生产 Local Node、真实 LAN、真实来源与 iOS 真机仍待实现/验证。双端原生 + Schema、SQLCipher/Raw Vault/SourceLocator/FTS5、LAN Peer Sync、账户归属/透明设备密钥和分层 AI 继续作为研发基线，Spike 负责验证或否决。
+MVP 工程实现进行中。截至 main `c85f425`，已集成契约质量基线、非生产 Core/Raw/队列 Oracle、同步协议模拟器、Agent MCP Mock、R0 AI 参考实现与 Android SQLCipher 加密 Local Event Node 首切片；API 36 AVD 13 项设备测试通过。生产 Raw/FTS/LAN、真实来源/宿主/模型、双端真机、16 KB 和性能容量仍待实现或验证。双端原生 + Schema、SQLCipher/Raw Vault/SourceLocator/FTS5、LAN Peer Sync、账户归属/透明设备密钥和分层 AI 继续作为研发基线，Spike 负责验证或否决。
 
 ## 当前正本
 
