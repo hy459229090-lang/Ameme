@@ -1,0 +1,13 @@
+{
+  "fixture_version": 1,
+  "description": "Synthetic identifiers and values for deterministic SYNC-01 protocol tests; contains no personal data.",
+  "seed": 20260714,
+  "peers": ["peer_alpha", "peer_beta", "peer_gamma"],
+  "space_id": "space_sync_synthetic",
+  "events": {
+    "merge": "event_sync_001",
+    "conflict": "event_sync_002",
+    "deletion": "event_sync_003"
+  },
+  "expected_outcomes": ["convergence", "partial", "conflict", "proof_incomplete"]
+}
