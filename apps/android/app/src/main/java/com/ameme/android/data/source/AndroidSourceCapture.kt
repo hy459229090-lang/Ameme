@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import com.ameme.android.data.MemoryRepository
 import com.ameme.android.domain.FactStatus
+import com.ameme.android.domain.EvidenceState
 import com.ameme.android.domain.LocatorPermissionState
 import com.ameme.android.domain.MemoryEvent
 import com.ameme.android.domain.SourceCaptureRequest
@@ -145,10 +146,11 @@ class IncomingShareParser(
                 sourceKind = SourceKind.SharedText,
                 title = text.lineSequence().first().take(64),
                 detail = "通过系统分享入口保存的用户文字。",
-                factStatus = FactStatus.Processing,
+                factStatus = FactStatus.UserAsserted,
                 localDate = LocalDate.now(clock),
                 time = LocalTime.now(clock).withSecond(0).withNano(0),
                 userWords = text,
+                evidenceState = EvidenceState.UserAsserted,
             )
         }
         if (!(mime.startsWith("image/") || mime == "application/pdf")) return null

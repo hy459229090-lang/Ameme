@@ -20,12 +20,12 @@ class FakeMemoryRepositoryTest {
     private val repository = FakeMemoryRepository(clock)
 
     @Test
-    fun capture_isDeterministicLocalOnlyAndProcessing() {
+    fun capture_isDeterministicLocalOnlyAndUserAsserted() {
         val captured = repository.capture(CaptureKind.Text, "  合成的试用记录  ")
 
         assertEquals(LocalDate.of(2026, 7, 14), captured.localDate)
         assertEquals("合成的试用记录", captured.title)
-        assertEquals(FactStatus.Processing, captured.factStatus)
+        assertEquals(FactStatus.UserAsserted, captured.factStatus)
         assertTrue(captured.isLocalOnly)
         assertEquals("合成的试用记录", captured.userWords)
     }

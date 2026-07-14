@@ -5,6 +5,7 @@ import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.ameme.android.domain.CaptureKind
+import com.ameme.android.domain.DaySummaryState
 import com.ameme.android.domain.FactStatus
 import com.ameme.android.domain.MemoryEvent
 import com.ameme.android.domain.LocatorPermissionState
@@ -551,6 +552,60 @@ class LocalEventDatabaseInstrumentedTest {
         } finally {
             database.close()
             openKey.fill(0)
+        }
+    }
+
+    @Test
+    fun daySummary_isRevisionBoundPersistsAndBecomesStaleAfterNewEvent() {
+        val file = newDatabaseFile()
+        LocalEventDatabase.open(file, SyntheticDatabaseKeyProvider(key), SPACE_A).use { database ->
+            database.insertCaptured(syntheticEvent("evt_summary_a", "完成摘要存储").copy(time = java.time.LocalTime.of(9, 0)))
+            database.insertCaptured(syntheticEvent("evt_summary_b", "验证版本绑定").copy(time = java.time.LocalTime.of(10, 0)))
+            val initial = database.readDaySummary(LocalDate.of(2026, 7, 14))
+            assertEquals(DaySummaryState.Absent, initial.state)
+
+            val processing = database.beginDaySummary(initial.localDate, initial.ledgerRevision)
+            assertEquals(DaySummaryState.Processing, processing.state)
+            val ready = database.completeDaySummary(
+                initial.localDate,
+                initial.ledgerRevision,
+                "完成摘要存储，并验证版本绑定。",
+                "synthetic-model-v1",
+            )
+            assertEquals(DaySummaryState.Ready, ready.state)
+            assertEquals(initial.ledgerRevision, ready.summary?.basedOnLedgerRevision)
+        }
+
+        LocalEventDatabase.open(file, SyntheticDatabaseKeyProvider(key), SPACE_A).use { reopened ->
+            val restored = reopened.readDaySummary(LocalDate.of(2026, 7, 14))
+            assertEquals(DaySummaryState.Ready, restored.state)
+            assertEquals("完成摘要存储，并验证版本绑定。", restored.summary?.text)
+
+            reopened.insertCaptured(
+                syntheticEvent("evt_summary_c", "新增事件使旧摘要过期").copy(time = java.time.LocalTime.of(11, 0)),
+            )
+            val stale = reopened.readDaySummary(LocalDate.of(2026, 7, 14))
+            assertEquals(DaySummaryState.Stale, stale.state)
+            assertEquals("完成摘要存储，并验证版本绑定。", stale.summary?.text)
+        }
+    }
+
+    @Test
+    fun deletingEvent_removesDerivedSummaryImmediately() {
+        val file = newDatabaseFile()
+        LocalEventDatabase.open(file, SyntheticDatabaseKeyProvider(key), SPACE_A).use { database ->
+            val first = syntheticEvent("evt_delete_summary_a", "第一条事件").copy(time = java.time.LocalTime.of(9, 0))
+            val second = syntheticEvent("evt_delete_summary_b", "第二条事件").copy(time = java.time.LocalTime.of(10, 0))
+            database.insertCaptured(first)
+            database.insertCaptured(second)
+            val snapshot = database.readDaySummary(first.localDate)
+            database.beginDaySummary(first.localDate, snapshot.ledgerRevision)
+            database.completeDaySummary(first.localDate, snapshot.ledgerRevision, "两条事件的小结", "synthetic-model-v1")
+
+            assertTrue(database.deleteEvent(second.id))
+            val afterDelete = database.readDaySummary(first.localDate)
+            assertEquals(DaySummaryState.Insufficient, afterDelete.state)
+            assertEquals(null, afterDelete.summary)
         }
     }
 

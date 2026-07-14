@@ -44,6 +44,29 @@ enum class SourceKind {
     VoicePicker,
 }
 
+enum class EventType(val wireValue: String) {
+    Activity("activity"),
+    Communication("communication"),
+    Decision("decision"),
+    Result("result"),
+    StateChange("state_change"),
+    Milestone("milestone"),
+    Experience("experience"),
+}
+
+enum class EvidenceState(val wireValue: String) {
+    Observed("observed"),
+    UserAsserted("user_asserted"),
+    Inferred("inferred"),
+}
+
+enum class Sensitivity(val wireValue: String) {
+    Public("public"),
+    Personal("personal"),
+    Confidential("confidential"),
+    Restricted("restricted"),
+}
+
 enum class LocatorPermissionState {
     PersistedRead,
     SessionRead,
@@ -73,6 +96,10 @@ data class SourceCaptureRequest(
     val mimeType: String? = null,
     val locatorPermissionState: LocatorPermissionState = LocatorPermissionState.NoLocator,
     val sourceInstanceKey: String? = null,
+    val eventType: EventType = EventType.Experience,
+    val evidenceState: EvidenceState = EvidenceState.Observed,
+    val sensitivity: Sensitivity = Sensitivity.Personal,
+    val importance: Int = 50,
 )
 
 enum class SearchBackend {
@@ -96,7 +123,44 @@ data class MemoryEvent(
     val sourceLabel: String,
     val isLocalOnly: Boolean = false,
     val userWords: String? = null,
+    val revision: Int = 1,
+    val eventType: EventType = EventType.Experience,
+    val evidenceState: EvidenceState = EvidenceState.UserAsserted,
+    val sensitivity: Sensitivity = Sensitivity.Personal,
+    val importance: Int = 50,
 )
+
+enum class DaySummaryState {
+    Absent,
+    Processing,
+    Ready,
+    Stale,
+    Insufficient,
+}
+
+data class DaySummary(
+    val id: String,
+    val localDate: LocalDate,
+    val basedOnLedgerRevision: Int,
+    val text: String,
+    val state: DaySummaryState,
+    val modelOrRuleVersion: String,
+    val createdAtEpochMillis: Long,
+)
+
+data class DaySummarySnapshot(
+    val localDate: LocalDate,
+    val ledgerRevision: Int,
+    val events: List<MemoryEvent>,
+    val state: DaySummaryState,
+    val summary: DaySummary? = null,
+) {
+    val eligibleEvents: List<MemoryEvent>
+        get() = events.filter { event ->
+            event.sensitivity != Sensitivity.Restricted &&
+                event.factStatus in setOf(FactStatus.Confirmed, FactStatus.UserAsserted, FactStatus.Planned)
+        }
+}
 
 data class DayGroup(
     val date: LocalDate,

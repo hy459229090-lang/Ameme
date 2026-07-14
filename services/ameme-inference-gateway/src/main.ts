@@ -28,7 +28,12 @@ function providerFromEnvironment(): InferenceProvider {
 
 const timeoutMs = Number(process.env.AMEME_INFERENCE_TIMEOUT_MS ?? "15000");
 const port = Number(process.env.AMEME_INFERENCE_PORT ?? "8787");
-const gateway = new InferenceGateway(providerFromEnvironment(), { timeoutMs });
+const gateway = new InferenceGateway(providerFromEnvironment(), {
+  timeoutMs,
+  logger: (record) => {
+    process.stdout.write(JSON.stringify({ service: "ameme-inference-gateway", ...record }) + "\n");
+  },
+});
 const server = createInferenceServer(gateway);
 
 server.listen(port, "127.0.0.1", () => {

@@ -11,17 +11,34 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
+import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TestRule
+import org.junit.runners.model.Statement
 
 class AmemeUiSmokeTest {
-    @get:Rule
+    @get:Rule(order = 0)
+    val resetOnboarding = TestRule { base, _ ->
+        object : Statement() {
+            override fun evaluate() {
+                InstrumentationRegistry.getInstrumentation().targetContext
+                    .getSharedPreferences("ameme_onboarding", android.content.Context.MODE_PRIVATE)
+                    .edit()
+                    .clear()
+                    .commit()
+                base.evaluate()
+            }
+        }
+    }
+
+    @get:Rule(order = 1)
     val composeRule = createAndroidComposeRule<MainActivity>()
 
     @Test
     fun onboardingTodayAndCaptureSheet_areReachableWithoutPermissions() {
         composeRule.onNodeWithText("自动整理你的一天").assertIsDisplayed()
-        composeRule.onNodeWithText("进入合成的今天").performClick()
+        composeRule.onNodeWithText("查看今天").performClick()
 
         composeRule.onNodeWithText("今天").assertIsDisplayed()
         composeRule.onNodeWithContentDescription("搜索历史记录").assertIsDisplayed()
@@ -32,14 +49,14 @@ class AmemeUiSmokeTest {
     }
 
     @Test
-    fun searchSettingsAndPartialState_shareTheSameShell() {
-        composeRule.onNodeWithText("进入合成的今天").performClick()
+    fun searchAndProductionSettings_shareTheSameShell() {
+        composeRule.onNodeWithText("查看今天").performClick()
         composeRule.onNodeWithContentDescription("打开设置").performClick()
-        composeRule.onNodeWithTag("settings-list").performScrollToNode(hasText("部分范围"))
-        composeRule.onNodeWithText("部分范围").performClick()
+        composeRule.onNodeWithTag("settings-list").performScrollToNode(hasText("AI 小结"))
+        composeRule.onNodeWithText("AI 小结").assertIsDisplayed()
         composeRule.onNodeWithContentDescription("返回").performClick()
 
-        composeRule.onNodeWithText("部分范围").assertIsDisplayed()
+        composeRule.onNodeWithText("今天").assertIsDisplayed()
         composeRule.onNodeWithContentDescription("搜索历史记录").performClick()
         composeRule.onNodeWithText("搜索历史记录").assertIsDisplayed()
         composeRule.onNodeWithText("按日期从新到旧浏览，底部可加载更早记录").assertIsDisplayed()
@@ -48,7 +65,7 @@ class AmemeUiSmokeTest {
     @Test
     fun eventDetailAndDeleteImpact_areReachable() {
         val title = "合成详情-${System.nanoTime()}"
-        composeRule.onNodeWithText("进入合成的今天").performClick()
+        composeRule.onNodeWithText("查看今天").performClick()
         composeRule.onNodeWithContentDescription("记录一件事").performClick()
         composeRule.onNodeWithText("文字").performClick()
         composeRule.onNodeWithText("写下一句话").performTextInput(title)

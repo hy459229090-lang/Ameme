@@ -11,7 +11,8 @@ import { GatewayError } from "./errors.js";
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const LOCAL_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const TIMESTAMP_WITH_ZONE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:\d{2})$/;
-const TIMEZONE = /^[A-Za-z_]+(?:\/[A-Za-z0-9_+.-]+)+$|^UTC$/;
+const REGION_TIMEZONE = /^[A-Za-z_]+(?:\/[A-Za-z0-9_+.-]+)+$/;
+const FIXED_TIMEZONE = /^(?:(?:UTC|GMT|UT))?([+-])(\d{2}):(\d{2})$/;
 const EVENT_TYPES = new Set([
   "activity",
   "communication",
@@ -39,6 +40,16 @@ function exactKeys(value: Record<string, unknown>, required: readonly string[]):
 
 function codePoints(value: string): number {
   return [...value].length;
+}
+
+function isSupportedTimezone(value: unknown): value is string {
+  if (typeof value !== "string" || value.length === 0 || value.length > 80) return false;
+  if (value === "UTC" || value === "GMT" || value === "UT" || REGION_TIMEZONE.test(value)) return true;
+  const fixed = FIXED_TIMEZONE.exec(value);
+  if (!fixed) return false;
+  const hours = Number(fixed[2]);
+  const minutes = Number(fixed[3]);
+  return minutes <= 59 && (hours < 18 || (hours === 18 && minutes === 0));
 }
 
 function requireId(value: unknown): string {
@@ -141,7 +152,7 @@ export function validateRequest(value: unknown): DaySummaryRequest {
   if (typeof value.local_date !== "string" || !LOCAL_DATE.test(value.local_date)) {
     throw new GatewayError("INVALID_REQUEST");
   }
-  if (typeof value.timezone !== "string" || !TIMEZONE.test(value.timezone)) {
+  if (!isSupportedTimezone(value.timezone)) {
     throw new GatewayError("INVALID_REQUEST");
   }
   if (!Array.isArray(value.events)) throw new GatewayError("INVALID_REQUEST");

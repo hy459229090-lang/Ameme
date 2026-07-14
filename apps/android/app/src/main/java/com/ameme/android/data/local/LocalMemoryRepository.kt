@@ -5,11 +5,16 @@ import com.ameme.android.data.FakeMemoryRepository
 import com.ameme.android.data.MemoryRepository
 import com.ameme.android.domain.CaptureKind
 import com.ameme.android.domain.DayGroup
+import com.ameme.android.domain.DaySummarySnapshot
+import com.ameme.android.domain.EvidenceState
+import com.ameme.android.domain.EventType
 import com.ameme.android.domain.FactStatus
 import com.ameme.android.domain.MemoryEvent
 import com.ameme.android.domain.MemoryPage
 import com.ameme.android.domain.SourceCaptureRequest
 import com.ameme.android.domain.SourceLocator
+import com.ameme.android.domain.Sensitivity
+import com.ameme.android.data.transport.AgentLocalNodeIdempotencyRegistry
 import com.ameme.android.domain.PendingSourceLocatorRelease
 import java.net.URI
 import java.io.File
@@ -24,6 +29,26 @@ class LocalMemoryRepository(
 ) : MemoryRepository {
     override fun loadActiveEvents(): List<MemoryEvent> = database.readActive()
 
+    override fun loadDaySummary(localDate: LocalDate): DaySummarySnapshot = database.readDaySummary(localDate)
+
+    override fun beginDaySummary(localDate: LocalDate, expectedLedgerRevision: Int): DaySummarySnapshot =
+        database.beginDaySummary(localDate, expectedLedgerRevision)
+
+    override fun completeDaySummary(
+        localDate: LocalDate,
+        expectedLedgerRevision: Int,
+        text: String,
+        modelOrRuleVersion: String,
+    ): DaySummarySnapshot = database.completeDaySummary(
+        localDate,
+        expectedLedgerRevision,
+        text,
+        modelOrRuleVersion,
+    )
+
+    override fun failDaySummary(localDate: LocalDate, expectedLedgerRevision: Int): DaySummarySnapshot =
+        database.failDaySummary(localDate, expectedLedgerRevision)
+
     override fun capture(kind: CaptureKind, text: String): MemoryEvent {
         val userDescription = text.trim()
         require(kind == CaptureKind.Text) { "Only explicit text capture is available" }
@@ -34,10 +59,14 @@ class LocalMemoryRepository(
             time = LocalTime.now(clock).withSecond(0).withNano(0),
             title = userDescription.take(24),
             detail = "用户原话已先保存在加密本机节点；整理尚未完成。",
-            factStatus = FactStatus.Processing,
+            factStatus = FactStatus.UserAsserted,
             sourceLabel = "用户文字",
             isLocalOnly = true,
             userWords = userDescription.ifEmpty { null },
+            eventType = EventType.Experience,
+            evidenceState = EvidenceState.UserAsserted,
+            sensitivity = Sensitivity.Personal,
+            importance = 50,
         )
         return database.insertCaptured(event)
     }
@@ -74,6 +103,10 @@ class LocalMemoryRepository(
             sourceLabel = request.sourceKind.name,
             isLocalOnly = true,
             userWords = request.userWords?.trim()?.take(16_384)?.ifEmpty { null },
+            eventType = request.eventType,
+            evidenceState = request.evidenceState,
+            sensitivity = request.sensitivity,
+            importance = request.importance.coerceIn(0, 100),
         )
     }
 
@@ -97,6 +130,9 @@ class LocalMemoryRepository(
         database.markSourceLocatorReleased(eventId)
 
     override fun close() = database.close()
+
+    internal fun durableAgentIdempotencyRegistry(): AgentLocalNodeIdempotencyRegistry =
+        AgentLocalNodeIdempotencyRegistry(database::resolveAgentIdempotency)
 
     companion object {
         const val DATABASE_NAME = "ameme-local-events.db"

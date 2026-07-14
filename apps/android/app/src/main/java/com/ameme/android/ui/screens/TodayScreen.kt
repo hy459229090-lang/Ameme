@@ -22,7 +22,9 @@ import androidx.compose.material.icons.outlined.PhotoCamera
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.HorizontalDivider
@@ -50,6 +52,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.ameme.android.domain.CaptureKind
+import com.ameme.android.domain.DaySummarySnapshot
+import com.ameme.android.domain.DaySummaryState
 import com.ameme.android.domain.ExperienceMode
 import com.ameme.android.domain.FactStatus
 import com.ameme.android.domain.MemoryEvent
@@ -64,6 +68,8 @@ import kotlinx.coroutines.launch
 @Composable
 fun TodayScreen(
     events: List<MemoryEvent>,
+    daySummary: DaySummarySnapshot,
+    summaryInFlight: Boolean,
     experienceMode: ExperienceMode,
     persistenceError: String?,
     onSearch: () -> Unit,
@@ -76,8 +82,11 @@ fun TodayScreen(
     onRequestVoiceSelection: () -> Unit,
     onRequestCalendar: () -> Unit,
     onCapture: suspend (CaptureKind, String) -> Boolean,
+    onGenerateSummary: suspend () -> Boolean,
 ) {
     var showCapture by remember { mutableStateOf(false) }
+    var showSummaryConsent by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
     val today = LocalDate.now()
     val allToday = events.filter { it.localDate == today }.sortedBy { it.time }
     val visibleToday = when (experienceMode) {
@@ -169,8 +178,12 @@ fun TodayScreen(
                         VerificationPrompt(eventTitle = event.title)
                     }
                 }
-                if (visibleToday.count { it.factStatus != FactStatus.Processing } >= 2) {
-                    item { DeterministicDayStatus(visibleToday) }
+                item {
+                    DaySummarySection(
+                        snapshot = daySummary,
+                        inFlight = summaryInFlight,
+                        onGenerate = { showSummaryConsent = true },
+                    )
                 }
             }
         }
@@ -204,6 +217,37 @@ fun TodayScreen(
             },
         )
     }
+
+    if (showSummaryConsent) {
+        AlertDialog(
+            onDismissRequest = { if (!summaryInFlight) showSummaryConsent = false },
+            title = { Text("生成今日小结？") },
+            text = {
+                Text(
+                    "将把今天已保存的结构化事件发送到推理服务。不会上传照片、音频原文件、SourceLocator 或搜索记录；事件仍以本机加密库为准。",
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (!summaryInFlight) {
+                            scope.launch {
+                                onGenerateSummary()
+                                showSummaryConsent = false
+                            }
+                        }
+                    },
+                    enabled = !summaryInFlight,
+                ) { Text(if (summaryInFlight) "正在生成…" else "同意并生成") }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    onClick = { showSummaryConsent = false },
+                    enabled = !summaryInFlight,
+                ) { Text("取消") }
+            },
+        )
+    }
 }
 
 @Composable
@@ -222,18 +266,69 @@ private fun VerificationPrompt(eventTitle: String) {
 }
 
 @Composable
-private fun DeterministicDayStatus(events: List<MemoryEvent>) {
-    val processingCount = events.count { it.factStatus == FactStatus.Processing }
+private fun DaySummarySection(
+    snapshot: DaySummarySnapshot,
+    inFlight: Boolean,
+    onGenerate: () -> Unit,
+) {
     Column(Modifier.fillMaxWidth().padding(top = 28.dp, bottom = 12.dp)) {
         HorizontalDivider()
-        Text("今日状态", modifier = Modifier.padding(top = 18.dp), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         Text(
-            "本机当前可见 ${events.size} 条记录，其中 $processingCount 条仍在整理；当前版本尚未生成 AI 小结。",
-            modifier = Modifier.padding(top = 8.dp),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            "今日小结",
+            modifier = Modifier.padding(top = 18.dp),
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
         )
-        Text("基于当前本机投影的确定性计数", modifier = Modifier.padding(top = 8.dp), style = MaterialTheme.typography.labelSmall)
+        when {
+            inFlight || snapshot.state == DaySummaryState.Processing -> {
+                Row(
+                    modifier = Modifier.padding(top = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.height(22.dp))
+                    Text("正在基于本日结构化事件生成…")
+                }
+            }
+            snapshot.state == DaySummaryState.Insufficient -> {
+                Text(
+                    "当前可用于小结的已确认、用户陈述或计划事件不足 2 条；继续记录即可，不会生成空泛模板。",
+                    modifier = Modifier.padding(top = 8.dp),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            snapshot.summary != null -> {
+                if (snapshot.state == DaySummaryState.Stale) {
+                    Text(
+                        "底层事件已变化，下面是旧版小结。刷新前不会把它当作当前结果。",
+                        modifier = Modifier.padding(top = 8.dp),
+                        color = MaterialTheme.colorScheme.tertiary,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                Text(
+                    snapshot.summary.text,
+                    modifier = Modifier.padding(top = 8.dp),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                OutlinedButton(
+                    onClick = onGenerate,
+                    modifier = Modifier.padding(top = 12.dp),
+                ) { Text(if (snapshot.state == DaySummaryState.Stale) "刷新小结" else "重新生成") }
+            }
+            else -> {
+                Text(
+                    "可按需生成 2–3 行摘要；它只读取今天的结构化事件，不读取照片或音频原文件。",
+                    modifier = Modifier.padding(top = 8.dp),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Button(onClick = onGenerate, modifier = Modifier.padding(top = 12.dp)) {
+                    Text("生成 AI 小结")
+                }
+            }
+        }
     }
 }
 

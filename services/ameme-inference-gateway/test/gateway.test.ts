@@ -78,6 +78,20 @@ test("event, byte and output budgets fail closed", async () => {
   await expectCode("INPUT_LIMIT_EXCEEDED", () => gateway.summarizeDay(tooLarge));
 });
 
+test("Android and region timezone identifiers are accepted while invalid offsets fail closed", async () => {
+  const gateway = new InferenceGateway(new DeterministicFakeProvider(), { timeoutMs: 1_000 });
+  for (const timezone of ["GMT", "UTC", "UT", "+08:00", "GMT+08:00", "Asia/Shanghai", "Etc/GMT-8"]) {
+    const result = await gateway.summarizeDay({ ...syntheticRequest(), timezone });
+    assert.equal(result.ledger_revision, 7);
+  }
+  for (const timezone of ["", "GMT+18:01", "+17:99", "+99:00", "not a timezone"]) {
+    await expectCode(
+      "INVALID_REQUEST",
+      () => gateway.summarizeDay({ ...syntheticRequest(), timezone }),
+    );
+  }
+});
+
 test("timeout, malformed output and provider budget excess fail closed", async () => {
   const timeoutProvider: InferenceProvider = {
     async generate(_request, signal) {

@@ -7,6 +7,8 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.ameme.android.data.FakeMemoryRepository
 import com.ameme.android.data.MemoryRepository
 import com.ameme.android.domain.SourceCaptureRequest
+import com.ameme.android.domain.EvidenceState
+import com.ameme.android.domain.FactStatus
 import com.ameme.android.domain.LocatorPermissionState
 import com.ameme.android.domain.SourceKind
 import java.time.Clock
@@ -37,6 +39,8 @@ class AndroidSourceCaptureInstrumentedTest {
         assertEquals(SourceKind.SharedText, parsed?.sourceKind)
         assertEquals("合成用户原话", parsed?.title)
         assertEquals("合成用户原话", parsed?.userWords)
+        assertEquals(FactStatus.UserAsserted, parsed?.factStatus)
+        assertEquals(EvidenceState.UserAsserted, parsed?.evidenceState)
         assertNull(parser.parse(Intent(intent).putExtra(Intent.EXTRA_TEXT, "   ")) { _, _ -> error("unused") })
         assertNull(parser.parse(Intent(intent).putExtra(Intent.EXTRA_TEXT, "x".repeat(16_385))) { _, _ -> error("unused") })
     }

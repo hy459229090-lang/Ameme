@@ -2,6 +2,9 @@ package com.ameme.android.data.transport
 
 import com.ameme.android.data.MemoryRepository
 import com.ameme.android.domain.FactStatus
+import com.ameme.android.domain.EventType
+import com.ameme.android.domain.EvidenceState
+import com.ameme.android.domain.Sensitivity
 import com.ameme.android.domain.SourceCaptureRequest
 import com.ameme.android.domain.SourceKind
 import java.math.BigInteger
@@ -160,6 +163,9 @@ class MemoryRepositoryAgentLocalNodeEndpoint private constructor(
                         factStatus = factStatus,
                         localDate = eventTimestamp.toLocalDate(),
                         time = eventTimestamp.toLocalTime(),
+                        eventType = EventType.entries.first { it.wireValue == command.eventType },
+                        evidenceState = EvidenceState.entries.first { it.wireValue == command.evidenceState },
+                        sensitivity = Sensitivity.entries.first { it.wireValue == command.sensitivity },
                     ),
                 )
                 AgentLocalNodeCaptureOutcome(eventId = event.id, revision = FIRST_REVISION)
@@ -334,6 +340,7 @@ internal data class AgentLocalNodeCreateEventResult(
 @OptIn(ExperimentalSerializationApi::class)
 internal object AgentLocalNodeApplicationCodec {
     private const val MAX_CANONICAL_PAYLOAD_BYTES = 32_768
+    private const val MAX_REQUEST_BYTES = 65_536
     private val json = Json {
         ignoreUnknownKeys = false
         explicitNulls = false
@@ -419,6 +426,65 @@ internal object AgentLocalNodeApplicationCodec {
         )
     }
 
+    fun decodeCreateEventRequestEnvelope(bytes: ByteArray): AgentLocalNodeRequest {
+        require(bytes.isNotEmpty() && bytes.size <= MAX_REQUEST_BYTES) { "request envelope is too large" }
+        val text = decodeUtf8(bytes)
+        StrictJsonScanner(text).validate()
+        val root = json.parseToJsonElement(text) as? JsonObject
+            ?: throw IllegalArgumentException("request envelope must be an object")
+        require(root.keys == setOf("protocol_version", "request_id", "control", "payload")) {
+            "request envelope fields are invalid"
+        }
+        val canonical = canonicalBytes(root)
+        try {
+            require(MessageDigest.isEqual(bytes, canonical)) { "request envelope is not canonical JSON" }
+        } finally {
+            canonical.fill(0)
+        }
+        val protocolVersion = root.string("protocol_version")
+        val requestId = root.string("request_id")
+        require(protocolVersion == AgentLocalNodeControl.PROTOCOL_VERSION)
+        val controlElement = root["control"] as? JsonObject
+            ?: throw IllegalArgumentException("control must be an object")
+        require(
+            controlElement.keys == setOf(
+                "caller_id",
+                "grant_id",
+                "purpose",
+                "spaces",
+                "memory_types",
+                "operation",
+                "idempotency_slot",
+                "payload_digest",
+            ),
+        ) { "control fields are invalid" }
+        val spaces = controlElement.sortedStrings("spaces")
+        val memoryTypes = controlElement.sortedStrings("memory_types")
+        val payloadElement = root["payload"] as? JsonObject
+            ?: throw IllegalArgumentException("payload must be an object")
+        val payload = json.decodeFromJsonElement<AgentLocalNodeCreateEventPayload>(payloadElement)
+        val payloadBytes = encodeCreateEvent(payload)
+        return try {
+            AgentLocalNodeRequest(
+                AgentLocalNodeControl(
+                    protocolVersion = protocolVersion,
+                    requestId = requestId,
+                    callerId = controlElement.string("caller_id"),
+                    grantId = controlElement.string("grant_id"),
+                    purpose = controlElement.string("purpose"),
+                    spaces = spaces.toSet(),
+                    memoryTypes = memoryTypes.toSet(),
+                    operation = controlElement.string("operation"),
+                    idempotencySlot = controlElement.string("idempotency_slot"),
+                    payloadDigest = controlElement.string("payload_digest"),
+                ),
+                payloadBytes,
+            )
+        } finally {
+            payloadBytes.fill(0)
+        }
+    }
+
     /** Canonical six-field response envelope encoder for shared Kotlin conformance tests. */
     fun encodeResponseEnvelope(response: AgentLocalNodeResponse): ByteArray {
         val result = if (response.status == AgentLocalNodeStatus.Ok) {
@@ -468,6 +534,27 @@ internal object AgentLocalNodeApplicationCodec {
         "sha256_" + MessageDigest.getInstance("SHA-256").digest(bytes).toHex()
 
     private fun canonicalBytes(element: JsonElement): ByteArray = canonicalText(element).encodeToByteArray()
+
+    private fun JsonObject.string(key: String): String {
+        val primitive = get(key) as? JsonPrimitive
+            ?: throw IllegalArgumentException("$key must be a string")
+        require(primitive.isString) { "$key must be a string" }
+        return primitive.content
+    }
+
+    private fun JsonObject.sortedStrings(key: String): List<String> {
+        val array = get(key) as? JsonArray ?: throw IllegalArgumentException("$key must be an array")
+        val values = array.map { element ->
+            val primitive = element as? JsonPrimitive
+                ?: throw IllegalArgumentException("$key must contain strings")
+            require(primitive.isString) { "$key must contain strings" }
+            primitive.content
+        }
+        require(values.isNotEmpty() && values == values.distinct().sortedWith(::compareUnicodeCodePoints)) {
+            "$key must be sorted and unique"
+        }
+        return values
+    }
 
     private fun sortedStringArray(values: Set<String>): JsonArray = buildJsonArray {
         values.sortedWith(::compareUnicodeCodePoints).forEach { add(JsonPrimitive(it)) }

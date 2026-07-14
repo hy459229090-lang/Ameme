@@ -20,6 +20,7 @@ class AndroidLocalNodeApplicationRequest internal constructor(
     val requestId: String,
     val operation: String,
     val sequence: Long,
+    val idempotencyRef: String,
     applicationLine: ByteArray,
 ) : Closeable {
     private val applicationBytes = applicationLine.copyOf()
@@ -215,6 +216,7 @@ class SingleConnectionTlsLocalNodeListener(
                     requestId = frame.requestId,
                     operation = frame.operation,
                     sequence = frame.sequence,
+                    idempotencyRef = frame.idempotencyRef,
                     applicationLine = applicationLine,
                 )
                 applicationLine.fill(0)

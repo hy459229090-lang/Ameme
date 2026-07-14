@@ -1,9 +1,9 @@
-# Ameme MVP 本地存储、同步与删除协议 v0.5
+# Ameme MVP 本地存储、同步与删除协议 v0.6
 
 > 文档状态：已接受；MVP 存储/同步/删除实现正本，达成情况待 Spike\
 > 更新日期：2026-07-14\
 > 上游：`MVP领域契约与状态机.md`、`../../packages/contracts/schemas/ameme-domain.schema.json`、`../decisions/ADR-005-MVP技术实现默认栈.md`\
-> 实现基线：Android 固定官方 `net.zetetic:sqlcipher-android:4.15.0` + SQLite WAL；SourceLocator v5、可回退 FTS5、异步 I/O、Calendar/Voice 显式来源和 10k/100k 已形成 API 36 x86_64 AVD 证据。应用私有 Raw Vault AES-256-GCM、iOS、LAN append-only peer sync、真机、16 KB 与 UI 性能仍待验证。官方来源：<https://github.com/sqlcipher/sqlcipher-android>、<https://central.sonatype.com/artifact/net.zetetic/sqlcipher-android/4.15.0>。
+> 实现基线：Android 固定官方 `net.zetetic:sqlcipher-android:4.15.0` + SQLite WAL；schema v6 的 SourceLocator、DayLedger/Summary、Agent 持久幂等、可回退 FTS5、异步 I/O、Calendar/Voice 显式来源和 10k/100k 已形成 API 36 x86_64 AVD 证据。应用私有 Raw Vault AES-256-GCM、iOS、LAN append-only peer sync、真机、16 KB 与 UI 性能仍待验证。官方来源：<https://github.com/sqlcipher/sqlcipher-android>、<https://central.sonatype.com/artifact/net.zetetic/sqlcipher-android/4.15.0>。
 
 ## 1. 设备内逻辑分区
 
@@ -158,7 +158,7 @@ Deletion planner 从 target 沿 lineage 计算：Raw、SourceObject、Observatio
 
 ## 9. Android 本地 Event 最小切片达成边界
 
-2026-07-14 的 Android 切片已经实现并在 API 36 x86_64 AVD 验证：注入式 `DatabaseKeyProvider`、Keystore AES-256-GCM 包裹随机数据库 key、SQLCipher WAL、数据库 trigger 强制 `event_revisions` 禁止 UPDATE/DELETE、`events_current` 投影、Repository 显式绑定 `space_id`、commit 后再展示、tombstone 后重建仍不可见，以及 v1→v2 Revision backfill、v2→v3 `space_legacy` 隔离、v3→v4 `source_locators` 和 v4→v5 来源实例迁移。跨空间相同 Event ID 可共存且不可互读/互删。错误密钥被拒绝，主库文件头不是明文 SQLite header；SQLCipher/应用日志不输出正文或 key。Compose 的 open/read/write/search/来源访问和授权清理由统一 I/O 边界执行，取消后的 open 不泄漏 repository，重组也不会提前关闭当前实例。
+2026-07-14 的 Android 切片已经实现并在 API 36 x86_64 AVD 验证：注入式 `DatabaseKeyProvider`、Keystore AES-256-GCM 包裹随机数据库 key、SQLCipher WAL、数据库 trigger 强制 `event_revisions` 禁止 UPDATE/DELETE、`events_current` 投影、Repository 显式绑定 `space_id`、commit 后再展示、tombstone 后重建仍不可见，以及 v1→v2 Revision backfill、v2→v3 `space_legacy` 隔离、v3→v4 `source_locators`、v4→v5 来源实例和 v5→v6 Event policy/DayLedger/Summary/Agent 幂等迁移。跨空间相同 Event ID 可共存且不可互读/互删。错误密钥被拒绝，主库文件头不是明文 SQLite header；SQLCipher/应用日志不输出正文或 key。Compose 的 open/read/write/search/来源访问和授权清理由统一 I/O 边界执行，取消后的 open 不泄漏 repository，重组也不会提前关闭当前实例。
 
 `source_locators` 只在 SQLCipher 内保存 `content://` URI、MIME、来源、访问模式、生命周期和可选来源实例键，不复制照片/PDF/音频原始内容。Event revision、current projection 和 locator 在同一事务写入；用户取消 Photo Picker/系统录音/音频选择、空输入、无读取授权、非 `content://`、多项或非白名单 ACTION_SEND 不产生 Event。语音只接受系统返回的音频引用，不申请麦克风权限，也不生成转写或占位正文。Calendar 只在用户显式选择可见 calendar IDs 和 1/7/31 日窗口后读取 Provider；物理游标行数有硬限，全天日期不受本地时区漂移，同一 active instance 跨批次/重启幂等，且始终写为 `Planned` 而不是已发生事实。
 
@@ -170,7 +170,7 @@ Recall 已增加不透明 keyset cursor 和日期分页。被测 SQLCipher 运�
 
 Android 清单同时保持 `allowBackup=false`，`data-extraction-rules` 对 cloud backup 和 device transfer 显式排除 root/file/database/sharedpref/external 及四个 device-protected data domain；编译后 XML 资源由设备测试核对。该配置用于避免 SQLCipher DB 和 wrapped-key blob 被系统备份或 D2D 搬迁，仍需后续厂商/真机矩阵验证：<https://developer.android.com/identity/data/autobackup>。
 
-Agent 本地应用层已接入同一个 SQLCipher repository：`ameme.agent-local-node.v1` 的 `create_event` 在 separately verified session、最小请求 scope、sensitivity/data class 授权、canonical payload digest 和注入式原子幂等检查通过后，只创建初始 Revision `1`；设备测试证明写入在关闭并重建 repository 后仍可读。生产 endpoint 默认关闭，测试 registry 不跨进程重启；append revision、undo、持久幂等、LAN/NSD、认证、加密和真实宿主均不在这条证据内。
+Agent 本地应用层已接入同一个 SQLCipher repository：`ameme.agent-local-node.v1` 的 `create_event` 只创建初始 Revision `1`；配对 TLS 1.3/certificate pin/HMAC/session/sequence 通道验证后，Android 以 pairing 为当前 MVP 信任根，继续约束单一 Personal space、Event 类型、结构化数据和受支持 operation。幂等槽与 Event 在同一 SQLCipher transaction 中提交，关闭重建后同内容重放原结果、异内容冲突。API 36 AVD 的真实 Host smoke 证明 Event 不是由 ADB 注入，Today 可见且 App 重启后仍存在。共享账户 Grant registry、append/undo/recall、LAN/NSD、后台与物理设备仍不在这条证据内。
 
 该证据仅关闭“最小本地 Event 闭环可运行”的实现问题，没有关闭完整协议或 DB-01：
 
@@ -179,8 +179,8 @@ Agent 本地应用层已接入同一个 SQLCipher repository：`ameme.agent-loca
 - 当前删除是追加 tombstone 并更新本机投影，尚未实现物理清除、影响图、peer ack 和删除证明；
 - SourceLocator 目前覆盖 Photo Picker/ACTION_SEND/Calendar/Voice 元数据、实例幂等和授权生命周期，未覆盖可用性复核、fingerprint、Raw Vault 或跨设备行为；
 - Raw Vault、durable job/outbox、完整 lineage/审计和 LAN sync 尚未进入该切片；
-- Agent `create_event` 仅完成应用层到 repository 的 capture-only 接合；生产认证/加密/发现、跨重启幂等、append/undo 和真实宿主仍待实现；
-- v1→v2→v3→v4→v5 已验证成功迁移与 legacy space 回填，但故障注入、加密快照和失败回滚仍属于 MIG-01。
+- Agent `create_event` 已完成配对 Host→TLS/HMAC→Android→SQLCipher 的模拟器纵向闭环；共享账户 Grant、NSD/物理 LAN、后台、append/undo/recall 和真实第三方宿主仍待实现；
+- v1→v2→v3→v4→v5→v6 已验证成功迁移与 legacy space 回填，但故障注入、加密快照和失败回滚仍属于 MIG-01。
 
 ## 10. 必须执行的 Spike
 

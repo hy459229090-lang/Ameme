@@ -2,6 +2,8 @@ package com.ameme.android.data
 
 import com.ameme.android.domain.CaptureKind
 import com.ameme.android.domain.DayGroup
+import com.ameme.android.domain.DaySummarySnapshot
+import com.ameme.android.domain.DaySummaryState
 import com.ameme.android.domain.MemoryEvent
 import com.ameme.android.domain.MemoryPage
 import com.ameme.android.domain.SearchBackend
@@ -13,6 +15,22 @@ import java.time.LocalDate
 /** Fail-closed UI adapter used only when the encrypted repository cannot be opened. */
 class UnavailableMemoryRepository : MemoryRepository {
     override fun loadActiveEvents(): List<MemoryEvent> = emptyList()
+
+    override fun loadDaySummary(localDate: LocalDate): DaySummarySnapshot =
+        DaySummarySnapshot(localDate, 0, emptyList(), DaySummaryState.Insufficient)
+
+    override fun beginDaySummary(localDate: LocalDate, expectedLedgerRevision: Int): DaySummarySnapshot =
+        throw IllegalStateException("Encrypted local repository is unavailable")
+
+    override fun completeDaySummary(
+        localDate: LocalDate,
+        expectedLedgerRevision: Int,
+        text: String,
+        modelOrRuleVersion: String,
+    ): DaySummarySnapshot = throw IllegalStateException("Encrypted local repository is unavailable")
+
+    override fun failDaySummary(localDate: LocalDate, expectedLedgerRevision: Int): DaySummarySnapshot =
+        loadDaySummary(localDate)
 
     override fun capture(kind: CaptureKind, text: String): MemoryEvent =
         throw IllegalStateException("Encrypted local repository is unavailable")

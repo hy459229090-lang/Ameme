@@ -2,10 +2,16 @@ package com.ameme.android.data
 
 import com.ameme.android.domain.CaptureKind
 import com.ameme.android.domain.DayGroup
+import com.ameme.android.domain.DaySummary
+import com.ameme.android.domain.DaySummarySnapshot
+import com.ameme.android.domain.DaySummaryState
+import com.ameme.android.domain.EvidenceState
+import com.ameme.android.domain.EventType
 import com.ameme.android.domain.FactStatus
 import com.ameme.android.domain.MemoryEvent
 import com.ameme.android.domain.MemoryPage
 import com.ameme.android.domain.SearchBackend
+import com.ameme.android.domain.Sensitivity
 import com.ameme.android.domain.SourceCaptureRequest
 import com.ameme.android.domain.SourceLocator
 import com.ameme.android.domain.PendingSourceLocatorRelease
@@ -14,6 +20,7 @@ import java.time.Clock
 import java.time.LocalDate
 import java.time.LocalTime
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.UUID
 
 /**
  * Process-local synthetic repository for the UI skeleton.
@@ -27,6 +34,8 @@ class FakeMemoryRepository(
     private val locators = mutableMapOf<String, SourceLocator>()
     private val pendingReleases = mutableMapOf<String, PendingSourceLocatorRelease>()
     private val activeSourceInstances = mutableMapOf<String, String>()
+    private val summaries = mutableMapOf<LocalDate, DaySummary>()
+    private val ledgerRevisions = mutableMapOf<LocalDate, Int>()
 
     fun seedEvents(): List<MemoryEvent> {
         val today = LocalDate.now(clock)
@@ -92,6 +101,57 @@ class FakeMemoryRepository(
 
     override fun loadActiveEvents(): List<MemoryEvent> = events.toList()
 
+    override fun loadDaySummary(localDate: LocalDate): DaySummarySnapshot {
+        val dayEvents = events.filter { it.localDate == localDate }
+        val revision = ledgerRevisions.getOrPut(localDate) { if (dayEvents.isEmpty()) 0 else 1 }
+        val summary = summaries[localDate]
+        val state = when {
+            dayEvents.count {
+                it.sensitivity != Sensitivity.Restricted &&
+                    it.factStatus in setOf(FactStatus.Confirmed, FactStatus.UserAsserted, FactStatus.Planned)
+            } < 2 -> DaySummaryState.Insufficient
+            summary == null -> DaySummaryState.Absent
+            summary.basedOnLedgerRevision == revision -> summary.state
+            else -> DaySummaryState.Stale
+        }
+        return DaySummarySnapshot(localDate, revision, dayEvents, state, summary)
+    }
+
+    override fun beginDaySummary(localDate: LocalDate, expectedLedgerRevision: Int): DaySummarySnapshot {
+        val snapshot = loadDaySummary(localDate)
+        require(snapshot.ledgerRevision == expectedLedgerRevision) { "Day ledger revision changed" }
+        if (snapshot.eligibleEvents.size < 2) return snapshot.copy(state = DaySummaryState.Insufficient)
+        return snapshot.copy(state = DaySummaryState.Processing)
+    }
+
+    override fun completeDaySummary(
+        localDate: LocalDate,
+        expectedLedgerRevision: Int,
+        text: String,
+        modelOrRuleVersion: String,
+    ): DaySummarySnapshot {
+        require(text.isNotBlank() && text.length <= 4_000) { "Summary text is invalid" }
+        val current = loadDaySummary(localDate)
+        if (current.ledgerRevision != expectedLedgerRevision) return current.copy(state = DaySummaryState.Stale)
+        val summary = DaySummary(
+            id = "sum_${UUID.randomUUID()}",
+            localDate = localDate,
+            basedOnLedgerRevision = expectedLedgerRevision,
+            text = text,
+            state = DaySummaryState.Ready,
+            modelOrRuleVersion = modelOrRuleVersion,
+            createdAtEpochMillis = clock.millis(),
+        )
+        summaries[localDate] = summary
+        return current.copy(state = DaySummaryState.Ready, summary = summary)
+    }
+
+    override fun failDaySummary(localDate: LocalDate, expectedLedgerRevision: Int): DaySummarySnapshot {
+        val current = loadDaySummary(localDate)
+        val state = if (current.summary == null) DaySummaryState.Absent else DaySummaryState.Stale
+        return current.copy(state = state)
+    }
+
     override fun capture(kind: CaptureKind, text: String): MemoryEvent {
         val now = LocalTime.now(clock).withSecond(0).withNano(0)
         val userDescription = text.trim()
@@ -103,11 +163,12 @@ class FakeMemoryRepository(
             time = now,
             title = userDescription.take(24),
             detail = "用户原话已先保存在本机；合成整理尚未完成。",
-            factStatus = FactStatus.Processing,
+            factStatus = FactStatus.UserAsserted,
             sourceLabel = "用户文字",
             isLocalOnly = true,
             userWords = userDescription.ifEmpty { null },
         ).also(events::add)
+            .also { ledgerRevisions.merge(it.localDate, 1, Int::plus) }
     }
 
     override fun captureSource(request: SourceCaptureRequest): MemoryEvent {
@@ -139,10 +200,15 @@ class FakeMemoryRepository(
                 sourceLabel = request.sourceKind.name,
                 isLocalOnly = true,
                 userWords = request.userWords?.trim()?.ifEmpty { null },
+                eventType = request.eventType,
+                evidenceState = request.evidenceState,
+                sensitivity = request.sensitivity,
+                importance = request.importance.coerceIn(0, 100),
             ) to request
         }
         captured.forEach { (event, request) ->
             events.add(event)
+            ledgerRevisions.merge(event.localDate, 1, Int::plus)
             request.locatorUri?.let { uri ->
                 locators[event.id] = SourceLocator(uri, request.locatorPermissionState)
             }
@@ -186,13 +252,20 @@ class FakeMemoryRepository(
             }
     }
 
-    override fun deleteEvent(eventId: String): Boolean = events.removeAll { it.id == eventId }.also { deleted ->
+    override fun deleteEvent(eventId: String): Boolean {
+        val deletedDate = events.firstOrNull { it.id == eventId }?.localDate
+        return events.removeAll { it.id == eventId }.also { deleted ->
         if (deleted) {
             val locator = locators.remove(eventId)
             activeSourceInstances.remove(eventId)
             if (locator?.permissionState == LocatorPermissionState.PersistedRead) {
                 pendingReleases[eventId] = PendingSourceLocatorRelease(eventId, locator.uri)
             }
+            deletedDate?.let {
+                ledgerRevisions.merge(it, 1, Int::plus)
+                summaries.remove(it)
+            }
+        }
         }
     }
 

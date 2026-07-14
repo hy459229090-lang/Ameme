@@ -21,8 +21,12 @@ android {
     }
 
     buildTypes {
+        debug {
+            buildConfigField("String", "AMEME_INFERENCE_BASE_URL", "\"http://10.0.2.2:8787\"")
+        }
         release {
             isMinifyEnabled = false
+            buildConfigField("String", "AMEME_INFERENCE_BASE_URL", "\"\"")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
@@ -37,6 +41,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     testOptions {

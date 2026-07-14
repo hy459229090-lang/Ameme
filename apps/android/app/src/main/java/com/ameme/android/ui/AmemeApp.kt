@@ -5,6 +5,7 @@ import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.provider.MediaStore
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -14,6 +15,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -30,6 +32,15 @@ import com.ameme.android.data.UnavailableMemoryRepository
 import com.ameme.android.data.runCatchingCancellable
 import com.ameme.android.data.local.LocalEventDatabase
 import com.ameme.android.data.local.LocalMemoryRepository
+import com.ameme.android.data.summary.DaySummaryClient
+import com.ameme.android.data.summary.DaySummaryClientException
+import com.ameme.android.data.summary.HttpDaySummaryClient
+import com.ameme.android.data.summary.InstallationSubjectRef
+import com.ameme.android.data.transport.AgentLocalNodeRuntime
+import com.ameme.android.data.transport.AgentLocalNodeRuntimeState
+import com.ameme.android.data.transport.AgentPairingManager
+import com.ameme.android.data.transport.AgentPairingMaterial
+import com.ameme.android.data.transport.CreatedAgentPairing
 import com.ameme.android.data.source.ContentUriGrantResolver
 import com.ameme.android.data.source.AndroidCalendarProviderDataSource
 import com.ameme.android.data.source.CalendarImportCancellation
@@ -44,6 +55,8 @@ import com.ameme.android.data.source.SourceGrantCleanupCoordinator
 import com.ameme.android.data.source.VoiceCaptureCoordinator
 import com.ameme.android.data.source.VoiceCaptureOrigin
 import com.ameme.android.domain.CaptureKind
+import com.ameme.android.domain.DaySummarySnapshot
+import com.ameme.android.domain.DaySummaryState
 import com.ameme.android.domain.ExperienceMode
 import com.ameme.android.domain.SourceCaptureRequest
 import com.ameme.android.ui.screens.DeleteScreen
@@ -75,18 +88,47 @@ private object Routes {
 @Composable
 fun AmemeApp(
     repositoryOverride: MemoryRepository? = null,
+    summaryClientOverride: DaySummaryClient? = null,
     incomingShare: SourceCaptureRequest? = null,
     onIncomingShareConsumed: () -> Unit = {},
 ) {
     val navController = rememberNavController()
     val appContext = LocalContext.current.applicationContext
+    val onboardingPreferences = remember(appContext) {
+        appContext.getSharedPreferences("ameme_onboarding", android.content.Context.MODE_PRIVATE)
+    }
+    val startDestination = remember(repositoryOverride, onboardingPreferences) {
+        if (repositoryOverride == null && onboardingPreferences.getBoolean("completed", false)) {
+            Routes.Today
+        } else {
+            Routes.Onboarding
+        }
+    }
     val scope = rememberCoroutineScope()
     val ioExecutor = remember { MemoryIoExecutor() }
+    val pairingManager = remember(appContext) { AgentPairingManager(appContext) }
     val unavailableRepository = remember { UnavailableMemoryRepository() }
     var repository by remember(repositoryOverride) { mutableStateOf(repositoryOverride) }
     val uiRepository = repository ?: unavailableRepository
     val events = remember { mutableStateListOf<com.ameme.android.domain.MemoryEvent>() }
+    var daySummary by remember {
+        mutableStateOf(
+            DaySummarySnapshot(LocalDate.now(), 0, emptyList(), DaySummaryState.Insufficient),
+        )
+    }
+    var summaryInFlight by remember { mutableStateOf(false) }
+    val summaryClient = remember(summaryClientOverride) {
+        summaryClientOverride ?: com.ameme.android.BuildConfig.AMEME_INFERENCE_BASE_URL
+            .takeIf(String::isNotBlank)
+            ?.let(::HttpDaySummaryClient)
+    }
     var persistenceError by remember { mutableStateOf<String?>(null) }
+    var agentPairingMaterial by remember { mutableStateOf<AgentPairingMaterial?>(null) }
+    var createdAgentPairing by remember { mutableStateOf<CreatedAgentPairing?>(null) }
+    var agentRuntime by remember { mutableStateOf<AgentLocalNodeRuntime?>(null) }
+    var agentRuntimeState by remember { mutableStateOf(AgentLocalNodeRuntimeState.Stopped) }
+    var pairingInFlight by remember { mutableStateOf(false) }
+    var pairingGeneration by remember { mutableIntStateOf(0) }
     var experienceModeName by rememberSaveable {
         mutableStateOf(if (repositoryOverride == null) ExperienceMode.Loading.name else ExperienceMode.Ready.name)
     }
@@ -105,6 +147,7 @@ fun AmemeApp(
             currentCoroutineContext().ensureActive()
             events.clear()
             events.addAll(restored)
+            daySummary = ioExecutor.loadDaySummary(readyRepository, LocalDate.now())
             unclaimedRepository = null
             repository = readyRepository
             persistenceError = null
@@ -133,6 +176,56 @@ fun AmemeApp(
         onDispose {
             ownedRepository?.let(ioExecutor::closeInBackground)
         }
+    }
+    LaunchedEffect(repository, pairingGeneration) {
+        agentRuntime?.close()
+        agentRuntime = null
+        agentRuntimeState = AgentLocalNodeRuntimeState.Stopped
+        val localRepository = repository as? LocalMemoryRepository
+        if (localRepository == null) {
+            agentPairingMaterial = null
+            return@LaunchedEffect
+        }
+        val activeAndFactory = ioExecutor.runSourceIo {
+            val active = pairingManager.loadActive() ?: return@runSourceIo null
+            try {
+                active to pairingManager.sslServerSocketFactory()
+            } catch (failure: Throwable) {
+                active.close()
+                throw failure
+            }
+        }
+        if (activeAndFactory == null) {
+            agentPairingMaterial = null
+            return@LaunchedEffect
+        }
+        val (active, socketFactory) = activeAndFactory
+        agentPairingMaterial = active.material
+        agentRuntime = try {
+            AgentLocalNodeRuntime.launch(
+                repository = localRepository,
+                pairing = active,
+                sslServerSocketFactory = socketFactory,
+                onStateChanged = { state -> scope.launch { agentRuntimeState = state } },
+                onEventPersisted = {
+                    scope.launch {
+                        val restored = ioExecutor.loadActiveEvents(localRepository)
+                        events.clear()
+                        events.addAll(restored)
+                        daySummary = ioExecutor.loadDaySummary(localRepository, LocalDate.now())
+                    }
+                },
+            )
+        } catch (failure: Throwable) {
+            active.close()
+            agentRuntimeState = AgentLocalNodeRuntimeState.RecoverableError
+            persistenceError = "Agent 配对已保存，但本机监听暂时无法启动。"
+            null
+        }
+    }
+    DisposableEffect(agentRuntime) {
+        val ownedRuntime = agentRuntime
+        onDispose { ownedRuntime?.close() }
     }
     val experienceMode = ExperienceMode.valueOf(experienceModeName)
     val uriGrantResolver = remember(appContext) { ContentUriGrantResolver(appContext.contentResolver) }
@@ -190,7 +283,12 @@ fun AmemeApp(
             voiceCaptureGate.complete()
             voiceCaptureInFlight = false
             result.onSuccess { event ->
-                if (event != null) events.add(event)
+                if (event != null) {
+                    events.add(event)
+                    repository?.let { ready ->
+                        daySummary = ioExecutor.loadDaySummary(ready, LocalDate.now())
+                    }
+                }
                 persistenceError = null
             }.onFailure {
                 persistenceError = "语音引用尚未保存；系统未返回可读音频或本机写入失败。"
@@ -260,7 +358,12 @@ fun AmemeApp(
             scope.launch {
                 runCatchingCancellable { ioExecutor.runSourceIo { photoCoordinator.capture(uri) } }
                     .onSuccess { event ->
-                        if (event != null) events.add(event)
+                        if (event != null) {
+                            events.add(event)
+                            repository?.let { ready ->
+                                daySummary = ioExecutor.loadDaySummary(ready, LocalDate.now())
+                            }
+                        }
                         persistenceError = null
                     }
                     .onFailure { persistenceError = "照片引用尚未保存；本机加密节点写入失败，请重试。" }
@@ -285,6 +388,7 @@ fun AmemeApp(
             runCatchingCancellable { ioExecutor.captureSource(readyRepository, incomingShare) }
                 .onSuccess {
                     events.add(it)
+                    daySummary = ioExecutor.loadDaySummary(readyRepository, LocalDate.now())
                     persistenceError = null
                 }
                 .onFailure { persistenceError = "分享内容尚未保存；请返回来源后重新分享。" }
@@ -294,11 +398,14 @@ fun AmemeApp(
 
     NavHost(
         navController = navController,
-        startDestination = Routes.Onboarding,
+        startDestination = startDestination,
     ) {
         composable(Routes.Onboarding) {
             OnboardingScreen(
                 onContinue = {
+                    if (repositoryOverride == null) {
+                        onboardingPreferences.edit().putBoolean("completed", true).apply()
+                    }
                     navController.navigate(Routes.Today) {
                         popUpTo(Routes.Onboarding) { inclusive = true }
                     }
@@ -308,6 +415,8 @@ fun AmemeApp(
         composable(Routes.Today) {
             TodayScreen(
                 events = events,
+                daySummary = daySummary,
+                summaryInFlight = summaryInFlight,
                 experienceMode = experienceMode,
                 onSearch = { navController.navigate(Routes.Search) },
                 onSettings = { navController.navigate(Routes.Settings) },
@@ -368,12 +477,73 @@ fun AmemeApp(
                         runCatchingCancellable { ioExecutor.capture(readyRepository, kind, text) }
                             .onSuccess {
                                 events.add(it)
+                                daySummary = ioExecutor.loadDaySummary(readyRepository, LocalDate.now())
                                 persistenceError = null
                             }
                             .onFailure {
                                 persistenceError = "记录尚未保存；本机加密节点写入失败，请重试。"
                             }
                             .isSuccess
+                    }
+                },
+                onGenerateSummary = {
+                    val readyRepository = repository
+                    val client = summaryClient
+                    if (readyRepository == null) {
+                        persistenceError = "本机加密节点仍在打开，请稍后重试。"
+                        false
+                    } else if (client == null) {
+                        persistenceError = "AI 小结服务尚未配置；今天的事件仍完整保存在本机。"
+                        false
+                    } else if (summaryInFlight) {
+                        false
+                    } else {
+                        summaryInFlight = true
+                        val result = runCatchingCancellable {
+                            val fresh = ioExecutor.loadDaySummary(readyRepository, LocalDate.now())
+                            val processing = ioExecutor.beginDaySummary(
+                                readyRepository,
+                                fresh.localDate,
+                                fresh.ledgerRevision,
+                            )
+                            daySummary = processing
+                            val subjectRef = ioExecutor.runSourceIo {
+                                InstallationSubjectRef.getOrCreate(appContext)
+                            }
+                            val generated = ioExecutor.generateDaySummary(
+                                client,
+                                processing,
+                                subjectRef,
+                                ZoneId.systemDefault(),
+                            )
+                            ioExecutor.completeDaySummary(
+                                readyRepository,
+                                processing.localDate,
+                                processing.ledgerRevision,
+                                generated.text,
+                                generated.modelOrRuleVersion,
+                            )
+                        }
+                        if (result.isSuccess) {
+                            daySummary = result.getOrThrow()
+                            persistenceError = null
+                        } else {
+                            val safeCode = when (result.exceptionOrNull()) {
+                                is DaySummaryClientException -> (result.exceptionOrNull() as DaySummaryClientException).code
+                                is IllegalArgumentException -> "CLIENT_PRECONDITION"
+                                is IllegalStateException -> "LOCAL_STATE"
+                                else -> "UNEXPECTED"
+                            }
+                            Log.w("AmemeDaySummary", "generation_failed code=$safeCode")
+                            daySummary = ioExecutor.failDaySummary(
+                                readyRepository,
+                                daySummary.localDate,
+                                daySummary.ledgerRevision,
+                            )
+                            persistenceError = "AI 小结暂时没有生成；已记录事件未丢失，也没有改用模板冒充结果。"
+                        }
+                        summaryInFlight = false
+                        result.isSuccess
                     }
                 },
             )
@@ -388,10 +558,59 @@ fun AmemeApp(
             )
         }
         composable(Routes.Settings) {
+            val agentPairingDetail = when {
+                agentPairingMaterial == null -> "未配对"
+                agentRuntimeState == AgentLocalNodeRuntimeState.Listening -> "已配对 · 等待 Agent 连接"
+                agentRuntimeState == AgentLocalNodeRuntimeState.ConnectionHandled -> "已配对 · 最近连接成功"
+                agentRuntimeState == AgentLocalNodeRuntimeState.RecoverableError -> "已配对 · 监听暂不可用"
+                else -> "已配对 · 正在启动"
+            }
             SettingsScreen(
                 selectedMode = experienceMode,
                 onModeSelected = { experienceModeName = it.name },
                 onBack = navController::popBackStack,
+                showExperienceControls = repositoryOverride != null,
+                agentPairingDetail = agentPairingDetail,
+                pairingInFlight = pairingInFlight,
+                pairingJson = createdAgentPairing?.pairingJson(),
+                pairingSecret = createdAgentPairing?.oneTimeSecret,
+                onCreateAgentPairing = {
+                    if (!pairingInFlight) {
+                        pairingInFlight = true
+                        scope.launch {
+                            runCatchingCancellable {
+                                ioExecutor.runSourceIo { pairingManager.create() }
+                            }.onSuccess { created ->
+                                createdAgentPairing = created
+                                agentPairingMaterial = created.material
+                                pairingGeneration += 1
+                                persistenceError = null
+                            }.onFailure {
+                                persistenceError = "Agent 配对创建失败；没有生成或显示不完整的密钥。"
+                            }
+                            pairingInFlight = false
+                        }
+                    }
+                },
+                onRevokeAgentPairing = {
+                    if (!pairingInFlight) {
+                        pairingInFlight = true
+                        agentRuntime?.close()
+                        agentRuntime = null
+                        scope.launch {
+                            runCatchingCancellable { ioExecutor.runSourceIo { pairingManager.revoke() } }
+                                .onSuccess {
+                                    agentPairingMaterial = null
+                                    createdAgentPairing = null
+                                    pairingGeneration += 1
+                                    persistenceError = null
+                                }
+                                .onFailure { persistenceError = "Agent 配对撤销尚未完成，请重试。" }
+                            pairingInFlight = false
+                        }
+                    }
+                },
+                onDismissPairingSecret = { createdAgentPairing = null },
             )
         }
         composable(
@@ -423,6 +642,7 @@ fun AmemeApp(
                     }
                     if (deleted) {
                         events.removeAll { it.id == eventId }
+                        daySummary = ioExecutor.loadDaySummary(requireNotNull(readyRepository), LocalDate.now())
                         persistenceError = runCatchingCancellable {
                             ioExecutor.retrySourceGrantCleanup(grantCleanupCoordinator)
                         }
@@ -481,6 +701,9 @@ fun AmemeApp(
                         calendarCancellation = null
                         result.onSuccess { imported ->
                             events.addAll(imported)
+                            repository?.let { ready ->
+                                daySummary = ioExecutor.loadDaySummary(ready, LocalDate.now())
+                            }
                             calendarDialogCalendars = null
                             persistenceError = null
                         }.onFailure { error ->

@@ -2,6 +2,11 @@ package com.ameme.android.data.local
 
 import android.content.ContentValues
 import com.ameme.android.domain.FactStatus
+import com.ameme.android.domain.DaySummary
+import com.ameme.android.domain.DaySummarySnapshot
+import com.ameme.android.domain.DaySummaryState
+import com.ameme.android.domain.EvidenceState
+import com.ameme.android.domain.EventType
 import com.ameme.android.domain.MemoryEvent
 import com.ameme.android.domain.MemoryPage
 import com.ameme.android.domain.SearchBackend
@@ -9,6 +14,10 @@ import com.ameme.android.domain.SourceCaptureRequest
 import com.ameme.android.domain.SourceLocator
 import com.ameme.android.domain.LocatorPermissionState
 import com.ameme.android.domain.PendingSourceLocatorRelease
+import com.ameme.android.domain.Sensitivity
+import com.ameme.android.data.transport.AgentLocalNodeCaptureOutcome
+import com.ameme.android.data.transport.AgentLocalNodeIdempotencyBinding
+import com.ameme.android.data.transport.AgentLocalNodeIdempotencyResult
 import java.nio.charset.StandardCharsets
 import java.io.Closeable
 import java.io.File
@@ -33,6 +42,7 @@ class LocalEventDatabase private constructor(
                 appendRevision(event, reason = "synthetic_seed", state = STATE_ACTIVE)
                 refreshSearchIndex(event, STATE_ACTIVE)
             }
+            events.map(MemoryEvent::localDate).toSet().forEach(::touchDayLedger)
         }
     }
 
@@ -42,6 +52,7 @@ class LocalEventDatabase private constructor(
         appendRevision(event, reason = "capture", state = STATE_ACTIVE)
         source?.let { insertSourceLocator(event.id, it) }
         refreshSearchIndex(event, STATE_ACTIVE)
+        touchDayLedger(event.localDate)
         event
     }
 
@@ -53,6 +64,7 @@ class LocalEventDatabase private constructor(
             appendNewRevision(event, reason = "capture_batch", state = STATE_ACTIVE)
             insertSearchIndex(event)
         }
+        events.map(MemoryEvent::localDate).toSet().forEach(::touchDayLedger)
         events.size
     }
 
@@ -68,6 +80,7 @@ class LocalEventDatabase private constructor(
             refreshSearchIndex(event, STATE_ACTIVE)
             inserted += event
         }
+        inserted.map(MemoryEvent::localDate).toSet().forEach(::touchDayLedger)
         inserted
     }
 
@@ -116,7 +129,8 @@ class LocalEventDatabase private constructor(
         val rows = database.rawQuery(
             """
                 SELECT e.event_id, e.local_date, e.local_time, e.title, e.detail, e.fact_status,
-                       e.source_label, e.is_local_only, e.user_words, e.updated_at
+                       e.source_label, e.is_local_only, e.user_words, e.revision, e.event_type,
+                       e.evidence_state, e.sensitivity, e.importance, e.updated_at
                 FROM $from
                 WHERE ${where.joinToString(" AND ")}
                 ORDER BY e.local_date DESC, COALESCE(e.local_time, '') DESC, e.updated_at DESC, e.event_id DESC
@@ -129,7 +143,7 @@ class LocalEventDatabase private constructor(
                     add(
                         EventRow(
                             event = cursorResult.toMemoryEvent(),
-                            updatedAt = cursorResult.getLong(9),
+                            updatedAt = cursorResult.getLong(14),
                         ),
                     )
                 }
@@ -158,7 +172,8 @@ class LocalEventDatabase private constructor(
         return database.rawQuery(
             """
                 SELECT event_id, local_date, local_time, title, detail, fact_status,
-                       source_label, is_local_only, user_words
+                       source_label, is_local_only, user_words, revision, event_type,
+                       evidence_state, sensitivity, importance
                 FROM events_current
                 WHERE ${where.joinToString(" AND ")}
                 ORDER BY local_date DESC, local_time DESC, updated_at DESC
@@ -178,6 +193,11 @@ class LocalEventDatabase private constructor(
                             sourceLabel = cursor.getString(6),
                             isLocalOnly = cursor.getInt(7) == 1,
                             userWords = if (cursor.isNull(8)) null else cursor.getString(8),
+                            revision = cursor.getInt(9),
+                            eventType = EventType.valueOf(cursor.getString(10)),
+                            evidenceState = EvidenceState.valueOf(cursor.getString(11)),
+                            sensitivity = Sensitivity.valueOf(cursor.getString(12)),
+                            importance = cursor.getInt(13),
                         ),
                     )
                 }
@@ -208,6 +228,7 @@ class LocalEventDatabase private constructor(
                 STATE_ACTIVE,
             ),
         )
+        clearSummaryAfterDeletion(current.event.localDate)
         true
     }
 
@@ -357,6 +378,209 @@ class LocalEventDatabase private constructor(
         }
     }
 
+    fun readDaySummary(localDate: LocalDate): DaySummarySnapshot {
+        val events = readActive(date = localDate)
+        val ledger = database.rawQuery(
+            "SELECT revision, summary_state FROM day_ledgers WHERE space_id = ? AND local_date = ?",
+            arrayOf(spaceId, localDate.toString()),
+        ).use { cursor ->
+            if (cursor.moveToFirst()) {
+                cursor.getInt(0) to DaySummaryState.valueOf(cursor.getString(1))
+            } else {
+                0 to DaySummaryState.Absent
+            }
+        }
+        val summary = database.rawQuery(
+            """
+                SELECT summary_id, based_on_revision, text, state, model_or_rule_version, created_at
+                FROM day_summaries WHERE space_id = ? AND local_date = ?
+            """.trimIndent(),
+            arrayOf(spaceId, localDate.toString()),
+        ).use { cursor ->
+            if (!cursor.moveToFirst()) null else DaySummary(
+                id = cursor.getString(0),
+                localDate = localDate,
+                basedOnLedgerRevision = cursor.getInt(1),
+                text = cursor.getString(2),
+                state = DaySummaryState.valueOf(cursor.getString(3)),
+                modelOrRuleVersion = cursor.getString(4),
+                createdAtEpochMillis = cursor.getLong(5),
+            )
+        }
+        val effectiveState = when {
+            events.count(::isSummaryEligible) < MIN_SUMMARY_EVENTS -> DaySummaryState.Insufficient
+            summary != null && summary.basedOnLedgerRevision != ledger.first -> DaySummaryState.Stale
+            else -> ledger.second
+        }
+        return DaySummarySnapshot(
+            localDate = localDate,
+            ledgerRevision = ledger.first,
+            events = events,
+            state = effectiveState,
+            summary = summary?.copy(state = if (effectiveState == DaySummaryState.Stale) DaySummaryState.Stale else summary.state),
+        )
+    }
+
+    fun beginDaySummary(localDate: LocalDate, expectedLedgerRevision: Int): DaySummarySnapshot = inTransaction {
+        require(expectedLedgerRevision >= 1) { "Day ledger revision must be positive" }
+        val snapshot = readDaySummary(localDate)
+        require(snapshot.ledgerRevision == expectedLedgerRevision) { "Day ledger revision changed" }
+        if (snapshot.eligibleEvents.size < MIN_SUMMARY_EVENTS) {
+            database.execSQL(
+                "UPDATE day_ledgers SET summary_state = ?, updated_at = ? WHERE space_id = ? AND local_date = ? AND revision = ?",
+                arrayOf<Any>(
+                    DaySummaryState.Insufficient.name,
+                    System.currentTimeMillis(),
+                    spaceId,
+                    localDate.toString(),
+                    expectedLedgerRevision,
+                ),
+            )
+            return@inTransaction snapshot.copy(state = DaySummaryState.Insufficient)
+        }
+        check(
+            database.update(
+                "day_ledgers",
+                ContentValues().apply {
+                    put("summary_state", DaySummaryState.Processing.name)
+                    put("updated_at", System.currentTimeMillis())
+                },
+                "space_id = ? AND local_date = ? AND revision = ?",
+                arrayOf(spaceId, localDate.toString(), expectedLedgerRevision.toString()),
+            ) == 1,
+        ) { "Day ledger revision changed" }
+        snapshot.copy(state = DaySummaryState.Processing)
+    }
+
+    fun completeDaySummary(
+        localDate: LocalDate,
+        expectedLedgerRevision: Int,
+        text: String,
+        modelOrRuleVersion: String,
+    ): DaySummarySnapshot = inTransaction {
+        val normalizedText = text.trim()
+        require(normalizedText.isNotEmpty() && normalizedText.length <= 4_000) { "Summary text is invalid" }
+        require(modelOrRuleVersion.isNotBlank() && modelOrRuleVersion.length <= 256) {
+            "Summary model version is invalid"
+        }
+        val snapshot = readDaySummary(localDate)
+        if (snapshot.ledgerRevision != expectedLedgerRevision || snapshot.state != DaySummaryState.Processing) {
+            return@inTransaction snapshot.copy(state = DaySummaryState.Stale)
+        }
+        val now = System.currentTimeMillis()
+        val summary = DaySummary(
+            id = "sum_${UUID.randomUUID()}",
+            localDate = localDate,
+            basedOnLedgerRevision = expectedLedgerRevision,
+            text = normalizedText,
+            state = DaySummaryState.Ready,
+            modelOrRuleVersion = modelOrRuleVersion,
+            createdAtEpochMillis = now,
+        )
+        database.insertWithOnConflict(
+            "day_summaries",
+            null,
+            ContentValues().apply {
+                put("space_id", spaceId)
+                put("local_date", localDate.toString())
+                put("summary_id", summary.id)
+                put("based_on_revision", expectedLedgerRevision)
+                put("text", normalizedText)
+                put("state", DaySummaryState.Ready.name)
+                put("model_or_rule_version", modelOrRuleVersion)
+                put("created_at", now)
+            },
+            SQLiteDatabase.CONFLICT_REPLACE,
+        )
+        check(
+            database.update(
+                "day_ledgers",
+                ContentValues().apply {
+                    put("summary_state", DaySummaryState.Ready.name)
+                    put("updated_at", now)
+                },
+                "space_id = ? AND local_date = ? AND revision = ?",
+                arrayOf(spaceId, localDate.toString(), expectedLedgerRevision.toString()),
+            ) == 1,
+        ) { "Day ledger revision changed" }
+        snapshot.copy(state = DaySummaryState.Ready, summary = summary)
+    }
+
+    fun failDaySummary(localDate: LocalDate, expectedLedgerRevision: Int): DaySummarySnapshot = inTransaction {
+        val hasSummary = database.rawQuery(
+            "SELECT 1 FROM day_summaries WHERE space_id = ? AND local_date = ?",
+            arrayOf(spaceId, localDate.toString()),
+        ).use { it.moveToFirst() }
+        val fallback = if (hasSummary) DaySummaryState.Stale else DaySummaryState.Absent
+        val updated = database.update(
+            "day_ledgers",
+            ContentValues().apply {
+                put("summary_state", fallback.name)
+                put("updated_at", System.currentTimeMillis())
+            },
+            "space_id = ? AND local_date = ? AND revision = ?",
+            arrayOf(spaceId, localDate.toString(), expectedLedgerRevision.toString()),
+        )
+        val current = readDaySummary(localDate)
+        if (updated == 1) current.copy(state = fallback) else current
+    }
+
+    internal fun resolveAgentIdempotency(
+        binding: AgentLocalNodeIdempotencyBinding,
+        payloadDigest: String,
+        capture: () -> AgentLocalNodeCaptureOutcome,
+    ): AgentLocalNodeIdempotencyResult = inTransaction {
+        require(payloadDigest.matches(Regex("sha256_[0-9a-f]{64}"))) { "payload digest is invalid" }
+        val args = arrayOf(
+            binding.callerId,
+            binding.grantId,
+            binding.purpose,
+            binding.spaceId,
+            binding.memoryType,
+            binding.operation,
+            binding.slot,
+        )
+        val existing = database.rawQuery(
+            """
+                SELECT payload_digest, event_id, revision
+                FROM agent_idempotency
+                WHERE caller_id = ? AND grant_id = ? AND purpose = ? AND space_id = ?
+                  AND memory_type = ? AND operation = ? AND slot = ?
+            """.trimIndent(),
+            args,
+        ).use { cursor ->
+            if (!cursor.moveToFirst()) null else Triple(cursor.getString(0), cursor.getString(1), cursor.getInt(2))
+        }
+        if (existing != null) {
+            return@inTransaction if (existing.first == payloadDigest) {
+                AgentLocalNodeIdempotencyResult.Applied(
+                    AgentLocalNodeCaptureOutcome(existing.second, existing.third),
+                )
+            } else {
+                AgentLocalNodeIdempotencyResult.Conflict
+            }
+        }
+        val outcome = capture()
+        database.insertOrThrow(
+            "agent_idempotency",
+            null,
+            ContentValues().apply {
+                put("caller_id", binding.callerId)
+                put("grant_id", binding.grantId)
+                put("purpose", binding.purpose)
+                put("space_id", binding.spaceId)
+                put("memory_type", binding.memoryType)
+                put("operation", binding.operation)
+                put("slot", binding.slot)
+                put("payload_digest", payloadDigest)
+                put("event_id", outcome.eventId)
+                put("revision", outcome.revision)
+                put("created_at", System.currentTimeMillis())
+            },
+        )
+        AgentLocalNodeIdempotencyResult.Applied(outcome)
+    }
+
     private fun checkNoExistingEvents(eventIds: List<String>) {
         eventIds.chunked(BATCH_EXISTENCE_CHECK_SIZE).forEach { chunk ->
             val placeholders = chunk.joinToString(",") { "?" }
@@ -370,6 +594,8 @@ class LocalEventDatabase private constructor(
     }
 
     private fun eventValues(event: MemoryEvent, state: String) = ContentValues().apply {
+        require(event.revision >= 1) { "Event revision must be positive" }
+        require(event.importance in 0..100) { "Event importance must be between 0 and 100" }
         put("local_date", event.localDate.toString())
         if (event.time == null) putNull("local_time") else put("local_time", event.time.toString())
         put("title", event.title)
@@ -378,6 +604,10 @@ class LocalEventDatabase private constructor(
         put("source_label", event.sourceLabel)
         put("is_local_only", if (event.isLocalOnly) 1 else 0)
         if (event.userWords == null) putNull("user_words") else put("user_words", event.userWords)
+        put("event_type", event.eventType.name)
+        put("evidence_state", event.evidenceState.name)
+        put("sensitivity", event.sensitivity.name)
+        put("importance", event.importance)
         put("state", state)
         put("space_id", spaceId)
     }
@@ -387,7 +617,8 @@ class LocalEventDatabase private constructor(
         return database.rawQuery(
             """
                 SELECT revision_head_id, revision, event_id, local_date, local_time, title, detail,
-                       fact_status, source_label, is_local_only, user_words
+                       fact_status, source_label, is_local_only, user_words, event_type,
+                       evidence_state, sensitivity, importance
                 FROM events_current WHERE event_id = ? AND space_id = ?$stateClause
             """.trimIndent(),
             arrayOf(eventId, spaceId),
@@ -406,6 +637,11 @@ class LocalEventDatabase private constructor(
                     sourceLabel = cursor.getString(8),
                     isLocalOnly = cursor.getInt(9) == 1,
                     userWords = if (cursor.isNull(10)) null else cursor.getString(10),
+                    revision = cursor.getInt(1),
+                    eventType = EventType.valueOf(cursor.getString(11)),
+                    evidenceState = EvidenceState.valueOf(cursor.getString(12)),
+                    sensitivity = Sensitivity.valueOf(cursor.getString(13)),
+                    importance = cursor.getInt(14),
                 ),
             )
         }
@@ -508,7 +744,62 @@ class LocalEventDatabase private constructor(
         sourceLabel = getString(6),
         isLocalOnly = getInt(7) == 1,
         userWords = if (isNull(8)) null else getString(8),
+        revision = getInt(9),
+        eventType = EventType.valueOf(getString(10)),
+        evidenceState = EvidenceState.valueOf(getString(11)),
+        sensitivity = Sensitivity.valueOf(getString(12)),
+        importance = getInt(13),
     )
+
+    private fun touchDayLedger(localDate: LocalDate) {
+        val now = System.currentTimeMillis()
+        database.execSQL(
+            """
+                INSERT INTO day_ledgers(space_id, local_date, revision, summary_state, updated_at)
+                VALUES (?, ?, 1, ?, ?)
+                ON CONFLICT(space_id, local_date) DO UPDATE SET
+                    revision = day_ledgers.revision + 1,
+                    summary_state = CASE
+                        WHEN day_ledgers.summary_state IN (?, ?, ?) THEN ?
+                        ELSE ?
+                    END,
+                    updated_at = excluded.updated_at
+            """.trimIndent(),
+            arrayOf<Any>(
+                spaceId,
+                localDate.toString(),
+                DaySummaryState.Absent.name,
+                now,
+                DaySummaryState.Ready.name,
+                DaySummaryState.Processing.name,
+                DaySummaryState.Stale.name,
+                DaySummaryState.Stale.name,
+                DaySummaryState.Absent.name,
+            ),
+        )
+    }
+
+    private fun clearSummaryAfterDeletion(localDate: LocalDate) {
+        database.delete("day_summaries", "space_id = ? AND local_date = ?", arrayOf(spaceId, localDate.toString()))
+        val eligibleCount = readActive(date = localDate).count(::isSummaryEligible)
+        val state = if (eligibleCount < MIN_SUMMARY_EVENTS) DaySummaryState.Insufficient else DaySummaryState.Absent
+        val now = System.currentTimeMillis()
+        database.execSQL(
+            """
+                INSERT INTO day_ledgers(space_id, local_date, revision, summary_state, updated_at)
+                VALUES (?, ?, 1, ?, ?)
+                ON CONFLICT(space_id, local_date) DO UPDATE SET
+                    revision = day_ledgers.revision + 1,
+                    summary_state = excluded.summary_state,
+                    updated_at = excluded.updated_at
+            """.trimIndent(),
+            arrayOf<Any>(spaceId, localDate.toString(), state.name, now),
+        )
+    }
+
+    private fun isSummaryEligible(event: MemoryEvent): Boolean =
+        event.sensitivity != Sensitivity.Restricted &&
+            event.factStatus in setOf(FactStatus.Confirmed, FactStatus.UserAsserted, FactStatus.Planned)
 
     private fun encodeCursor(row: EventRow): String {
         val payload = listOf(
@@ -533,6 +824,7 @@ class LocalEventDatabase private constructor(
     }
 
     private inline fun <T> inTransaction(block: () -> T): T {
+        if (database.inTransaction()) return block()
         database.beginTransaction()
         return try {
             val result = block()
@@ -559,7 +851,7 @@ class LocalEventDatabase private constructor(
     )
 
     companion object {
-        const val SCHEMA_VERSION = 5
+        const val SCHEMA_VERSION = 6
         const val STATE_ACTIVE = "ACTIVE"
         const val STATE_DELETED = "DELETED"
         const val DEFAULT_SPACE_ID = "space_personal"
@@ -617,7 +909,11 @@ class LocalEventDatabase private constructor(
                     createSourceLocatorTable(database)
                     recordMigration(database, 4, "create_v4_source_locators")
                     migrateSourceLocatorInstances(database)
-                    recordMigration(database, SCHEMA_VERSION, "create_v5_source_instance_identity")
+                    recordMigration(database, 5, "create_v5_source_instance_identity")
+                    addEventProjectionColumns(database)
+                    createDaySummaryTables(database)
+                    backfillDayLedgers(database)
+                    recordMigration(database, SCHEMA_VERSION, "create_v6_event_policy_and_day_summary")
                     database.version = SCHEMA_VERSION
                 }
                 1 -> {
@@ -625,17 +921,24 @@ class LocalEventDatabase private constructor(
                     migrateV2ToV3(database)
                     migrateV3ToV4(database)
                     migrateV4ToV5(database)
+                    migrateV5ToV6(database)
                 }
                 2 -> {
                     migrateV2ToV3(database)
                     migrateV3ToV4(database)
                     migrateV4ToV5(database)
+                    migrateV5ToV6(database)
                 }
                 3 -> {
                     migrateV3ToV4(database)
                     migrateV4ToV5(database)
+                    migrateV5ToV6(database)
                 }
-                4 -> migrateV4ToV5(database)
+                4 -> {
+                    migrateV4ToV5(database)
+                    migrateV5ToV6(database)
+                }
+                5 -> migrateV5ToV6(database)
                 SCHEMA_VERSION -> Unit
                 else -> error("Unsupported local event schema version ${database.version}")
             }
@@ -719,7 +1022,15 @@ class LocalEventDatabase private constructor(
 
         private fun migrateV4ToV5(database: SQLiteDatabase) = inMigration(database) {
             migrateSourceLocatorInstances(database)
-            recordMigration(database, SCHEMA_VERSION, "migrate_v4_to_v5_source_instance_identity")
+            recordMigration(database, 5, "migrate_v4_to_v5_source_instance_identity")
+            database.version = 5
+        }
+
+        private fun migrateV5ToV6(database: SQLiteDatabase) = inMigration(database) {
+            addEventProjectionColumns(database)
+            createDaySummaryTables(database)
+            backfillDayLedgers(database)
+            recordMigration(database, SCHEMA_VERSION, "migrate_v5_to_v6_event_policy_and_day_summary")
             database.version = SCHEMA_VERSION
         }
 
@@ -741,6 +1052,10 @@ class LocalEventDatabase private constructor(
                     source_label TEXT NOT NULL,
                     is_local_only INTEGER NOT NULL,
                     user_words TEXT,
+                    event_type TEXT NOT NULL DEFAULT 'Experience',
+                    evidence_state TEXT NOT NULL DEFAULT 'UserAsserted',
+                    sensitivity TEXT NOT NULL DEFAULT 'Personal',
+                    importance INTEGER NOT NULL DEFAULT 50,
                     state TEXT NOT NULL,
                     updated_at INTEGER NOT NULL,
                     PRIMARY KEY(space_id, event_id)
@@ -764,6 +1079,10 @@ class LocalEventDatabase private constructor(
                     source_label TEXT NOT NULL,
                     is_local_only INTEGER NOT NULL,
                     user_words TEXT,
+                    event_type TEXT NOT NULL DEFAULT 'Experience',
+                    evidence_state TEXT NOT NULL DEFAULT 'UserAsserted',
+                    sensitivity TEXT NOT NULL DEFAULT 'Personal',
+                    importance INTEGER NOT NULL DEFAULT 50,
                     state TEXT NOT NULL,
                     created_at INTEGER NOT NULL,
                     UNIQUE(event_id, revision)
@@ -840,6 +1159,87 @@ class LocalEventDatabase private constructor(
                     CREATE UNIQUE INDEX IF NOT EXISTS idx_source_locators_active_instance
                     ON source_locators(space_id, source_kind, locator_uri, source_instance_key)
                     WHERE state = '$STATE_ACTIVE' AND source_instance_key IS NOT NULL
+                """.trimIndent(),
+            )
+        }
+
+        private fun addEventProjectionColumns(database: SQLiteDatabase) {
+            listOf("events_current", "event_revisions").forEach { table ->
+                if (!hasColumn(database, table, "event_type")) {
+                    database.execSQL("ALTER TABLE $table ADD COLUMN event_type TEXT NOT NULL DEFAULT 'Experience'")
+                }
+                if (!hasColumn(database, table, "evidence_state")) {
+                    database.execSQL("ALTER TABLE $table ADD COLUMN evidence_state TEXT NOT NULL DEFAULT 'UserAsserted'")
+                }
+                if (!hasColumn(database, table, "sensitivity")) {
+                    database.execSQL("ALTER TABLE $table ADD COLUMN sensitivity TEXT NOT NULL DEFAULT 'Personal'")
+                }
+                if (!hasColumn(database, table, "importance")) {
+                    database.execSQL("ALTER TABLE $table ADD COLUMN importance INTEGER NOT NULL DEFAULT 50")
+                }
+            }
+        }
+
+        private fun createDaySummaryTables(database: SQLiteDatabase) {
+            database.execSQL(
+                """
+                    CREATE TABLE IF NOT EXISTS day_ledgers (
+                        space_id TEXT NOT NULL,
+                        local_date TEXT NOT NULL,
+                        revision INTEGER NOT NULL,
+                        summary_state TEXT NOT NULL,
+                        updated_at INTEGER NOT NULL,
+                        PRIMARY KEY(space_id, local_date)
+                    )
+                """.trimIndent(),
+            )
+            database.execSQL(
+                """
+                    CREATE TABLE IF NOT EXISTS day_summaries (
+                        space_id TEXT NOT NULL,
+                        local_date TEXT NOT NULL,
+                        summary_id TEXT NOT NULL,
+                        based_on_revision INTEGER NOT NULL,
+                        text TEXT NOT NULL,
+                        state TEXT NOT NULL,
+                        model_or_rule_version TEXT NOT NULL,
+                        created_at INTEGER NOT NULL,
+                        PRIMARY KEY(space_id, local_date),
+                        FOREIGN KEY(space_id, local_date) REFERENCES day_ledgers(space_id, local_date)
+                    )
+                """.trimIndent(),
+            )
+            database.execSQL(
+                "CREATE INDEX IF NOT EXISTS idx_day_ledgers_space_date ON day_ledgers(space_id, local_date)",
+            )
+            database.execSQL(
+                """
+                    CREATE TABLE IF NOT EXISTS agent_idempotency (
+                        caller_id TEXT NOT NULL,
+                        grant_id TEXT NOT NULL,
+                        purpose TEXT NOT NULL,
+                        space_id TEXT NOT NULL,
+                        memory_type TEXT NOT NULL,
+                        operation TEXT NOT NULL,
+                        slot TEXT NOT NULL,
+                        payload_digest TEXT NOT NULL,
+                        event_id TEXT NOT NULL,
+                        revision INTEGER NOT NULL,
+                        created_at INTEGER NOT NULL,
+                        PRIMARY KEY(caller_id, grant_id, purpose, space_id, memory_type, operation, slot)
+                    )
+                """.trimIndent(),
+            )
+        }
+
+        private fun backfillDayLedgers(database: SQLiteDatabase) {
+            database.execSQL(
+                """
+                    INSERT OR IGNORE INTO day_ledgers(space_id, local_date, revision, summary_state, updated_at)
+                    SELECT space_id, local_date, 1, '${DaySummaryState.Absent.name}', MAX(updated_at)
+                    FROM events_current
+                    WHERE state = '$STATE_ACTIVE'
+                    GROUP BY space_id, local_date
                 """.trimIndent(),
             )
         }
@@ -966,6 +1366,7 @@ class LocalEventDatabase private constructor(
             .joinToString(" AND ") { token -> "\"${token.replace("\"", "\"\"")}\"" }
 
         private const val MAX_SEARCH_TERMS = 16
+        private const val MIN_SUMMARY_EVENTS = 2
 
     }
 }

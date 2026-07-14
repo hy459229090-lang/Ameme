@@ -5,12 +5,12 @@
 
 ## 当前阶段
 
-- 生命周期：Discovery Gate 仍在补证，MVP 工程实现进行中；M1–M6 全面研发获批，当前已集成契约、参考 Core/Raw/队列、同步、Agent↔Core 测试适配、R0 AI/固定评测与 Android 加密 Local Event Node/显式来源切片。
+- 生命周期：Discovery Gate 仍在补证，MVP 工程实现进行中；M1–M6 全面研发获批，当前已集成契约、参考 Core/Raw/队列、同步、R0 AI/固定评测，以及 Android 加密 Local Event Node、显式来源、配对 Agent 写入和结构化今日小结。
 - 当前 Gate：Gate 1 `hold`。产品主链已改为 DayLedger 事件覆盖优先；桌面 Spike 和 FORMALdoc 只能证明专业来源，通用来源与正式用户证据仍不足。
 - 产品 MVP：`今天` 为唯一默认主页，单悬浮记录按钮展开文字/语音/照片/导入，右上搜索进入统一历史日流；数据稀疏是默认状态。品牌为简洁、高效、安静、可信、流畅；双端使用原生控件。
-- Agent：统一 `ameme-memory` Skill 与本地 MCP Mock 已形成六模式、授权内自动读写、撤销、预算控制和 14-case 风险评测；新增 EventNodeStore/Core Oracle 测试适配、独立 JSONL stdio 参考宿主进程、双存储崩溃对账与 30 项回归。`ameme.agent-local-node.v1` 应用协议、capture-only MCP 适配边界和 Android SQLCipher `create_event` 端点已接合；另有 instrumentation-only 本机 Codex 任务体验路径，不进入生产 APK。生产认证通道、持久幂等、LAN/NSD、加密会话与真实 Codex/Claude Code/Cursor 宿主仍未实现。
+- Agent：统一 `ameme-memory` Skill 与本地 MCP Host 已形成六模式、授权内自动读写、撤销、预算控制和 14-case 风险评测。`ameme.agent-local-node.v1` 的 capture-only MCP 适配、Android 配对 TLS 1.3/certificate pin/HMAC listener、Keystore 凭据生命周期和 SQLCipher 持久幂等已接通；API 36 AVD 的真实纵向 smoke 证明 Host 写入 Today、重启保留且 ADB 不注入 Event。共享账户 Grant registry、LAN/NSD、后台生命周期、append/undo/recall 与真实 Codex/Claude Code/Cursor 宿主仍未实现。
 - 同步/账户：同账户已批准设备在 LAN 内点对点同步；身份服务不保存记忆内容；无用户密钥 UX，也无全设备丢失后的旧数据恢复。
-- 工程实现：截至工程提交 `508c75d`，Android API 36 AVD 普通回归发现 35 项：34 项通过，独立 DB-01 性能用例按设计跳过；另有独立 DB-01 有效性能报告。覆盖 SQLCipher/Keystore/WAL/v1→v5/space/Revision、Photo/Share、真实 Calendar Provider、系统语音引用、FTS/LIKE/keyset、来源实例幂等、持久 URI 清理、异步 I/O、Agent `create_event` 持久化与 10k/100k 容量。100k FTS P95 177.72 ms、单次提交 P95 215.67 ms；这些证据仍不等于双端真机、16 KB、UI 首帧、生产 Raw/LAN、真实模型、认证通道或真实 Agent 宿主通过。
+- 工程实现：Android API 36 AVD 普通回归发现 52 项：45 项通过、7 项显式 gate 跳过；另有 DB-01 有效性能报告、移动来源体验包、Android→本地网关 1/1 和配对 Agent E2E。覆盖 SQLCipher/Keystore/WAL/v1→v6/space/Revision、Photo/Share/Calendar/Voice、FTS/LIKE/keyset、DayLedger/Summary、持久 Agent 幂等、TLS 配对和 10k/100k 容量。100k FTS P95 177.72 ms、单次提交 P95 215.67 ms；真实 OpenAI live 因无密钥/显式开关按设计跳过。这些证据仍不等于双端真机、16 KB、UI 首帧、生产 Raw/LAN/后台、真实模型质量或真实第三方 Agent 宿主通过。
 
 ## 进行中
 
@@ -21,7 +21,7 @@
 | MVP 范围与体验原则 | accepted | 品牌、单悬浮记录入口、双端页面、统一 Skill、六条旅程和指标已接受 |
 | MVP 三线并行设计与技术方案 | accepted | 产品、交互、契约、架构、安全、质量和工程计划完成全链审计 |
 | MVP 研发前准备 Goal | done | owner/local gap 清零；13 项正式决策已登记（ADR-003 被替代）；Skill/Schema/治理/链接/编译门禁通过，只保留 Spike/外部证据 |
-| MVP 工程实现 | in_progress | 第五批已冻结 Agent Local Node v1 应用协议并接通 capture-only MCP→Android SQLCipher 边界；下一批实现认证/加密/发现、持久幂等和物理设备；iOS 构建等待 Mac |
+| MVP 工程实现 | in_progress | 第六批已闭合 Android 移动来源→Today、配对 Agent→SQLCipher→Today、显式 AI 小结→持久化体验；下一批转向物理设备、NSD/后台、共享 Grant、真实模型和 iOS Mac |
 | R0 用户与场景研究 | plan_ready | 按产品决策有意后置 |
 | R1 多端信息源调研 | plan_ready | 按产品决策有意后置，后续只做 MVP 定向补证 |
 | Event/每日事件记录模型 | plan_ready | v0.4 保留情绪/关系/重要性独立字段，但禁止其提高事实置信度或触发扩权 |
@@ -41,12 +41,12 @@
 - 首批目标用户已初步选择 AI 使用者，但尚未完成真实访谈验证。
 - Prototype 不设用户最小来源门槛；工程夹具需覆盖单来源和数据稀疏日。
 - 不含 Git/工作区的通用一天样本尚未建立；正式参与者来源和访谈安排未确认。
-- iOS Journaling Suggestions 尚无 Mac/真机证据；Android Picker/Share/Calendar/Voice/性能当前仅 API 36 x86_64 AVD，无物理设备与 OEM 证据。
+- iOS Journaling Suggestions 尚无 Mac/真机证据；Android Picker/Share/Calendar/Voice/Agent/AI 小结当前仅 API 36 x86_64 AVD，无物理设备、OEM、后台或真实 LAN 证据。
 - Windows 截屏 API 探测仍为 `RuntimeException`。
-- 当前 Ameme Codex 任务的 7 条人工筛选结构化事件已在本机经过 Skill/MCP Mock 和 Agent Local Node 测试缝写入 API 36 AVD 的正式 SQLCipher 仓库，Today 显示 7 条；该证据只证明一次性本地体验链路，不证明生产宿主、后台采集或跨设备传输。
+- instrumentation-only Codex seed 仍保留为测试辅助；新的 paired Host smoke 已不依赖它写 Event，但当前只使用合成事件和 ADB 端口转发，不证明真实 Codex 会话采集、后台运行或物理跨设备传输。
 - 产品负责人决策已关闭：LAN/P2P 无用户数据云、账户归属无用户密钥 UX、Health 公开 MVP、结构化导出 P1、M1–M6 全面研发、系统版本、Agent 自动读写、Raw+SourceLocator、单悬浮入口和 Pilot/真机投入均已 accepted。
 - 仍待不可替代证据：真实用户、双端真机、SQLCipher 16 KB 与 UI/真机性能、真实 LAN/分布式删除、真实宿主 Skill、真实模型 AI/成本、目标市场法律与商店/供应商审核。
 
 ## 下一执行门
 
-第五批研发切片和本地体验辅助已通过 169 项 Python 测试、AI 固定 Eval 12/12、2,715/2,709 项契约检查、Agent Local Node 协议 68 项校验、14-case/14-risk Skill、37 个 Markdown 链接、134 项治理、Android 37 项 JVM、lint/assemble、一次性 Codex seed 目标设备测试 1/1，以及 API 36 AVD 普通回归基线 35 项（34 通过、DB-01 性能用例按设计跳过）。下一步实现 Agent↔Android 生产认证/加密/重放保护与发现、持久幂等 registry，再推进 Android 物理设备/16 KB/OEM 来源验证；iOS 源码、构建和真机证据等待 Mac。Gate 1 继续 `hold`，不能将本机任务/模拟器进度写成真实用户价值已验证。
+第六批 Android 合成完整体验已经 `conditional_pass`：移动端 Share/Picker/Calendar/Voice 正式入口可测，配对 Host 经 TLS/HMAC 写入 SQLCipher 并在 Today/重启后可见，用户同意后可生成并持久化结构化今日小结。回归包括 169 项 Python 基线、AI 固定 Eval 12/12、2,715/2,709 项契约、68 项 Agent 协议、14-case/14-risk Skill、Node 网关 8 通过/1 live 跳过、Android 普通设备 45 通过/7 gated 跳过、目标网关 1/1、JVM/lint/build 与治理门。下一步优先做物理设备/16 KB/OEM、NSD/后台/共享 Grant、真实模型质量与成本；iOS 源码、构建和真机证据等待 Mac。Gate 1 继续 `hold`，不能将模拟器合成闭环写成真实用户价值或公开发布已验证。

@@ -40,15 +40,15 @@ fun OnboardingScreen(onContinue: () -> Unit) {
                 Spacer(Modifier.height(28.dp))
                 Text("自动整理你的一天", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.SemiBold)
                 Text(
-                    "从你明确选择的内容开始。这个原型只使用合成数据，不会申请或读取任何系统权限。",
+                    "从你主动记录、分享或选择的内容开始。事件优先保存在本机加密空间，你可以随时查看和删除。",
                     modifier = Modifier.padding(top = 10.dp),
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             item { SourceStartCard(Icons.Outlined.EditNote, "输入一句话", "无需权限，先保存为本机记录") }
-            item { SourceStartCard(Icons.Outlined.PhotoLibrary, "用照片开始", "当前仅演示 Picker 路径，不打开照片库") }
-            item { SourceStartCard(Icons.Outlined.MicNone, "说一句", "当前仅演示录音状态，不申请麦克风") }
+            item { SourceStartCard(Icons.Outlined.PhotoLibrary, "用照片开始", "由系统照片选择器按次授权，不读取整个照片库") }
+            item { SourceStartCard(Icons.Outlined.MicNone, "说一句", "使用系统录音或音频选择器，不申请常驻麦克风权限") }
             item {
                 Button(
                     onClick = onContinue,
@@ -56,10 +56,10 @@ fun OnboardingScreen(onContinue: () -> Unit) {
                         .fillMaxWidth()
                         .padding(top = 12.dp),
                 ) {
-                    Text("进入合成的今天")
+                    Text("查看今天")
                 }
                 Text(
-                    "稍后可以在设置中逐项查看来源状态。拒绝任何来源都不阻止文字记录。",
+                    "日历只在你触发导入时申请只读权限。拒绝任何来源都不阻止文字记录。",
                     modifier = Modifier.padding(vertical = 12.dp),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

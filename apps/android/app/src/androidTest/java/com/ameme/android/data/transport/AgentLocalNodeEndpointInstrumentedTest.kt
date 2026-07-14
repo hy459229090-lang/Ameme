@@ -47,7 +47,7 @@ class AgentLocalNodeEndpointInstrumentedTest {
                 allowedDataClasses = setOf("structured"),
                 expiresAt = Instant.parse("2026-07-14T05:00:00Z"),
             ),
-            idempotencyRegistry = OneCaptureTestRegistry(),
+            idempotencyRegistry = repository.durableAgentIdempotencyRegistry(),
             clock = clock,
         )
         val payload = AgentLocalNodeCreateEventPayload(
@@ -90,6 +90,7 @@ class AgentLocalNodeEndpointInstrumentedTest {
             AgentLocalNodeApplicationCodec.decodeCreateEventResult(resultBytes)
         } finally {
             resultBytes.fill(0)
+            response.close()
         }
         repository.close()
 
@@ -98,6 +99,54 @@ class AgentLocalNodeEndpointInstrumentedTest {
             assertEquals(CONTENT, stored.detail)
             assertEquals("AgentAutonomous", stored.sourceLabel)
             assertTrue(databaseFile.length() > 0L)
+
+            val replayEndpoint = MemoryRepositoryAgentLocalNodeEndpoint.enabledForVerifiedSession(
+                repository = reopened,
+                repositorySpaceId = SPACE_ID,
+                verifiedSession = VerifiedAgentLocalNodeSession(
+                    callerId = "agent_synthetic",
+                    grantId = "grant_synthetic",
+                    purpose = "autonomous_memory",
+                    allowedSpaces = setOf(SPACE_ID),
+                    allowedMemoryTypes = setOf("event"),
+                    allowedOperations = setOf("create_event"),
+                    allowedSensitivities = setOf("personal"),
+                    allowedDataClasses = setOf("structured"),
+                    expiresAt = Instant.parse("2026-07-14T05:00:00Z"),
+                ),
+                idempotencyRegistry = reopened.durableAgentIdempotencyRegistry(),
+                clock = clock,
+            )
+            val replayBytes = AgentLocalNodeApplicationCodec.encodeCreateEvent(payload)
+            val replayRequest = try {
+                AgentLocalNodeRequest(
+                    control = AgentLocalNodeControl(
+                        protocolVersion = AgentLocalNodeControl.PROTOCOL_VERSION,
+                        requestId = "req_android_sqlcipher_replay",
+                        callerId = "agent_synthetic",
+                        grantId = "grant_synthetic",
+                        purpose = "autonomous_memory",
+                        spaces = setOf(SPACE_ID),
+                        memoryTypes = setOf("event"),
+                        operation = "create_event",
+                        idempotencySlot = GOLDEN_SLOT,
+                        payloadDigest = AgentLocalNodeApplicationCodec.canonicalDigest(replayBytes),
+                    ),
+                    payload = replayBytes,
+                )
+            } finally {
+                replayBytes.fill(0)
+            }
+            replayEndpoint.exchange(replayRequest).use { replayResponse ->
+                assertEquals(AgentLocalNodeStatus.Ok, replayResponse.status)
+                val replayResultBytes = replayResponse.payloadCopy()
+                try {
+                    assertEquals(result.eventId, AgentLocalNodeApplicationCodec.decodeCreateEventResult(replayResultBytes).eventId)
+                } finally {
+                    replayResultBytes.fill(0)
+                }
+            }
+            assertEquals(1, reopened.loadActiveEvents().count { it.id == result.eventId })
         }
     }
 
@@ -109,33 +158,6 @@ class AgentLocalNodeEndpointInstrumentedTest {
         clock = clock,
         seedSyntheticEvents = false,
     )
-
-    private class OneCaptureTestRegistry : AgentLocalNodeIdempotencyRegistry {
-        private var binding: AgentLocalNodeIdempotencyBinding? = null
-        private var digest: String? = null
-        private var outcome: AgentLocalNodeCaptureOutcome? = null
-
-        @Synchronized
-        override fun resolveOrCapture(
-            binding: AgentLocalNodeIdempotencyBinding,
-            payloadDigest: String,
-            capture: () -> AgentLocalNodeCaptureOutcome,
-        ): AgentLocalNodeIdempotencyResult {
-            val existing = outcome
-            if (existing != null) {
-                return if (this.binding == binding && digest == payloadDigest) {
-                    AgentLocalNodeIdempotencyResult.Applied(existing)
-                } else {
-                    AgentLocalNodeIdempotencyResult.Conflict
-                }
-            }
-            val created = capture()
-            this.binding = binding
-            digest = payloadDigest
-            outcome = created
-            return AgentLocalNodeIdempotencyResult.Applied(created)
-        }
-    }
 
     private companion object {
         const val SPACE_ID = "space_work"

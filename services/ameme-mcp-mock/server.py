@@ -373,6 +373,12 @@ def main(
     *,
     android_channel_factory: AndroidLocalNodeChannelFactory | None = None,
 ) -> int:
+    # MCP JSON-RPC is UTF-8 on every host. Windows otherwise inherits a legacy console code page
+    # even when the parent process writes UTF-8 bytes through a pipe.
+    for stream in (sys.stdin, sys.stdout):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            reconfigure(encoding="utf-8", errors="strict")
     arguments = _arguments(argv)
     store = _build_store(
         arguments,

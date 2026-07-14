@@ -6,6 +6,8 @@ Stateless MVP service for producing one strict daily summary from a caller-autho
 
 Accepted input is `ameme.day-event-projection.v1`: one ledger ID/revision, one local date/timezone, a privacy-scoped subject reference, and at most 100 structured Event projections. Every projection carries a bounded title/detail, evidence/fact state and sensitivity. `event_time` is either a zoned timestamp or `null`; null preserves date-only, all-day or exact-time-unknown events and must never be replaced with an invented clock time. Fact state keeps `planned` distinct: a calendar plan is not rewritten as something that happened, and summaries may surface it only as an open loop. `raw`, unknown fields, `restricted`, cross-date events, over-size requests and output budgets outside 256–1,200 tokens fail before provider invocation.
 
+Timezone validation accepts bounded IANA region identifiers plus Android/Java fixed-zone IDs such as `UTC`, `GMT`, `UT`, `+08:00` and `GMT+08:00`; offsets beyond ±18:00 and arbitrary strings fail closed.
+
 Output is `ameme.day-summary.v1`. The gateway validates provider output again, rejects invented event references, and binds the trusted `ledger_id`, `ledger_revision`, local date, `ameme.day-summary-rules.v1`, provider, model ID, provider-interface version and response ID. It does not write the summary to any store.
 
 The HTTP surface is `POST /v1/day-summary`; `GET /healthz` reports only process health. This service currently assumes an authenticated upstream and must not be exposed directly to the public Internet. Mobile clients never receive or hold the model API key.
@@ -35,6 +37,16 @@ $env:OPENAI_API_KEY = "..."
 $env:AMEME_SAFETY_HMAC_KEY = "a high-entropy server-only secret"
 npm.cmd start
 ```
+
+For the Android emulator's fully synthetic experience, start the deterministic provider explicitly:
+
+```powershell
+$env:AMEME_INFERENCE_PROVIDER = "fake"
+$env:AMEME_ALLOW_FAKE_PROVIDER = "true"
+npm.cmd start
+```
+
+The Debug APK uses the emulator host alias `http://10.0.2.2:8787`; the gateway itself remains bound to host loopback `127.0.0.1`. Release has no baked-in gateway address. This fake route proves transport, schema validation, DayLedger binding and UI persistence only; it is not model-quality evidence.
 
 The live OpenAI test is skipped unless `AMEME_RUN_OPENAI_LIVE=1`, `OPENAI_API_KEY`, `AMEME_SAFETY_HMAC_KEY`, and `AMEME_OPENAI_MODEL` are all set. A skip is evidence that only the local/provider-contract path was verified; it is not evidence of a successful real-model call.
 

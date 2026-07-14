@@ -196,10 +196,20 @@
 - [x] 本机 Codex 体验辅助：当前任务 7 条人工筛选结构化事件经 `ameme-memory` Skill/MCP Mock 形成一次性 seed，再由显式 androidTest seam 经 Agent Local Node 写入正式 SQLCipher；API 36 AVD 目标测试 1/1，Today 显示 7 条。真实内容未进入 Git，设备临时明文由测试/runner 删除；这不是生产传输或后台采集证据。
 - [x] 体验辅助回归：Agent Python 回归由 28 增至 30，全仓 Python 由 167 增至 169；workspace validation、Android JVM/lint/debug APK/test APK 通过。普通设备基线未重跑，仍沿用 35 项基线并单列本次目标设备测试。
 
+### 已集成第六批切片
+
+- [x] Android DayLedger/Summary：SQLCipher 升级 v6，Event policy、DayLedger revision、Summary `insufficient/processing/ready/stale`、compare-and-set completion 和删除失效落地；用户明确同意后只向无状态网关发送合格结构化 Event，不包含照片/音频原文件、SourceLocator、搜索记录或 Restricted。
+- [x] 推理网关：Node/TypeScript 服务实现严格 `ameme.day-event-projection.v1 → ameme.day-summary.v1`、事件/字节/token 边界、`store:false` OpenAI provider、deterministic fake、无正文 metadata log、Android `GMT`/固定时区支持。8 项通过，真实 OpenAI live 因无显式密钥/开关 1 项跳过；不写成真实模型质量证据。
+- [x] Android 配对通道：设置页创建/撤销 30 天配对，Keystore 包裹一次性秘密，非导出 TLS identity，TLS 1.3/certificate pin/双向 HMAC/session/sequence/nonce listener 与 SQLCipher durable idempotency 接入生产 App 进程。paired Host smoke 证明 durable/local-only、Today 可见、重启保留、ADB Event 注入为 false。
+- [x] 移动来源完整体验：合成照片/音频/日历只准备系统来源，正式 Picker/OpenDocument/Calendar/ACTION_SEND 路径负责写 Event；用户明确分享文字纠正为 `UserAsserted`，媒体在无 OCR/STT 时继续 `Processing`。
+- [x] Review 修复：AVD `adb reverse` 无响应后把 Debug 网关限定为 `10.0.2.2`，Release 仍无内置地址；放宽合法 Android 时区但拒绝越界；更新 UI smoke 的正式文案与 onboarding test isolation。最终普通设备回归 52 项发现：45 通过、7 项显式 gate 跳过，0 失败；目标 UI 3/3、来源 7/7、网关 1/1。
+- [x] 验证报告：`docs/quality/Android-MVP完整体验闭环验证-20260714.md` 判定 `conditional_pass`；只关闭 Android API 36 AVD 合成完整体验，不关闭真实用户、真实模型、iOS、真机、物理 LAN 或发布 Gate。
+
 ### 下一执行批次
 
-- [ ] CORE/AG 生产通道：实现设备认证、会话绑定、加密、重放保护、Android 生命周期和持久幂等 registry，再接真实 Codex/Claude Code/Cursor host；Python CoreStore 与注入 channel 只保留 Oracle/测试边界。
-- [ ] SYNC-002/003：Android NSD/未来 iOS Network.framework 的发现、同账户设备认证、加密会话和冻结向量 conformance；不得把应用层协议通过当作 LAN 通过，iOS 部分等待 Mac。
+- [ ] CORE/AG 后续：用共享账户 Grant registry 替代 pairing-scoped root claim，补 append/undo/recall、后台生命周期和真实 Codex/Claude Code/Cursor host；Python CoreStore 继续只作 Oracle/Host 适配，不进入 App Core。
+- [ ] SYNC-002/003：Android NSD/未来 iOS Network.framework 的发现、同账户设备认证、加密会话和冻结向量 conformance；不得把 ADB 转发或 Host 通道通过写成物理 LAN 同步通过，iOS 部分等待 Mac。
+- [ ] AI live：在隐私/供应商评审和显式测试密钥后运行真实模型固定 Eval、延迟/token/成本与中文小结质量对比；未通过前 fake 只用于本地体验。
 - [ ] Android 设备矩阵：物理设备、16 KB page-size、OEM Calendar、系统录音结果授权、权限撤销、进程死亡、真实 Today/Search UI 性能与日期筛选优化。
 
 ### 当前门禁

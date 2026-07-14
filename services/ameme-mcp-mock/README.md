@@ -9,7 +9,7 @@
 - `JsonStore` 仅是保留现有行为的 **非生产合成夹具后端**，不是移动端数据库、服务端数据库或发布候选实现。
 - `CoreEventNodeStore` 仅用于合成集成测试。它只调用 `packages/core-reference` 的公开命令，把 capture/revision/undo 映射为 Source → Observation → Event/Revision → Tombstone/Lineage，并让离线交付进入 Core durable sync queue；它不直写 SQLite。
 - `CoreOracleHostReferenceStore` 提供首个可运行的进程边界：MCP 进程保留 Grant/Policy/ContextPack/Activity 控制面，显式启动 `core_oracle_host.py` 子进程后，用 `ameme.core-oracle-host.v1` JSONL stdio 访问同一个 `CoreEventNodeStore`。这是公开代码的 developer preview / 集成骨架，不是生产 Native Core。
-- `AndroidLocalNodeStore` 是面向 Android Local Node 的发布候选 **adapter 边界**。`TlsAndroidLocalNodeChannel` 提供 Host 侧主动发起的 TLS 1.3 客户端：先校验配对时冻结的证书 SHA-256 pin，再以配对密钥完成 HMAC 握手、设备/会话绑定和递增 sequence/nonce 帧校验。它不监听端口、不提供明文 TCP、不会回退到 JSON fixture 或 Python CoreOracle；Android server、设备发现和真机证据仍未实现。
+- `AndroidLocalNodeStore` 是面向 Android Local Node 的发布候选 **adapter 边界**。`TlsAndroidLocalNodeChannel` 提供 Host 侧主动发起的 TLS 1.3 客户端：先校验配对时冻结的证书 SHA-256 pin，再以配对密钥完成 HMAC 握手、设备/会话绑定和递增 sequence/nonce 帧校验。Android App 已有对应 Kotlin listener、配对 UI/凭据生命周期和 SQLCipher 持久幂等；它不提供明文 TCP，也不会回退到 JSON fixture 或 Python CoreOracle。NSD/LAN 自动发现、后台生命周期、物理设备和共享账户 Grant registry 仍未实现。
 - Core revision 的 control undo 记录只保存 event/space/revision/source lineage 等最小标识，不复制旧 title/description；只有 `JsonStore` 合成夹具为了兼容原有内存补偿行为保留旧快照。
 - Python `CoreOracle` 仍是非生产语义参考和测试 Oracle，不能作为 Android、iOS、桌面或云端生产 runtime，也不证明 SQLCipher、Keychain/Keystore、真实同步或宿主集成完成。
 
@@ -101,6 +101,18 @@ python scripts/dev/agent/start_android_local_node_host.py `
 
 离线队列语义可使用 `--offline` 或 `AMEME_MCP_MOCK_OFFLINE=true`。服务按一行一个 JSON-RPC 消息读写 stdio，stdout 不输出诊断文本。
 
+## 配对 Host 到 Android 的真实本地体验
+
+API 36 AVD 可用一条 smoke 命令完成：安装 APK、通过显式 debug seam 只签发通道凭据、启动 Android TLS listener、运行真实 MCP Host、写入一条合成 Event、验证 Today 可见与进程重启后仍存在，最后撤销配对。ADB 只负责安装、端口转发和 UI 取证，不写 Event：
+
+```powershell
+python scripts/dev/agent/smoke_paired_android.py `
+  --serial emulator-5556 `
+  --android-sdk C:\Users\N33131\AppData\Local\Android\Sdk
+```
+
+成功 JSON 必须同时包含 `capture_persistence_state=durable`、`visible_in_today=true`、`persistent_after_restart=true` 和 `adb_used_for_event_injection=false`。这证明 Host→Android 的配对加密传输与本地持久化，不证明 NSD、物理 LAN、后台常驻或第三方真实 Codex/Claude Code/Cursor 宿主已经发布。
+
 MCP 宿主的最小配置语义如下；具体配置键由宿主 adapter 决定：
 
 ```json
@@ -162,4 +174,4 @@ python scripts/validation/validate_ameme_skill.py
 
 `packages/contracts/` 当前已有 AccessGrant、Event、Revision、ContextPack 等领域 Schema 和 HTTP OpenAPI，但没有六个 MCP tool 的机器可读输入/输出 Schema。由于本任务冻结 `packages/contracts/**`，本服务暂时在 `server.py` 的 `TOOLS` manifest 内维护实现级 JSON Schema。建议契约任务把这六个 tool schema 纳入共享契约并增加 breaking-change diff；在此之前，Mock manifest 不是新的跨端正本。
 
-ADR-001 与同步协议同时阻止把 Python 或新增的共享 runtime 当成 P0–P2 生产 Core。Host 侧已有可执行 TLS 1.3/pin/HMAC/session/sequence channel client 和合成 TLS server 证据，但真实 Codex/Agent → Android SQLCipher Local Node 仍缺 Android server、设备发现、配对 UI/材料签发、后台生命周期和 LAN 真机证据。生产 Swift/Kotlin Local Node 后续必须实现同一 channel/app contract；不能把当前 Python Host 打包进 App，也不能把合成 TLS 测试写成 Android 已连通。
+ADR-001 与同步协议同时阻止把 Python 或新增的共享 runtime 当成 P0–P2 生产 Core。Host 侧 Python 只实现 MCP/Skill 与通道适配，Android Kotlin Local Node 承担 TLS listener、凭据、SQLCipher 和持久幂等；API 36 AVD 已取得真实纵向闭环证据。仍缺设备发现、物理 LAN、后台生命周期、共享账户 Grant registry、真实第三方宿主和 iOS 对等实现。不能把 Python Host 打包进 App，也不能把模拟器端口转发写成物理 LAN 已通过。
