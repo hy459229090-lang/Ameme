@@ -23,6 +23,7 @@
 | Mobile 双端原生页面规格 | `Mobile双端原生页面规格.md` | v0.3，逐页组件、原生记录弹层、普通/开发者配对分层、状态、恢复和验收已接受 |
 | Agent Skill 产品与交互 | `Agent-Skill产品与交互规格.md` | v0.2，统一 Skill、六模式、Mobile 三入口发现/统一授权和宿主边界已接受 |
 | MVP 指标与埋点字典 | `MVP指标与埋点字典.md` | v0.1，主指标、护栏、敏感字段禁采和事件契约候选 |
+| GitHub 项目介绍视觉 | `assets/ameme-feature-dayledger.png`、`assets/ameme-feature-local-first.png`、`assets/ameme-feature-mobile-design.png` | 3 张 1672×941 功能与产品设计插画 |
 
 ## Gate 3 准备状态
 
@@ -54,3 +55,4 @@
 | 2026-07-13 | 新增 | 研发前冻结产品六条旅程、双端逐页规格和 MVP 指标/埋点候选 |
 | 2026-07-13 | 审计 | 全链 Review 后取消三种自定义视觉方向前置，MVP 随双端原生 shell 验证平台视觉和流畅性 |
 | 2026-07-14 | 决策 | 品牌收口为简洁高效；今天页采用单悬浮记录按钮；Agent 在 exact Grant 内自动读写；Health 进入首个公开版本 |
+| 2026-07-15 | 新增 | 增加 3 张 GitHub README 功能与设计插画，表达 DayLedger、本地优先授权和 Mobile 产品设计 |
