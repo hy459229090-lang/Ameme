@@ -205,10 +205,17 @@
 - [x] Review 修复：AVD `adb reverse` 无响应后把 Debug 网关限定为 `10.0.2.2`，Release 仍无内置地址；放宽合法 Android 时区但拒绝越界；更新 UI smoke 的正式文案与 onboarding test isolation。最终普通设备回归 52 项发现：45 通过、7 项显式 gate 跳过，0 失败；目标 UI 3/3、来源 7/7、网关 1/1。
 - [x] 验证报告：`docs/quality/Android-MVP完整体验闭环验证-20260714.md` 判定 `conditional_pass`；只关闭 Android API 36 AVD 合成完整体验，不关闭真实用户、真实模型、iOS、真机、物理 LAN 或发布 Gate。
 
+### 已集成第七批体验切片
+
+- [x] Android 普通用户设备连接统一为同网自动发现、扫描二维码、账户设备三种入口；三者共享候选、授权、成功、持久状态和断开流程，不向普通用户暴露密钥、JSON、IP 或端口。
+- [x] Debug deterministic connector 只模拟连接成功并在授权/成功/连接卡片中标注不建立真实网络连接；不创建 Event、Grant 或访问审计。Release provider 返回空，独立 Release 单测通过。
+- [x] 现有真实 TLS 1.3/certificate pin/HMAC 手工配对保留，但下沉至 Debug 开发者选项；它继续承担 Host→Android 工程验证，不冒充普通用户发现协议。
+- [x] 自动化与视觉验证：三入口单元测试、5/5 UI 主路径、2/2 状态存储、Release 隔离、Debug/Release build/lint，以及 API 36 AVD 56 项普通回归（49 通过、7 Gate 跳过、0 失败）。验证报告：`docs/quality/Android-Agent统一连接体验验证-20260715.md`，判定 `conditional_pass`。
+
 ### 下一执行批次
 
 - [ ] CORE/AG 后续：用共享账户 Grant registry 替代 pairing-scoped root claim，补 append/undo/recall、后台生命周期和真实 Codex/Claude Code/Cursor host；Python CoreStore 继续只作 Oracle/Host 适配，不进入 App Core。
-- [ ] SYNC-002/003：Android NSD/未来 iOS Network.framework 的发现、同账户设备认证、加密会话和冻结向量 conformance；不得把 ADB 转发或 Host 通道通过写成物理 LAN 同步通过，iOS 部分等待 Mac。
+- [ ] SYNC-002/003：把当前三入口体验替换为 Android NSD/未来 iOS Network.framework、短时二维码交换、账户设备列表与设备证明，统一进入共享 Grant；不得把 Debug 模拟、ADB 转发或 Host 通道通过写成物理 LAN/账户配对通过，iOS 部分等待 Mac。
 - [ ] AI live：在隐私/供应商评审和显式测试密钥后运行真实模型固定 Eval、延迟/token/成本与中文小结质量对比；未通过前 fake 只用于本地体验。
 - [ ] Android 设备矩阵：物理设备、16 KB page-size、OEM Calendar、系统录音结果授权、权限撤销、进程死亡、真实 Today/Search UI 性能与日期筛选优化。
 

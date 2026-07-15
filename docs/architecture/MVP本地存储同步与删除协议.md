@@ -1,7 +1,7 @@
-# Ameme MVP 本地存储、同步与删除协议 v0.6
+# Ameme MVP 本地存储、同步与删除协议 v0.7
 
 > 文档状态：已接受；MVP 存储/同步/删除实现正本，达成情况待 Spike\
-> 更新日期：2026-07-14\
+> 更新日期：2026-07-15\
 > 上游：`MVP领域契约与状态机.md`、`../../packages/contracts/schemas/ameme-domain.schema.json`、`../decisions/ADR-005-MVP技术实现默认栈.md`\
 > 实现基线：Android 固定官方 `net.zetetic:sqlcipher-android:4.15.0` + SQLite WAL；schema v6 的 SourceLocator、DayLedger/Summary、Agent 持久幂等、可回退 FTS5、异步 I/O、Calendar/Voice 显式来源和 10k/100k 已形成 API 36 x86_64 AVD 证据。应用私有 Raw Vault AES-256-GCM、iOS、LAN append-only peer sync、真机、16 KB 与 UI 性能仍待验证。官方来源：<https://github.com/sqlcipher/sqlcipher-android>、<https://central.sonatype.com/artifact/net.zetetic/sqlcipher-android/4.15.0>。
 
@@ -91,6 +91,8 @@ Raw 文件写入采用临时文件、fsync/平台等价操作、hash 校验和�
 - Processor（可选）：端侧优先；外部模型只在独立处理授权下接收最小输入并留下 lineage。
 
 LAN 被视为不可信网络。发现广播不含账户/space/内容 ID；连接后验证同账户和设备身份，建立加密会话，再交换最小 capability/cursor。Raw 与 Restricted 不因同网自动扩大范围；selected Raw 仍需逐对象/空间策略。
+
+发现与授权分层：NSD/Network.framework、短时二维码和 Account Identity 设备列表都只能产生有界候选；三种入口必须进入同一个 Grant 确认与设备证明流程。候选和连接状态可保存设备/Agent 展示名、方式、能力、时间与是否模拟等非敏感元数据，不保存一次性秘密、配对 JSON、IP 或端口。Android Debug 的确定性体验 Connector 只模拟候选和成功状态，不建立 socket、不创建 Grant/Event/审计；Release provider 必须为空。现有 TLS 1.3/certificate pin/HMAC 手工通道保留为 Debug 工程验证路径，不等于普通用户发现协议或 LAN sync 已实现。
 
 ### 5.2 Push
 

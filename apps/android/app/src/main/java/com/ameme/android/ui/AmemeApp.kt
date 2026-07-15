@@ -41,6 +41,10 @@ import com.ameme.android.data.transport.AgentLocalNodeRuntimeState
 import com.ameme.android.data.transport.AgentPairingManager
 import com.ameme.android.data.transport.AgentPairingMaterial
 import com.ameme.android.data.transport.CreatedAgentPairing
+import com.ameme.android.data.transport.PairingExperienceConnection
+import com.ameme.android.data.transport.PairingExperienceConnector
+import com.ameme.android.data.transport.PairingExperienceConnectorProvider
+import com.ameme.android.data.transport.PairingExperienceStore
 import com.ameme.android.data.source.ContentUriGrantResolver
 import com.ameme.android.data.source.AndroidCalendarProviderDataSource
 import com.ameme.android.data.source.CalendarImportCancellation
@@ -89,6 +93,7 @@ private object Routes {
 fun AmemeApp(
     repositoryOverride: MemoryRepository? = null,
     summaryClientOverride: DaySummaryClient? = null,
+    pairingExperienceConnectorOverride: PairingExperienceConnector? = null,
     incomingShare: SourceCaptureRequest? = null,
     onIncomingShareConsumed: () -> Unit = {},
 ) {
@@ -107,6 +112,14 @@ fun AmemeApp(
     val scope = rememberCoroutineScope()
     val ioExecutor = remember { MemoryIoExecutor() }
     val pairingManager = remember(appContext) { AgentPairingManager(appContext) }
+    val pairingExperienceConnector: PairingExperienceConnector? =
+        remember(pairingExperienceConnectorOverride) {
+            pairingExperienceConnectorOverride ?: PairingExperienceConnectorProvider.create()
+        }
+    val pairingExperienceStore = remember(appContext) { PairingExperienceStore(appContext) }
+    var pairingExperienceConnection: PairingExperienceConnection? by remember(pairingExperienceStore) {
+        mutableStateOf(pairingExperienceStore.load())
+    }
     val unavailableRepository = remember { UnavailableMemoryRepository() }
     var repository by remember(repositoryOverride) { mutableStateOf(repositoryOverride) }
     val uiRepository = repository ?: unavailableRepository
@@ -558,7 +571,7 @@ fun AmemeApp(
             )
         }
         composable(Routes.Settings) {
-            val agentPairingDetail = when {
+            val developerAgentPairingDetail = when {
                 agentPairingMaterial == null -> "未配对"
                 agentRuntimeState == AgentLocalNodeRuntimeState.Listening -> "已配对 · 等待 Agent 连接"
                 agentRuntimeState == AgentLocalNodeRuntimeState.ConnectionHandled -> "已配对 · 最近连接成功"
@@ -570,11 +583,28 @@ fun AmemeApp(
                 onModeSelected = { experienceModeName = it.name },
                 onBack = navController::popBackStack,
                 showExperienceControls = repositoryOverride != null,
-                agentPairingDetail = agentPairingDetail,
-                pairingInFlight = pairingInFlight,
-                pairingJson = createdAgentPairing?.pairingJson(),
-                pairingSecret = createdAgentPairing?.oneTimeSecret,
-                onCreateAgentPairing = {
+                pairingExperienceAvailable = pairingExperienceConnector != null,
+                pairingExperienceConnection = pairingExperienceConnection,
+                onResolvePairingCandidate = { method ->
+                    requireNotNull(pairingExperienceConnector).resolve(method)
+                },
+                onConnectPairingCandidate = { candidate ->
+                    val connected = requireNotNull(pairingExperienceConnector).connect(candidate)
+                    ioExecutor.runSourceIo { pairingExperienceStore.save(connected) }
+                    pairingExperienceConnection = connected
+                    connected
+                },
+                onDisconnectPairingExperience = {
+                    ioExecutor.runSourceIo { pairingExperienceStore.clear() }
+                    pairingExperienceConnection = null
+                    true
+                },
+                showDeveloperPairingControls = com.ameme.android.BuildConfig.DEBUG,
+                developerAgentPairingDetail = developerAgentPairingDetail,
+                developerPairingInFlight = pairingInFlight,
+                developerPairingJson = createdAgentPairing?.pairingJson(),
+                developerPairingSecret = createdAgentPairing?.oneTimeSecret,
+                onCreateDeveloperAgentPairing = {
                     if (!pairingInFlight) {
                         pairingInFlight = true
                         scope.launch {
@@ -592,7 +622,7 @@ fun AmemeApp(
                         }
                     }
                 },
-                onRevokeAgentPairing = {
+                onRevokeDeveloperAgentPairing = {
                     if (!pairingInFlight) {
                         pairingInFlight = true
                         agentRuntime?.close()
@@ -610,7 +640,7 @@ fun AmemeApp(
                         }
                     }
                 },
-                onDismissPairingSecret = { createdAgentPairing = null },
+                onDismissDeveloperPairingSecret = { createdAgentPairing = null },
             )
         }
         composable(

@@ -33,3 +33,4 @@ MVP 工程实现进行中。已集成契约质量基线、非生产 Core/Raw/队
 | 2026-07-14 | Android 基线 | 完成异步 I/O、Calendar/Voice、v5 幂等、批量快路径和 10k/100k AVD 报告；物理设备/16 KB/UI 性能仍保留 |
 | 2026-07-14 | Agent→Android 应用层 | 冻结 Local Node v1 canonical JSON 协议，接通 capture-only MCP 适配边界与 Android SQLCipher `create_event`；生产通道、持久幂等和真实宿主仍保留 |
 | 2026-07-14 | Android MVP 闭环 | 接入配对 TLS/HMAC listener、Keystore 凭据、SQLCipher v6 持久幂等、结构化 DayLedger 小结与无状态网关；模拟器纵向闭环通过，真机/NSD/后台/真实模型仍保留 |
+| 2026-07-15 | Android 连接体验 | 增加 Debug 三入口统一候选/授权/成功/断开适配层和非敏感状态存储；Release provider 为空，真实 TLS 手工路径下沉开发者选项 |

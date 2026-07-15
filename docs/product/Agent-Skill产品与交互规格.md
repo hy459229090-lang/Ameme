@@ -1,7 +1,7 @@
-# Ameme Agent Skill 产品与交互规格 v0.1
+# Ameme Agent Skill 产品与交互规格 v0.2
 
 > 文档状态：已接受；MVP 研发前正本\
-> 更新日期：2026-07-14\
+> 更新日期：2026-07-15\
 > 适用范围：Codex、Claude Code、Cursor 等支持 MCP/Skill 的 Agent 宿主\
 > 产品包正本：`../../packages/agent-skills/ameme-memory/`
 
@@ -27,6 +27,8 @@ Skill 是 AI 使用者的主战场之一，但不是新的桌面管理端。宿�
 
 ## 3. 低摩擦与可见性
 
+- 普通用户在 Mobile 通过同网发现、扫码或账户设备找到 Agent；三种入口共享同一 Mobile 授权页。宿主可以发起/展示候选，但不能替 Mobile 代为批准。
+- Skill 不要求普通用户复制长期密钥、JSON、IP 或端口。用于工程验证的手工 TLS 凭据只属于 Debug 开发者路径，不能成为公开产品教程。
 - 第一次配对、新宿主、新空间、Restricted/Raw、外部处理、导出、恢复和删除必须显式确认。
 - 已有精确 `autonomous_memory` 授权时，Agent 可自动取最小上下文并直接写入长期 Event/Revision；每次写入在活动记录中可见、可撤销、可纠正。
 - 每次召回都能说明空间、时间范围和 `complete/partial/unknown`；无结果不等于“用户没有做事”。

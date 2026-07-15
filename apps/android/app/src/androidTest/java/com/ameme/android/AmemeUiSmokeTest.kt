@@ -12,6 +12,7 @@ import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.test.platform.app.InstrumentationRegistry
+import com.ameme.android.data.transport.PairingExperienceStore
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TestRule
@@ -24,6 +25,11 @@ class AmemeUiSmokeTest {
             override fun evaluate() {
                 InstrumentationRegistry.getInstrumentation().targetContext
                     .getSharedPreferences("ameme_onboarding", android.content.Context.MODE_PRIVATE)
+                    .edit()
+                    .clear()
+                    .commit()
+                InstrumentationRegistry.getInstrumentation().targetContext
+                    .getSharedPreferences(PairingExperienceStore.PREFERENCES, android.content.Context.MODE_PRIVATE)
                     .edit()
                     .clear()
                     .commit()
@@ -80,5 +86,41 @@ class AmemeUiSmokeTest {
         composeRule.onNodeWithText("查看删除影响").performScrollTo().performClick()
         composeRule.onNodeWithText("删除影响与进度").assertIsDisplayed()
         composeRule.onNodeWithText("合成影响范围").assertIsDisplayed()
+    }
+
+    @Test
+    fun agentConnection_offersThreeOrdinaryUserEntrances() {
+        composeRule.onNodeWithText("查看今天").performClick()
+        composeRule.onNodeWithContentDescription("打开设置").performClick()
+        composeRule.onNodeWithTag("connect-device-button").performScrollTo().performClick()
+
+        composeRule.onNodeWithText("自动发现电脑").assertIsDisplayed()
+        composeRule.onNodeWithText("扫描二维码").assertIsDisplayed()
+        composeRule.onNodeWithText("账户设备").assertIsDisplayed()
+    }
+
+    @Test
+    fun agentConnection_requiresAuthorizationAndCanBeDisconnected() {
+        composeRule.onNodeWithText("查看今天").performClick()
+        composeRule.onNodeWithContentDescription("打开设置").performClick()
+        composeRule.onNodeWithTag("connect-device-button").performScrollTo().performClick()
+        composeRule.onNodeWithTag("pairing-method-lan").performClick()
+
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            composeRule.onAllNodesWithText("允许 Agent 连接？").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithText("体验模式 · 不建立真实网络连接").assertIsDisplayed()
+        composeRule.onNodeWithText("允许并连接").performClick()
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            composeRule.onAllNodesWithText("连接成功").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithText("完成").performClick()
+        composeRule.onNodeWithText("Ameme Desktop").assertIsDisplayed()
+        composeRule.onNodeWithText("Codex · 体验连接").assertIsDisplayed()
+        composeRule.onNodeWithTag("disconnect-device-button").performClick()
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            composeRule.onAllNodesWithText("连接设备").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithTag("connect-device-button").assertIsDisplayed()
     }
 }

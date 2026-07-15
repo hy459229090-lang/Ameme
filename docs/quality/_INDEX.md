@@ -7,6 +7,7 @@
 | Windows 信息源低风险实测 | `../../research/windows/windows-feasibility-report.md` | 部分通过 |
 | Android DB-01 10k/100k AVD 报告 | `../../tests/results/performance/android-db01-api36.json` | 有效基线；两项预注册 DB 延迟门通过 |
 | Android MVP 完整体验闭环 | `Android-MVP完整体验闭环验证-20260714.md` | conditional_pass；移动来源/Agent/AI 小结在 API 36 AVD 闭环 |
+| Android Agent 统一连接体验 | `Android-Agent统一连接体验验证-20260715.md` | conditional_pass；三入口、统一授权、模拟标识、断开和 Release 隔离通过 |
 
 ## 当前正本
 
@@ -29,3 +30,4 @@
 | 2026-07-14 | 新增 | 登记 Android DB-01 10k/100k 性能探针、判定门与待验证边界 |
 | 2026-07-14 | 验证 | 固化 API 36 AVD 10k/100k 报告；100k FTS P95 177.72 ms、单次提交 P95 215.67 ms，两项硬门通过 |
 | 2026-07-14 | 验证 | 移动来源、配对 Agent TLS 写入、显式结构化 AI 小结和重启持久化形成完整合成体验；真实模型/真机/双端仍保留 |
+| 2026-07-15 | 验证 | Android Debug 三种普通用户连接入口收敛到统一授权/成功/断开流程，56 项设备回归 49 通过、7 Gate 跳过、0 失败；真实 NSD/QR/账户仍保留 |

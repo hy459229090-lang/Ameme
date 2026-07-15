@@ -8,7 +8,7 @@
 | 事件反馈与记忆类型 | `记忆类型与反馈事件模型.md` | v0.2，等待 DayLedger 实验验证 |
 | MVP 研发架构技术方案 | `MVP研发架构技术方案.md` | v0.6，技术栈、LAN/账户、SourceLocator、Skill 与 Spike 边界已接受 |
 | MVP 领域契约与状态机 | `MVP领域契约与状态机.md` | v0.1，领域不变量、状态、冲突、Recall 和兼容候选 |
-| MVP 本地存储、同步与删除 | `MVP本地存储同步与删除协议.md` | v0.6，Android SQLCipher v6、DayLedger/Summary、持久 Agent 幂等、来源实例、FTS/LIKE/keyset 与 10k/100k AVD 基线已验证；Raw/LAN/完整删除和物理设备仍待验证 |
+| MVP 本地存储、同步与删除 | `MVP本地存储同步与删除协议.md` | v0.7，Android SQLCipher v6、DayLedger/Summary、持久 Agent 幂等、三入口发现/统一授权分层、来源实例与 10k/100k AVD 基线；真实 NSD/QR/账户、Raw/LAN/完整删除和物理设备仍待验证 |
 | MVP AI 路由与 Prompt | `MVP-AI任务路由与Prompt契约.md` | v0.1，任务目录、隐私门、回退和 Eval 候选 |
 | MVP 成本容量 SLO 与观测 | `MVP成本容量SLO与可观测性.md` | v0.2，LAN/local-first 规划档、公式、暂定预算与观测基线 |
 
