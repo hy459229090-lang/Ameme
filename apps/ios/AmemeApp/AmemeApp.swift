@@ -2001,17 +2001,22 @@ private final class AgentQRCodeScannerViewController:
         }
     }
 
-    func metadataOutput(
+    nonisolated func metadataOutput(
         _ output: AVCaptureMetadataOutput,
         didOutput metadataObjects: [AVMetadataObject],
         from connection: AVCaptureConnection
     ) {
-        guard
-            !delivered,
-            let code = metadataObjects
+        guard let code = metadataObjects
                 .compactMap({ $0 as? AVMetadataMachineReadableCodeObject })
                 .first(where: { $0.type == .qr })?
                 .stringValue else { return }
+        Task { @MainActor [weak self] in
+            self?.acceptScannedCode(code)
+        }
+    }
+
+    private func acceptScannedCode(_ code: String) {
+        guard !delivered else { return }
         delivered = true
         captureQueue.async { [captureSession] in
             if captureSession.isRunning {
