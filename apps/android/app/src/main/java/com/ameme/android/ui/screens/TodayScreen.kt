@@ -393,6 +393,7 @@ private fun CaptureBottomSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .testTag("capture-options")
                 .verticalScroll(rememberScrollState())
                 .navigationBarsPadding()
                 .padding(horizontal = 20.dp, vertical = 8.dp),

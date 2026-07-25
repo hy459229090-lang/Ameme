@@ -91,7 +91,8 @@ class AmemeUiSmokeTest {
         composeRule.onNodeWithContentDescription("记录一件事").performClick()
         composeRule.onNodeWithText("文字").assertIsDisplayed()
         composeRule.onNodeWithText("语音").assertIsDisplayed()
-        composeRule.onNodeWithText("照片").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("capture-options").performScrollToNode(hasText("照片"))
+        composeRule.onNodeWithText("照片").assertIsDisplayed()
     }
 
     @Test
