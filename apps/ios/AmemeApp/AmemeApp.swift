@@ -2100,6 +2100,7 @@ private struct EventRowView: View {
         }
         .buttonStyle(.plain)
         .overlay(alignment: .bottom) { Divider() }
+        .accessibilityIdentifier("event.\(event.id.uuidString.lowercased())")
         .accessibilityElement(children: .combine)
         .accessibilityLabel(
             "\(event.time?.formatted(date: .omitted, time: .shortened) ?? "时间待确认")，\(event.title)，\(event.factStatus.label)\(event.isLocalOnly ? "，仅本机" : "")"

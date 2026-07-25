@@ -55,9 +55,10 @@ final class AmemeUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["搜索"].waitForExistence(timeout: 5))
         let searchResults = app.scrollViews["search.results"]
         XCTAssertTrue(searchResults.waitForExistence(timeout: 5))
+        let eveningEvent = app.buttons["event.00000000-0000-4000-8000-000000000005"]
         XCTAssertTrue(
             scrollToElement(
-                app.staticTexts["记录一段晚间想法"],
+                eveningEvent,
                 in: app,
                 scrollContainer: searchResults
             )
