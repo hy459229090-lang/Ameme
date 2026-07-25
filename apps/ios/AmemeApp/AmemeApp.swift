@@ -731,22 +731,25 @@ struct TodayView: View {
                 .accessibilityIdentifier("today.settings")
             }
         }
-        .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 8) }
-        .overlay(alignment: .bottomTrailing) {
-            Button { showingCapture = true } label: {
-                Label("记录", systemImage: "plus")
-                    .labelStyle(.titleAndIcon)
-                    .font(.headline)
-                    .padding(.horizontal, 18)
-                    .padding(.vertical, 13)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            HStack {
+                Spacer()
+                Button { showingCapture = true } label: {
+                    Label("记录", systemImage: "plus")
+                        .labelStyle(.titleAndIcon)
+                        .font(.headline)
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 13)
+                }
+                .buttonStyle(.borderedProminent)
+                .clipShape(Capsule())
+                .accessibilityLabel("记录一件事")
+                .accessibilityHint(canCapture ? "打开记录方式" : "本机存储恢复后可用")
+                .disabled(!canCapture)
             }
-            .buttonStyle(.borderedProminent)
-            .clipShape(Capsule())
-            .accessibilityLabel("记录一件事")
-            .accessibilityHint(canCapture ? "打开记录方式" : "本机存储恢复后可用")
-            .disabled(!canCapture)
-            .padding(.trailing, 20)
-            .padding(.bottom, 12)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
+            .background(.ultraThinMaterial)
         }
         .sheet(isPresented: $showingCapture) {
             CaptureSheet()
@@ -815,6 +818,8 @@ struct SearchView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Button { showingDateFilter = true } label: {
                     Image(systemName: startDate != nil || endDate != nil ? "calendar.badge.checkmark" : "calendar")
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
                 }
                 .accessibilityLabel("选择日期")
             }
@@ -2075,37 +2080,21 @@ private struct SettingRowView: View {
 }
 
 private struct EventRowView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let event: MemoryEvent
     let onTap: () -> Void
 
     var body: some View {
         Button(action: onTap) {
-            HStack(alignment: .top, spacing: 14) {
-                Text(event.time?.formatted(date: .omitted, time: .shortened) ?? "待定")
-                    .font(.subheadline.monospacedDigit())
-                    .foregroundStyle(AmemeStyle.secondaryText)
-                    .frame(width: 58, alignment: .leading)
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(alignment: .firstTextBaseline) {
-                        Text(event.title).font(.headline).foregroundStyle(.primary)
-                        Spacer(minLength: 8)
-                        Text(event.factStatus.label)
-                            .font(.caption)
-                            .foregroundStyle(event.factStatus == .needsReview ? AmemeStyle.teal : AmemeStyle.secondaryText)
-                    }
-                    Text(event.detail)
-                        .font(.body)
-                        .foregroundStyle(AmemeStyle.secondaryText)
-                        .multilineTextAlignment(.leading)
-                    HStack(spacing: 8) {
-                        Text(event.sourceLabel)
-                        if event.isLocalOnly { Text("仅本机") }
-                    }
-                    .font(.caption)
-                    .foregroundStyle(AmemeStyle.secondaryText)
+            Group {
+                if dynamicTypeSize.isAccessibilitySize {
+                    accessibilityLayout
+                } else {
+                    compactLayout
                 }
             }
             .padding(.vertical, 14)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -2114,6 +2103,67 @@ private struct EventRowView: View {
         .accessibilityLabel(
             "\(event.time?.formatted(date: .omitted, time: .shortened) ?? "时间待确认")，\(event.title)，\(event.factStatus.label)\(event.isLocalOnly ? "，仅本机" : "")"
         )
+    }
+
+    private var compactLayout: some View {
+        HStack(alignment: .top, spacing: 14) {
+            Text(eventTime)
+                .font(.subheadline.monospacedDigit())
+                .foregroundStyle(AmemeStyle.secondaryText)
+                .frame(width: 58, alignment: .leading)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(event.title).font(.headline).foregroundStyle(.primary)
+                    Spacer(minLength: 8)
+                    statusText
+                }
+                Text(event.detail)
+                    .font(.body)
+                    .foregroundStyle(AmemeStyle.secondaryText)
+                    .multilineTextAlignment(.leading)
+                HStack(spacing: 8) {
+                    Text(event.sourceLabel)
+                    if event.isLocalOnly { Text("仅本机") }
+                }
+                .font(.caption)
+                .foregroundStyle(AmemeStyle.secondaryText)
+            }
+        }
+    }
+
+    private var accessibilityLayout: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                Text(event.time?.formatted(date: .omitted, time: .shortened) ?? "待定")
+                    .font(.subheadline.monospacedDigit())
+                    .foregroundStyle(AmemeStyle.secondaryText)
+                Spacer(minLength: 8)
+                statusText
+            }
+            Text(event.title)
+                .font(.headline)
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(event.detail)
+                .font(.body)
+                .foregroundStyle(AmemeStyle.secondaryText)
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(event.isLocalOnly ? "\(event.sourceLabel) · 仅本机" : event.sourceLabel)
+                .font(.caption)
+                .foregroundStyle(AmemeStyle.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var statusText: some View {
+        Text(event.factStatus.label)
+            .font(.caption)
+            .foregroundStyle(event.factStatus == .needsReview ? AmemeStyle.teal : AmemeStyle.secondaryText)
+    }
+
+    private var eventTime: String {
+        event.time?.formatted(date: .omitted, time: .shortened) ?? "待定"
     }
 }
 

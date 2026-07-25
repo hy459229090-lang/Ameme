@@ -83,10 +83,25 @@ def main() -> int:
         "Search uses a direct accessible settings action",
         checks,
     )
+    require(
+        search_view.count(".frame(width: 44, height: 44)") >= 2,
+        "Search toolbar actions preserve minimum touch targets",
+        checks,
+    )
     event_row = section(source, "private struct EventRowView", "private struct DaySummaryView")
     require(
         ".accessibilityElement(children: .combine)" in event_row and ".accessibilityLabel(" in event_row,
         "Event rows expose one concise accessible label",
+        checks,
+    )
+    require(
+        "dynamicTypeSize.isAccessibilitySize" in event_row and "accessibilityLayout" in event_row,
+        "Event rows switch to a readable vertical layout at accessibility sizes",
+        checks,
+    )
+    require(
+        '.safeAreaInset(edge: .bottom, spacing: 0)' in today_view,
+        "Today reserves safe-area space for capture instead of covering timeline content",
         checks,
     )
     delete_progress = section(source, "private struct DeleteProgressView")
