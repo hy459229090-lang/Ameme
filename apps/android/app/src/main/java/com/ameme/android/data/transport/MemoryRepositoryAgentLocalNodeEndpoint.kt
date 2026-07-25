@@ -50,6 +50,7 @@ internal data class VerifiedAgentLocalNodeSession(
     val allowedDataClasses: Set<String>,
     val expiresAt: Instant,
     val grantState: VerifiedAgentLocalNodeGrantState = VerifiedAgentLocalNodeGrantState.Active,
+    val accessGrant: AgentAccessGrant? = null,
 )
 
 /** Durable, atomic idempotency is an injected infrastructure dependency, not endpoint state. */
@@ -87,7 +88,8 @@ internal sealed interface AgentLocalNodeIdempotencyResult {
  *
  * This is not a socket, discovery service, LAN protocol, or authentication implementation. The
  * public factory is closed. An enabled instance requires a separately verified session and an
- * atomic idempotency registry; Android production does not wire either one in this slice.
+ * atomic idempotency registry; the production runtime injects both and may additionally attach
+ * the local AccessGrant policy gate.
  */
 class MemoryRepositoryAgentLocalNodeEndpoint private constructor(
     private val repository: MemoryRepository?,
@@ -192,6 +194,31 @@ class MemoryRepositoryAgentLocalNodeEndpoint private constructor(
         }
         if (control.callerId != session.callerId || control.grantId != session.grantId) {
             return AgentLocalNodeErrorCode.AUTH_REQUIRED
+        }
+        session.accessGrant?.let { grant ->
+            val grantFailure = runCatching {
+                grant.authorizeScope(
+                    callerId = control.callerId,
+                    grantId = control.grantId,
+                    purpose = control.purpose,
+                    spaces = control.spaces,
+                    dataTypes = control.memoryTypes,
+                    at = clock.instant(),
+                )
+            }.exceptionOrNull()
+            if (grantFailure != null) {
+                return when (grantFailure) {
+                    is AgentAccessGrantException -> when (grantFailure.failure) {
+                        AgentAccessGrantFailure.AuthRequired -> AgentLocalNodeErrorCode.AUTH_REQUIRED
+                        AgentAccessGrantFailure.GrantRevoked -> AgentLocalNodeErrorCode.GRANT_REVOKED
+                        AgentAccessGrantFailure.GrantExpired -> AgentLocalNodeErrorCode.GRANT_EXPIRED
+                        AgentAccessGrantFailure.PurposeDenied -> AgentLocalNodeErrorCode.PURPOSE_DENIED
+                        AgentAccessGrantFailure.SpaceDenied -> AgentLocalNodeErrorCode.SPACE_DENIED
+                        AgentAccessGrantFailure.DataTypeDenied -> AgentLocalNodeErrorCode.DATA_TYPE_DENIED
+                    }
+                    else -> AgentLocalNodeErrorCode.AUTH_REQUIRED
+                }
+            }
         }
         if (session.grantState == VerifiedAgentLocalNodeGrantState.Revoked) {
             return AgentLocalNodeErrorCode.GRANT_REVOKED

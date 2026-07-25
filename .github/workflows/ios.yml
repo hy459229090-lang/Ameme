@@ -1,0 +1,76 @@
+name: iOS
+
+on:
+  pull_request:
+    paths:
+      - "apps/ios/**"
+      - "packages/contracts/**"
+      - ".github/workflows/ios.yml"
+  push:
+    branches: [main]
+    paths:
+      - "apps/ios/**"
+      - "packages/contracts/**"
+      - ".github/workflows/ios.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: macos-15
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: apps/ios
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - name: Select Xcode 16
+        run: sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer
+      - name: Install pinned XcodeGen
+        run: |
+          curl --fail --location --retry 3 \
+            --output /tmp/xcodegen.zip \
+            https://github.com/yonaskolb/XcodeGen/releases/download/2.46.0/xcodegen.zip
+          echo "4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806  /tmp/xcodegen.zip" | shasum -a 256 --check
+          unzip -q /tmp/xcodegen.zip -d /tmp/xcodegen
+          /tmp/xcodegen/xcodegen/bin/xcodegen --version
+      - name: Generate and verify the installable project
+        run: |
+          /tmp/xcodegen/xcodegen/bin/xcodegen generate
+          git diff --exit-code -- Ameme.xcodeproj
+      - name: Build app and embedded Share Extension
+        run: |
+          xcodebuild \
+            -project Ameme.xcodeproj \
+            -scheme Ameme \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+      - name: Run unit and UI tests
+        run: |
+          device_id="$(xcrun simctl create 'Ameme CI' \
+            'com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro' \
+            'com.apple.CoreSimulator.SimRuntime.iOS-18-5')"
+          trap 'xcrun simctl delete "$device_id"' EXIT
+          xcrun simctl boot "$device_id"
+          xcrun simctl bootstatus "$device_id" -b
+          xcrun simctl ui "$device_id" appearance dark
+          xcrun simctl ui "$device_id" content_size accessibility-extra-extra-extra-large
+          xcodebuild \
+            -project Ameme.xcodeproj \
+            -scheme Ameme \
+            -destination "platform=iOS Simulator,id=$device_id" \
+            -resultBundlePath "$RUNNER_TEMP/AmemeTests.xcresult" \
+            CODE_SIGNING_ALLOWED=NO \
+            test
+      - name: Upload UI test evidence
+        if: always()
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: ameme-ios-test-evidence
+          path: ${{ runner.temp }}/AmemeTests.xcresult
+          if-no-files-found: warn
+          retention-days: 14

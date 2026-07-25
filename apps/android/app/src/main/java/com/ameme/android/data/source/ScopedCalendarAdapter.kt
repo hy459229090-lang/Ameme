@@ -4,6 +4,7 @@ import com.ameme.android.data.MemoryRepository
 import com.ameme.android.domain.FactStatus
 import com.ameme.android.domain.MemoryEvent
 import com.ameme.android.domain.LocatorPermissionState
+import com.ameme.android.domain.Sensitivity
 import com.ameme.android.domain.SourceCaptureRequest
 import com.ameme.android.domain.SourceKind
 import java.time.Duration
@@ -139,6 +140,7 @@ class ScopedCalendarAdapter(
                 mimeType = CALENDAR_EVENT_MIME,
                 locatorPermissionState = LocatorPermissionState.ProviderRead,
                 sourceInstanceKey = record.start.toEpochMilli().toString(),
+                sensitivity = Sensitivity.Confidential,
             )
         }
         cancellation.beginCommit()

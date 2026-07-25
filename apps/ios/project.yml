@@ -1,0 +1,106 @@
+name: Ameme
+
+options:
+  minimumXcodeGenVersion: 2.46.0
+  deploymentTarget:
+    iOS: "18.0"
+  xcodeVersion: "16.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    CURRENT_PROJECT_VERSION: "1"
+    MARKETING_VERSION: "0.1.0"
+    SWIFT_VERSION: "6.0"
+    TARGETED_DEVICE_FAMILY: "1,2"
+    ENABLE_USER_SCRIPT_SANDBOXING: true
+
+targets:
+  AmemeShared:
+    type: framework.static
+    platform: iOS
+    sources:
+      - path: Ameme/Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.ameme.ios.shared
+        DEFINES_MODULE: true
+        SKIP_INSTALL: true
+
+  AmemeShareExtension:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: ShareExtension
+        excludes:
+          - README.md
+    dependencies:
+      - target: AmemeShared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.ameme.ios.share
+        PRODUCT_NAME: AmemeShareExtension
+        INFOPLIST_FILE: ShareExtension/Info.plist
+        CODE_SIGN_ENTITLEMENTS: ShareExtension/ShareExtension.entitlements
+        APPLICATION_EXTENSION_API_ONLY: true
+        SKIP_INSTALL: true
+
+  AmemeApp:
+    type: application
+    platform: iOS
+    sources:
+      - path: AmemeApp
+        excludes:
+          - MacStub.swift
+      - path: Ameme/Assets.xcassets
+    dependencies:
+      - target: AmemeShared
+      - target: AmemeShareExtension
+        embed: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.ameme.ios
+        PRODUCT_NAME: Ameme
+        INFOPLIST_FILE: Ameme/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Ameme/Ameme.entitlements
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+
+  AmemeSharedTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: Tests/AmemeSharedTests
+    dependencies:
+      - target: AmemeShared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.ameme.ios.shared-tests
+        GENERATE_INFOPLIST_FILE: true
+
+  AmemeUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: UITests
+    dependencies:
+      - target: AmemeApp
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.ameme.ios.ui-tests
+        GENERATE_INFOPLIST_FILE: true
+
+schemes:
+  Ameme:
+    build:
+      targets:
+        AmemeApp: all
+        AmemeShareExtension: all
+        AmemeShared: all
+    test:
+      gatherCoverageData: true
+      targets:
+        - name: AmemeSharedTests
+          parallelizable: true
+        - name: AmemeUITests
+          parallelizable: false

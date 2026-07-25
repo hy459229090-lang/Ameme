@@ -44,11 +44,25 @@ interface MemoryRepository : Closeable {
         pageSize: Int,
     ): MemoryPage
 
+    fun searchPage(
+        query: String,
+        startDate: LocalDate?,
+        endDate: LocalDate?,
+        cursor: String?,
+        pageSize: Int,
+    ): MemoryPage
+
     fun sourceLocator(eventId: String): SourceLocator?
 
     fun pendingSourceLocatorReleases(): List<PendingSourceLocatorRelease>
 
     fun markSourceLocatorReleased(eventId: String): Boolean
+
+    fun updateEvent(
+        eventId: String,
+        factStatus: com.ameme.android.domain.FactStatus? = null,
+        userWords: String? = null,
+    ): com.ameme.android.domain.MemoryEvent?
 
     fun deleteEvent(eventId: String): Boolean
 

@@ -98,8 +98,26 @@ class MemoryIoExecutor(
         pageSize: Int,
     ): MemoryPage = onIo { repository.searchPage(query, date, cursor, pageSize) }
 
+    suspend fun searchPage(
+        repository: MemoryRepository,
+        query: String,
+        startDate: LocalDate?,
+        endDate: LocalDate?,
+        cursor: String?,
+        pageSize: Int,
+    ): MemoryPage = onIo { repository.searchPage(query, startDate, endDate, cursor, pageSize) }
+
     suspend fun deleteEvent(repository: MemoryRepository, eventId: String): Boolean =
         onIo { repository.deleteEvent(eventId) }
+
+    suspend fun updateEvent(
+        repository: MemoryRepository,
+        eventId: String,
+        factStatus: com.ameme.android.domain.FactStatus? = null,
+        userWords: String? = null,
+    ): com.ameme.android.domain.MemoryEvent? = onIo {
+        repository.updateEvent(eventId, factStatus, userWords)
+    }
 
     suspend fun retrySourceGrantCleanup(coordinator: SourceGrantCleanupCoordinator): SourceGrantCleanupResult =
         onIo(coordinator::retryPending)

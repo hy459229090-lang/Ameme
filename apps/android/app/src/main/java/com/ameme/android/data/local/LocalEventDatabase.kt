@@ -85,13 +85,30 @@ class LocalEventDatabase private constructor(
     }
 
     fun readPage(query: String, date: LocalDate?, cursor: String?, pageSize: Int): MemoryPage {
+        return readPage(query, date, date, cursor, pageSize)
+    }
+
+    fun readPage(
+        query: String,
+        startDate: LocalDate?,
+        endDate: LocalDate?,
+        cursor: String?,
+        pageSize: Int,
+    ): MemoryPage {
         require(pageSize in 1..100) { "pageSize must be between 1 and 100" }
+        require(startDate == null || endDate == null || !endDate.isBefore(startDate)) {
+            "Search end date must not be before start date"
+        }
         val decodedCursor = cursor?.let(::decodeCursor)
         val where = mutableListOf("e.space_id = ?", "e.state = ?")
         val args = mutableListOf(spaceId, STATE_ACTIVE)
-        if (date != null) {
-            where += "e.local_date = ?"
-            args += date.toString()
+        if (startDate != null) {
+            where += "e.local_date >= ?"
+            args += startDate.toString()
+        }
+        if (endDate != null) {
+            where += "e.local_date <= ?"
+            args += endDate.toString()
         }
         val terms = searchTerms(query)
         val useFts = terms.isNotEmpty() && searchBackend == SearchBackend.Fts5
@@ -230,6 +247,23 @@ class LocalEventDatabase private constructor(
         )
         clearSummaryAfterDeletion(current.event.localDate)
         true
+    }
+
+    fun updateEvent(
+        eventId: String,
+        factStatus: FactStatus? = null,
+        userWords: String? = null,
+    ): MemoryEvent? = inTransaction {
+        val current = findCurrent(eventId, includeDeleted = false) ?: return@inTransaction null
+        val updated = current.event.copy(
+            factStatus = factStatus ?: current.event.factStatus,
+            userWords = userWords?.trim()?.take(16_384)?.ifEmpty { null } ?: current.event.userWords,
+            revision = current.revision + 1,
+        )
+        appendRevision(updated, reason = "user_revision", state = STATE_ACTIVE)
+        refreshSearchIndex(updated, STATE_ACTIVE)
+        touchDayLedger(updated.localDate)
+        updated
     }
 
     fun sourceLocatorState(eventId: String): String? = database.rawQuery(

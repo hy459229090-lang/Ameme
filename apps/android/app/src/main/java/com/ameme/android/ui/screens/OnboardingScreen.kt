@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.EditNote
+import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.MicNone
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material3.Button
@@ -49,6 +50,7 @@ fun OnboardingScreen(onContinue: () -> Unit) {
             item { SourceStartCard(Icons.Outlined.EditNote, "输入一句话", "无需权限，先保存为本机记录") }
             item { SourceStartCard(Icons.Outlined.PhotoLibrary, "用照片开始", "由系统照片选择器按次授权，不读取整个照片库") }
             item { SourceStartCard(Icons.Outlined.MicNone, "说一句", "使用系统录音或音频选择器，不申请常驻麦克风权限") }
+            item { SourceStartCard(Icons.Outlined.CalendarMonth, "导入计划", "只在你主动导入时申请日历只读权限，计划不会被当作已发生") }
             item {
                 Button(
                     onClick = onContinue,

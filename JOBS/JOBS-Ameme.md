@@ -1,5 +1,10 @@
 # Ameme 项目 Job
 
+> 文档状态：当前执行中；MVP 工程实现与第九/十/十一/十二/十三/十四/十五/十六/十七/十八/十九/二十批双端产品完善并行推进，真实设备与发布 Gate 仍未关闭。
+> 适合读者：产品、研发、设计、安全、测试、AI、发布协作人。
+> 人类快速阅读：先看各批次标题、当前门禁和最后一条验证结果，再按任务域展开。
+> AI 阅读提示：以本文件和 `STATUS.md` 为状态正本；不得把 AVD、Mock、合成评测或跳过 Gate 写成真机、生产或公开发布通过。
+
 ## 工作区与上线工作流
 
 - 状态：`done`
@@ -212,12 +217,220 @@
 - [x] 现有真实 TLS 1.3/certificate pin/HMAC 手工配对保留，但下沉至 Debug 开发者选项；它继续承担 Host→Android 工程验证，不冒充普通用户发现协议。
 - [x] 自动化与视觉验证：三入口单元测试、5/5 UI 主路径、2/2 状态存储、Release 隔离、Debug/Release build/lint，以及 API 36 AVD 56 项普通回归（49 通过、7 Gate 跳过、0 失败）。验证报告：`docs/quality/Android-Agent统一连接体验验证-20260715.md`，判定 `conditional_pass`。
 
+### 本轮跨端体验收口（2026-07-17）
+
+- [x] iOS：补齐 SwiftUI 原生 App 目标与导航壳，覆盖首次引导、今天日流、历史搜索/单日筛选、统一记录 Sheet、文字/照片/语音/文件/日历主动导入、事件详情补充、设置、Agent 三入口体验状态和删除进度。
+- [x] iOS：本机事件与媒体引用使用 Keychain AES-GCM 加密；Summary 仅使用至少两条非受限、可用事件；未接入的 LAN、真实 Agent 网络和 AI 网关在 UI 中明确标注，不伪造成功。
+- [x] Android：搜索页补回稳定设置入口；事件详情的补充写入真实 Revision/FTS/DayLedger；删除从“手动模拟步骤”改为一次确认后执行本机删除，失败保留可重试状态。
+- [x] Android：移除无动作的状态 Chip/核验按钮和误导性的 mock/合成用户文案；空白今天页仍显示小结区；设置只对真正可操作的入口显示导航暗示。
+- [x] 当前可复跑验证：`python3 scripts/governance/check_workspace.py` 通过（137 checks，0 errors，0 warnings）；iOS `swift build --target AmemeShared`、`swift build --target AmemeApp` 与 `swift run --package-path apps/ios AmemeSharedSmoke` 在当前 macOS Command Line Tools 环境通过；`git diff --check` 通过。完整 `swift test` 仍需 Xcode 提供 XCTest。
+- [x] 当前环境限制已部分解除：使用临时 JDK 17、Android SDK 36 和 API 36 `google_apis_ps16k` arm64 AVD 完成 Android APK、JVM/lint、16 KB 安装启动、连接回归和截图/语义树审查；完整 Xcode/iOS SDK、iOS Simulator/真机与 Android 物理设备仍不可用，不写成已验证。
+
 ### 下一执行批次
 
 - [ ] CORE/AG 后续：用共享账户 Grant registry 替代 pairing-scoped root claim，补 append/undo/recall、后台生命周期和真实 Codex/Claude Code/Cursor host；Python CoreStore 继续只作 Oracle/Host 适配，不进入 App Core。
-- [ ] SYNC-002/003：把当前三入口体验替换为 Android NSD/未来 iOS Network.framework、短时二维码交换、账户设备列表与设备证明，统一进入共享 Grant；不得把 Debug 模拟、ADB 转发或 Host 通道通过写成物理 LAN/账户配对通过，iOS 部分等待 Mac。
+- [ ] SYNC-002/003：在已落地的 Android NSD 与 iOS Bonjour/Network.framework 发现适配器上继续补短时二维码交换、账户设备列表与设备证明，统一进入共享 Grant；不得把发现、Debug 模拟、ADB 转发或 Host 通道通过写成物理 LAN/账户配对通过。
 - [ ] AI live：在隐私/供应商评审和显式测试密钥后运行真实模型固定 Eval、延迟/token/成本与中文小结质量对比；未通过前 fake 只用于本地体验。
 - [ ] Android 设备矩阵：物理设备、16 KB page-size、OEM Calendar、系统录音结果授权、权限撤销、进程死亡、真实 Today/Search UI 性能与日期筛选优化。
+
+### 第八批双端产品完善（2026-07-18）
+
+- [x] iOS：修复事件数量、搜索词、日期范围、来源、Revision 和连接方式被显示为字面量的问题；补齐开始/结束日期范围搜索。
+- [x] iOS：增加不写入真实加密库的固定演示数据模式，覆盖正常、计划、待核验、整理中、受限、详情、删除和小结状态。
+- [x] Android：增加同一日流的开始/结束日期范围协议、SQLCipher/Fake Repository 分页实现和 Compose 范围选择器；保留旧单日 API 兼容。
+- [x] 双端：待核验/计划事件可选择“确认已发生”或“仍是计划”，真实追加 Revision，失败时保留当前状态并提示重试。
+- [x] 双端：结构化 JSON 导出接入系统保存/分享入口；导出固定 Personal 空间，排除 Restricted、SourceLocator 和原始照片/音频文件。
+- [x] 双端：补齐演示数据入口和可见边界提示；Android 演示切换使用内存 Fake Repository，退出后重新打开真实 SQLCipher。
+- [x] iOS：使用现代 EventKit 全日历访问请求、显式麦克风授权反馈，并在本机加密写入失败时回滚事件/媒体状态。
+- [x] 当前验证：iOS `swift build --target AmemeShared` 与 `swift build --target AmemeApp` 在当前 Command Line Tools 环境通过；Android 使用临时 JDK 17 与 Android SDK 36 完成 `:app:testDebugUnitTest`、`:app:lintDebug`、`:app:assembleDebug`，构建成功，lint 无阻断项；新增语音 Intent 的 `<queries>` 声明后，原有 package-visibility 警告已消除。
+- [ ] 设备级验收（当时记录）：第八批写入时设备环境尚未提供；第九批已补齐 Android 16 KB AVD 子门，但 iOS Simulator/真机、Android 物理设备和完整无障碍证据仍待补。
+
+### 第九批双端真实验收里程碑（2026-07-18，in_progress）
+
+- 目标：把本轮已经完成的双端源码闭环推进到可审计的设备级体验证据，并关闭剩余的跨端视觉、无障碍和发布前回归门槛。
+- [ ] iOS：在完整 Xcode/iOS SDK 环境打开 `apps/ios/Package.swift`，完成 iOS Simulator/真机 Debug 构建、单测、权限拒绝/撤销、演示模式、范围搜索、状态 Revision、导出和删除路径验收。
+- [x] Android AVD：API 36 `google_apis_ps16k` arm64 AVD 页大小为 16,384，完成 APK 安装启动；`connectedDebugAndroidTest` 52 项可执行测试通过、7 项显式 Gate 跳过、0 失败。
+- [ ] Android 物理设备：至少一台 Android 14+ 设备仍待补，覆盖权限撤销/进程重建/系统录音与日历导入、OEM、后台和真实 LAN。
+- [x] Android 视觉证据：已保存并检查 Onboarding/Today/Capture/Text Entry/Event Detail/Delete Impact/Search/Date Picker/Settings 截图及 UIAutomator 树；修复日期选择器英文默认文案、记录保存成功不关 Sheet 和启动加载竞态。详细记录见 `docs/quality/Android-16KB-UI验收-20260718.md`。
+- [ ] 完整无障碍：当前完成截图与 Compose/UIAutomator 语义检查；TalkBack、动态字体、旋转、焦点恢复、VoiceOver 仍待设备级验收。
+- [ ] 双端闭环：Android 已完成真实本机文字记录→Today→Search/日期范围→详情→删除与演示模式边界检查；iOS 真实来源和固定 Mock 两套路径仍待完整 Xcode 环境复验。
+- 退出条件：两端设备回归均无 P0/P1；截图/无障碍检查有证据；Android/iOS 构建与自动化测试通过；STATUS、JOBS 和验证报告同步到同一结论。当前仅 Android AVD 子门通过，里程碑保持 `in_progress`。
+
+### 第十批双端产品完善里程碑（2026-07-18，in_progress）
+
+- 目标：在第九批设备证据补齐的基础上，把 iOS 与 Android 的核心页面、状态语义、数据边界和故障反馈收敛为同一套可体验、可回归、可交付标准；真实本机路径与固定 Mock 路径都必须可完成体验闭环。
+- [ ] 跨端体验矩阵：Today、记录、搜索/日期范围、详情/Revision、删除影响、设置/导出、演示模式逐项对齐正常、空白、加载、失败、受限和恢复状态；差异必须有明确平台理由并写入验证记录。
+- [ ] iOS 真实验收：完整 Xcode/iOS SDK 下完成 Simulator/真机 Debug 构建、XCTest/XCUITest、权限拒绝与撤销、演示/真实本机往返、VoiceOver、Dynamic Type、旋转和恢复。
+- [ ] Android 真实验收：物理 Android 14+ 设备补测 16 KB/SQLCipher、权限撤销、进程死亡、系统日历/录音、后台恢复、OEM 差异、TalkBack、Dynamic Font、旋转和真实 LAN；API 36 16 KB AVD 继续作为回归基线。
+- [ ] 架构与交付门禁：共享契约/Mock fixture、双端 Repository/IO 边界、导出与删除策略保持 fail closed；构建、单测、UI 回归、语义树、截图、治理和文档结果必须可由干净环境复跑，不能把跳过项写成通过。
+- [x] 当前可用环境补证：iOS `AmemeSharedSmoke` 已覆盖测试密钥注入下的加密写入/重载、日期范围、Revision、摘要、导出、删除和演示隔离；iOS App 源码通过 iOS 目标 parse；Android Debug 构建/单测/lint/APK 继续通过。以上不替代 iOS Keychain/权限/真机与 Android 物理设备证据。
+- [x] 第十批本机可关闭差异：iOS 照片改为仅保存 Photos 不透明引用、音频恢复文件改为 AES-GCM 密文，并为本机存储错误提供重试与不可用时的记录入口禁用；Android 搜索失败提供可重试操作、记录方式节点声明 Button 语义。Smoke 已验证媒体密文、删除清理和照片引用；Android API 36 16 KB AVD 连接回归 52 项可执行测试通过、7 项显式跳过、0 失败。
+- [x] 第十批来源边界与恢复证据：iOS/Android 的照片、音频、日历主动来源统一标记为 confidential；Android 照片事件与 iOS 对齐为用户已选择/已记录；iOS Smoke 已验证 KeyMaterial 失败后 `retryLoad()` 可恢复到 ready。复跑结果：iOS Shared/App 构建与 Smoke 通过，Android 单测/Lint/APK 通过，16 KB AVD 52 项可执行测试通过、7 项显式跳过、0 失败。
+- [x] 第十批导入一致性：iOS 日历改为带 `eventkit://` 稳定引用的批量事务，重复导入幂等跳过，持久化失败整批回滚；Smoke 已执行覆盖成功、重复和失败不留部分事件，XCTest 测试源码同步覆盖同一矩阵。Android Calendar adapter 已有同等批量提交/取消/失败不暴露部分事件证据。
+- 退出条件：双端真实与 Mock 核心闭环均可复跑；无 P0/P1 体验或数据边界问题；关键控件具备可读名称、状态和操作反馈；iOS/Android 构建与自动化测试通过；剩余跳过项、设备限制和发布风险均登记并获得明确处理结论。该里程碑与第九批设备补证并行，保持 `in_progress`。
+
+### 第十一批隐私与设备交付里程碑（2026-07-18，in_progress）
+
+- 目标：继续收口两个 Native Mobile 产品的隐私清理、真实设备准备和可复跑证据；任何没有真实设备支持的门禁都保持透明，不以本机替代证据。
+- [x] iOS 录音生命周期：结束、取消和录音页离开统一删除临时音频文件，并释放音频会话；避免未加密临时录音残留或麦克风会话悬挂。
+- [x] iOS 来源可靠性：只有 `AVAudioRecorder.record()` 真正启动才进入录音状态；空录音不会写入事件，并会给出重试/选择已有音频反馈；日历导入跳过没有稳定 `eventIdentifier` 的条目，维持 `eventkit://` 幂等引用。
+- [x] 双端语义收口：Android 异常状态卡片的“查看”入口声明 Button 角色；iOS 事件行包含“仅本机”状态，删除进度向 VoiceOver 暴露当前步骤/跳过步骤。真实 TalkBack/VoiceOver 手势和动态字体仍待设备门禁。
+- [x] 双端搜索语义：iOS 搜索加入来源标签字段，与 Android 一样支持按“日历/照片/主动输入”等来源词检索；Shared Smoke 与 XCTest 测试源码覆盖来源检索。
+- [x] 双端导出语义：iOS/Android 结构化 JSON 的事实状态、事件类型、证据状态统一输出契约 wire value（如 `user_asserted`、`state_change`），不再暴露平台枚举命名差异；两端测试覆盖导出边界。
+- [x] iOS 本机复验：App 目标编译、iOS 目标源码解析和 Shared Smoke 通过；Smoke 继续覆盖加密媒体、照片引用、日历批量提交/幂等/回滚、删除与演示隔离。
+- [x] 设备事实登记：当前仅有 Command Line Tools，`xcodebuild`/`simctl` 不可用；Android 连接回归须使用 `/tmp/ameme-android-sdk` 固定 SDK 路径，不能写成物理设备通过。
+- [ ] iOS 完整 Xcode：补 Simulator/真机 Debug、XCTest/XCUITest、Keychain、权限拒绝/撤销、VoiceOver、Dynamic Type、旋转和录音真实生命周期验证。
+- [ ] Android 物理设备：补 Android 14+、OEM、进程重建、后台、真实录音/日历、TalkBack、动态字体、旋转和真实 LAN 验收；API 36 16 KB AVD 继续作为回归基线。
+- 退出条件：录音临时数据无残留、双端真实与 Mock 闭环可复跑、设备级和无障碍证据完整、构建/测试/治理均通过；在此之前保持 `in_progress`。
+
+### 第十二批双端体验收口里程碑（2026-07-18，in_progress）
+
+- 目标：把两个 Native Mobile 产品从“核心能力已实现”推进到“主要页面和关键状态可持续体验、可复跑、可交付”，继续收口跨端设计差异、真实本机/固定 Mock 两条路径和最终设备门禁。
+- [x] Android 深层体验复核：在 API 36 16 KB AVD 重新走通 Onboarding、Today、文字记录、真实事件、详情、删除影响/确认删除、Search、开始/结束日期选择和 Settings 底部；稳定帧未发现 P0/P1 设计问题。
+- [x] Android 语义复核：本轮 UIAutomator 树确认记录入口、事件行、搜索/设置、日期选择器、删除流程和设置操作节点具备可读文本或 content description；截图审查仅作为辅助证据，不宣称完整无障碍通过。
+- [x] 双端搜索/日历收口：iOS 多词搜索按最多 16 个空白分隔词逐词 AND 匹配；日历导入改为用户选择可读日历和今天/7 天/31 天范围后再查询，避免默认读取所有日历的固定窗口；App 目标构建、iOS 目标解析和 Shared Smoke 通过。
+- [x] Android 真实/Mock 搜索一致性：Fake Repository 与 SQLCipher/LIKE 后端统一最多 16 个空白分隔词逐词 AND 规则，补充跨字段命中与不完整查询不命中单测，并通过 Debug 单测、lint、APK 和 16 KB AVD 回归。
+- [x] Android 空白/稀疏状态对齐：普通本机路径按活动事件数自动解析 `空白`、`稀疏`、`正常`，加载/错误/离线/部分范围/权限受限状态优先保留；体验状态覆盖仍保持测试确定性，并通过单测、lint、APK 和 16 KB AVD 回归。
+- [x] 双端来源状态可见：Android 设置展示照片按次选择、日历只读权限和系统录音入口状态；iOS 设置读取 Photos/AVAudioSession/EventKit 原生状态并保留拒绝后的手动降级路径；Android UI smoke、Debug 构建和 iOS App target build/目标 parse 通过。
+- [ ] 双端体验矩阵：逐页关闭 Today、记录、搜索/日期范围、详情/Revision、删除、设置/导出、演示模式在正常、空白、加载、失败、受限和恢复状态上的差异；平台差异必须有理由和测试证据。
+- [ ] iOS 真实设备门禁：完整 Xcode/iOS SDK 下完成 Simulator/真机、XCTest/XCUITest、VoiceOver、Dynamic Type、旋转、权限拒绝/撤销和真实来源生命周期。
+- [ ] Android 物理设备门禁：至少一台 Android 14+ OEM 设备完成权限撤销、进程重建、后台、录音/日历、TalkBack、动态字体、旋转和真实 LAN。
+- [ ] 交付同步：构建、单测、连接回归、截图/语义、治理和质量报告保持同一结论；所有缺失证据继续显式登记，不把 AVD、Mock 或跳过项升级为真机/生产通过。
+- 退出条件：双端主要闭环真实本机与固定 Mock 均可复跑；无 P0/P1 体验和数据边界问题；关键控件具备可读名称、状态和反馈；iOS/Android 设备级、构建、自动化、无障碍和治理门禁完成。当前保持 `in_progress`。
+
+### 第十三批主动来源与恢复里程碑（2026-07-18，in_progress）
+
+- 目标：把两个产品的主动来源入口统一为“先确认、后落库”，让取消、权限不足和本机写入失败都保留用户控制权；同时明确真实 iOS Share Extension 与设备级门禁不能用文件选择器、Mock 或 AVD 代替。
+- [x] Android 外部分享确认：`ACTION_SEND` 解析后先进入“保存分享内容？”确认页；确认才写入 Personal 本机节点，取消不创建 Event，落库失败保留待确认内容；UI smoke 覆盖确认前无事件、确认后 Today 可见。
+- [x] iOS 文件导入确认：文本/音频文件选择后先在记录页展示文件名、文本预览或音频来源边界；确认才调用本机保存，取消不创建 Event；App target build、iOS 目标 parse 和 Shared Smoke 通过。
+- [x] 双端导出恢复：Android 导出快照在系统保存取消/写入失败后保留并显示“重试保存导出”；iOS 设置在已有导出文件后将入口明确为“重新生成结构化导出”，两端均不修改源记录。
+- [x] iOS incoming-share 桥接：Shared Core 提供受限文本/图片/PDF payload、App Group 文件 handoff 和只含 UUID 的 `ameme://incoming-share/<id>` URL；App 侧显示确认页并在确认后落库，Shared Smoke/XCTest 源码覆盖回读、拒绝和清理。
+- [x] 双端边界说明：Android README、iOS README、质量报告和状态看板均登记“确认后落库”的新语义，以及 iOS 真实 Share Extension 尚未接入的限制。
+- [ ] iOS 真实 Share Extension：在完整 Xcode target、App Group/受控共享文件和 Share Sheet 返回路径下接入同一确认/保存逻辑，并补权限拒绝、取消、重复回调和大内容边界测试；当前环境缺少 Xcode，不标记为完成。
+- [ ] 设备与无障碍回归：补 iOS Simulator/真机、Android 物理设备、VoiceOver/TalkBack、Dynamic Type、旋转和进程恢复；第九至十二批门禁仍保持原状态。
+- 退出条件：两端主动来源确认/保存/取消/失败语义一致且有自动化证据；真实 iOS Share Extension 完成；设备级、完整无障碍、构建和治理门禁仍全部登记并通过后，才可将本里程碑改为 `done`。
+
+### 第十四批跨端状态与恢复矩阵里程碑（2026-07-18，in_progress）
+
+- 目标：把 Today、记录、搜索/日期范围、详情/Revision、删除、设置/导出和演示模式的共同状态语义固化为可复跑矩阵；优先关闭本机与固定 Mock 可证明的设计差异，再保留真实设备门禁。
+- [x] 共同状态规则：iOS `ExperienceMode.resolvedFor` 与 Android 使用同一 `0 → 空白、1 → 稀疏、2+ → 正常` 规则，加载、错误、离线、部分范围和权限受限显式状态优先。
+- [x] iOS 状态落地：`LocalMemoryStore.mode` 复用共同规则，Shared XCTest 源码覆盖空白/稀疏/正常、显式错误优先和 Mock 保持确定性。
+- [x] 双端页面矩阵：新增 `docs/quality/双端体验状态矩阵-20260718.md`，逐页登记状态、恢复动作、平台差异理由和当前证据，未把静态源码/AVD/Mock升级为真机通过。
+- [x] 现有证据复核：Android 单测/lint/APK/16 KB AVD 与 iOS Shared/App target build/目标 parse/Smoke 仍保持上一批结论。
+- [ ] iOS/Android 设备级状态回归：完整 Xcode、Simulator/真机、物理 Android、VoiceOver/TalkBack、Dynamic Type、旋转、进程恢复和真实来源生命周期仍待环境补齐。
+- [ ] 矩阵最终退出：设备门禁、完整无障碍、真实 iOS Share Extension 和发布前构建/性能证据闭合后，才能把跨端体验矩阵和本里程碑改为 `done`。
+
+- 退出条件：共同状态和恢复动作在本机/Mock 双路径可复跑，关键差异有平台理由和证据；剩余设备与发布门禁必须逐项通过，不能用条件通过替代。
+
+### 第十五批真实 iOS 分享扩展输入里程碑（2026-07-18，in_progress）
+
+- 目标：把真实 iOS Share Extension 接入所需的共享代码、App Group、扩展声明和失败恢复路径准备成可直接装配的 target 输入；在没有完整 Xcode 时仍只关闭静态契约和本机可复跑边界，不宣称系统分享页或签名通过。
+- [x] 共享目录统一：`IncomingShareHandoffStore` 统一拥有 `group.com.ameme.ios` 标识和 `IncomingShares` 子目录，主 App 与 Extension 使用同一解析逻辑。
+- [x] Extension target 输入：新增 `ShareViewController.swift`、Share Extension `Info.plist`、App/Extension entitlements 和接入说明；声明文字、URL、图片和单文件激活规则。
+- [x] 分享安全边界：扩展只接受一项内容，支持文字/URL、图片、PDF；正文/文件不进入 URL，空内容、不支持类型、App Group 缺失、超过 16,384 字符/32 MB 和读取失败均 fail closed。
+- [x] 生命周期恢复：扩展提供取消/重试，使用 `didStart`/`didFinish` 防重复回调；App 对同一 handoff UUID 幂等，不重复弹出确认页。
+- [x] 静态与本机证据：Share Extension 源码与 App 目标解析通过，Info.plist/entitlements 校验通过，Shared/App build、bounded Shared Smoke 和 25 项静态输入治理检查通过。
+- [ ] 完整 Xcode target：补 `.xcodeproj`/真实 extension target、签名、App Group provisioning、Share Sheet 返回主 App、重复 scene 激活和真实系统文件提供者测试；当前工具链缺少 Xcode。
+- [ ] 设备与无障碍回归：iOS Simulator/真机、Android 物理设备、VoiceOver/TalkBack、Dynamic Type、旋转和进程恢复仍待设备环境。
+
+- 退出条件：完整 Xcode target 能构建并签名，Share Sheet 的确认/取消/失败/重试/大内容边界在 iOS 设备上通过，且双端设备与无障碍门禁同时闭合后，才可将本里程碑改为 `done`。
+
+### 第十六批双端待处理动作恢复与交付复验里程碑（2026-07-18，in_progress）
+
+- 目标：让用户在系统分享、导出或 Activity/进程中断后，仍能安全恢复待处理动作；恢复阶段不提前写入事件，平台差异保留在原生 UI 和系统能力边界内，并用最新 Android AVD 与 iOS Shared Smoke 证据更新交付门槛。
+- [x] Android 待处理动作存储：新增独立于 SQLCipher Event Node 的 `noBackupFilesDir/pending-actions` 加密快照，使用 Android Keystore AES-256-GCM、AAD、版本化 envelope、临时文件 + 原子替换和损坏 fail-closed；分享与导出可独立清理。
+- [x] Android 生命周期恢复：Activity 重建后恢复分享确认和导出快照；本机仓库未就绪时确认按钮禁用并说明恢复状态，仓库就绪后才允许落库；取消、写入失败和清理失败均保留可恢复边界。
+- [x] Android 自动化证据：加密快照 round-trip/明文不可见/损坏保留测试通过；新增 Activity recreation UI smoke；API 36 16 KB AVD 全量 62 项总测试中 55 项可执行通过、7 项显式 Gate 跳过、0 失败。
+- [x] iOS handoff 启动恢复：`IncomingShareHandoffStore.pendingIDs()` 扫描共享目录中的受限 opaque handoff；App 启动时自动回读首个有效 handoff 并展示同一确认页，损坏或截断 handoff fail closed 且不触碰本机事件库；Shared Smoke 增加重启可发现断言。
+- [x] 双端安全与设计复核：恢复前无 Event、确认后才写入、恢复中有明确不可操作反馈；日志不记录正文、URL、密钥或文件内容，文档同步最新证据与未关闭门禁。
+- [x] iOS 静态无障碍契约：核心搜索、设置、日期、记录、编辑、删除、录音和恢复控件均有可读标签；错误状态保留“状态说明”和“重试”两个独立 VoiceOver 子元素；静态契约门通过，但不替代 VoiceOver 真机读屏。
+- [ ] 完整设备门禁：iOS 完整 Xcode/真实 Share Sheet/App Group/签名/真机，Android 物理 Android 14+ OEM 的进程死亡、后台、权限撤销、TalkBack、动态字体、旋转和真实来源生命周期仍待环境补齐。
+- [ ] 测试门禁：当前 Command Line Tools 下 `swift build --target AmemeApp`、目标源码 parse、Shared Smoke 通过；XCTest/XCUITest 需完整 Xcode/iOS SDK，不把 `swift test` 不可用写成测试通过。
+
+- 退出条件：Android AVD、iOS Shared/静态边界和本机/Mock 闭环保持可复跑；完整 iOS target/设备、Android 物理设备和无障碍证据闭合后，才能将本里程碑改为 `done`。
+
+### 第十七批双端结构化导出恢复与隐私清理里程碑（2026-07-18，in_progress）
+
+- 目标：让 Android 与 iOS 的结构化导出在系统文档/分享流程中断后都能恢复同一份快照，并允许用户主动清除待导出内容；快照使用平台安全密钥加密，不提前改写事件源，不把演示数据快照带回真实模式。
+- [x] iOS 加密待导出快照：新增 `PendingExportStore`，使用 Keychain 密钥、AES-GCM AAD、版本化 envelope、原子替换、大小上限和损坏 fail-closed；磁盘不保存导出正文。
+- [x] iOS 恢复与清理体验：App 启动识别待导出快照，设置页提供“恢复上次结构化导出”和“清除导出恢复快照”；切换演示/真实数据时清理旧快照，避免模式串数据。
+- [x] Android 清理体验：设置页为已有 Keystore 加密导出快照增加“清除未完成导出”；清理只删除待处理快照，不触碰本机事件；新增 UI smoke 覆盖 Activity 重建后清理。
+- [x] 本机/Mock 证据：iOS App target build、Shared Smoke（导出密文往返/清理）和目标源码解析通过；Android Debug 单测/lint/APK、定向 UI smoke 和 API 36 16 KB AVD 全量 64 项（57 项可执行通过、7 项显式跳过、0 失败）通过。
+- [ ] 设备级导出门禁：完整 Xcode/iOS Share Sheet、系统文件提供者取消/写入失败、进程终止恢复，以及 Android 物理设备/OEM 文档提供者、TalkBack、后台和旋转仍待补。
+
+- 退出条件：双端导出快照的加密、恢复、清理和源数据不变在完整 Xcode/iOS 设备与 Android 物理设备上复验，且无障碍和发布前门禁同时闭合后，才能将本里程碑改为 `done`。
+
+### 第十八批双端设备连接体验状态收口里程碑（2026-07-18，in_progress）
+
+- 目标：让 iOS 与 Android 的三种普通用户连接入口共享同一可解释状态模型；Mock 连接只能证明授权/展示/断开体验，真实发现、二维码交换、账户设备和数据传输仍必须由平台实现与设备证据单独证明。
+- [x] iOS 结构化状态：新增 `AgentConnectionMethod` 与 `AgentExperienceConnection`，统一自动发现、二维码、账户设备三种入口，记录设备、Agent、能力、连接时间、30 天期限和 `simulated` 标记。
+- [x] iOS 安全边界：`AgentExperienceStore` 只持久化非敏感展示元数据；密钥、端点、证书 pin 和正文不进入 UserDefaults；损坏/未知版本/过期状态 fail closed 并自动清理。
+- [x] iOS 体验闭环：设置页显示实际连接方式、能力、有效期和明确的“体验模式 · 不建立真实网络连接”，支持显式断开；三种入口都进入同一授权确认卡片。
+- [x] 双端证据：iOS App build、Shared Smoke 和 Shared XCTest 源码覆盖三种方式往返、过期清理和损坏清理；Android 既有 `PairingExperienceStore`、三入口授权/成功/断开 UI smoke 与 Release 无模拟 provider 门禁保持通过。
+- [x] Android 视觉/语义复核：API 36 16 KB AVD 当前运行截图覆盖启动、Today 空白态、设置、连接入口、授权、体验连接成功、期限展示和断开恢复；未发现需追加的 Android 设计修复。
+- [x] 真实发现适配器：Android Release 使用 `NsdManager` 浏览 `_ameme-agent._tcp.`，iOS Shared 新增 Bonjour/Network.framework 浏览会话；两者仅产生非敏感候选，不把发现当作授权或连接成功。
+- [ ] 真实连接门禁：Android/iOS 二维码与账户设备、共享 Grant registry、证书/会话绑定、真实数据传输、后台和物理设备仍待实现与验证；本轮不把发现或 Mock 状态升级为网络成功。
+
+- 退出条件：两端真实发现/交换/授权和数据传输使用共享 Grant 语义在真实设备上通过，同时保留 Mock 双路径、断开/过期/撤销和无障碍证据后，才能将本里程碑改为 `done`。
+
+### 第十九批双端真实发现适配与授权边界里程碑（2026-07-18，in_progress）
+
+- 目标：把普通用户连接从仅 Debug Mock 推进到可运行的真实局域网发现边界；发现、授权、会话和数据写入必须分层，任何失败都保持未连接且不修改本机事件。
+- [x] Android Release 发现：`NsdPairingExperienceConnector` 浏览 `_ameme-agent._tcp.`，解析设备/Agent/能力等受限 TXT 元数据；超时、无设备、二维码未接入、账户未授权和发现后未授权均使用稳定失败状态。
+- [x] iOS Bonjour 发现：`BonjourAgentExperienceDiscovery` 使用 Network.framework，添加 `NSLocalNetworkUsageDescription` 与 `_ameme-agent._tcp` 声明；候选能力默认标为“能力待授权确认”，不写入连接状态。
+- [x] 跨端诚实边界：发现候选 `simulated == false` 也不代表已授权；连接状态只有在后续认证/Grant 完成后才能持久化，模拟连接仍保留独立 Mock 路径。
+- [x] 验证：Android Debug/Release 单测、lint、APK、API 36 16 KB AVD 全量 64/57/7/0；iOS Shared/App build、Shared Smoke 和 iOS 目标源码解析通过。
+- [ ] 授权与传输：实现二维码短时交换、账户设备服务、共享 Grant registry、证书/会话绑定和双端真实数据传输；补真实 Agent advertiser/host、LAN 恶意 peer、后台恢复和物理设备证据。
+
+- 退出条件：Android/iOS 在真实设备上完成发现→明确授权→Grant 绑定→受限数据操作→撤销/过期，并通过无障碍、后台和删除收敛门禁后，才能将本里程碑改为 `done`。
+
+### 第二十批双端连接入口与真实/演示体验对齐里程碑（2026-07-18，in_progress）
+
+- 目标：让 iOS 与 Android 的普通用户连接页都把真实发现、授权前候选、失败反馈和显式演示路径分开；任何只有发现没有授权的结果都不得写成已连接。
+- [x] iOS 真实入口接入：设置页的同一局域网入口调用 Bonjour/Network.framework 发现；二维码和账户设备在服务未接入时给出明确错误，不再静默落成模拟连接。
+- [x] iOS 授权前体验：候选展示设备、Agent、方式、能力和授权边界；点击允许后由 connector 决定是否已完成认证，未完成时保留页面并显示 fail-closed 反馈。
+- [x] iOS 演示路径隔离：增加明确的“试用演示连接（不联网）”入口；只有显式演示动作才保存 `simulated == true` 状态，真实候选不写入 UserDefaults。
+- [x] 双端契约证据：iOS Shared/App build、目标源码解析与 Smoke 覆盖模拟连接往返和发现候选不得晋升为连接；Android Release NSD、Debug Mock、单测/lint/APK 与 AVD 基线保持通过。
+- [ ] 真实授权闭环：二维码短时交换、账户设备服务、共享 Grant registry、证书/会话绑定、iOS/Android 真实 Local Node client 与 Agent advertiser/host 仍待实现；在此之前不宣称真实数据传输通过。
+
+- 退出条件：两端真实入口均能完成发现→明确授权→Grant 绑定→受限数据操作→撤销/过期，且真实/演示路径在无障碍、后台和设备回归中均可区分后，才能将本里程碑改为 `done`。
+
+### 第二十一批双端 AccessGrant 授权契约与本地策略门禁里程碑（2026-07-18，in_progress）
+
+- 目标：让 iOS 与 Android 在真实连接尚未完成时先共享同一份最小授权语义；用户确认的配对范围必须能约束每次 Agent 请求，过期、撤销、身份不匹配或扩权都 fail closed，且 Mock 与真实发现路径继续清楚分离。
+- [x] 跨端契约模型：iOS `AgentAccessGrant`/`AgentAccessGrantPolicy` 与 Android 对齐 canonical AccessGrant 的 schema version、caller/Grant 绑定、purpose、space、data type、有效期、撤销和有界 scope；新增 iOS XCTest 源码与 Shared Smoke、Android JVM 测试。
+- [x] Android 本地门禁：显式创建开发者配对时记录 Personal/`autonomous_memory`/structured `event` 的 30 天本地批准策略；恢复时缺少或损坏策略即撤销配对；运行时将 Host claim 绑定为 request-time Grant，并在写入前拒绝身份、期限、purpose、space 和 data type 扩权。
+- [x] 双端授权展示：iOS/Android 授权确认卡片显示“拟授权范围：Personal 空间 · autonomous_memory · 结构化 event · 30 天”，不把发现候选或演示连接冒充真实传输；Android 连接页与 iOS 设置页继续保留显式演示标识。
+- [ ] 真实授权闭环：共享外部 Grant registry、二维码短时交换、账户设备服务、Android/iOS 真实 Agent advertiser/host、撤销传播和物理设备证据仍待实现；iOS 已补齐与 Android/Python 对齐的 Local Node TLS/HMAC 编解码、Grant-bound create_event builder 和 Network.framework TLS 1.3 client，但当前环境未提供可运行的 iOS target/真机，因此不宣称真实数据传输已通过。
+- [x] 验证门禁：使用 `/tmp/ameme-jdk17`、Android SDK 36 和 API 36 16 KB arm64 AVD 重跑 Android Debug/Release JVM、lint、assemble、全量连接回归（64 总计 / 57 可执行通过 / 7 显式跳过 / 0 失败）及 M21 授权 UI 定向 smoke（1/1）；配对 Host→TLS/HMAC→Android→SQLCipher→Today smoke 通过，重启后事件仍可见且未用 ADB 注入；TalkBack AVD 语义探针完成 Today→设置→三入口→授权卡片→演示成功路径；iOS Shared/App build、Smoke、目标解析、Share 输入 25 项和 accessibility 静态契约 14 项通过。
+- [ ] 设备级门禁：完整 Xcode/XCTest/Simulator、iOS/Android 物理设备、VoiceOver/TalkBack、后台/旋转和真实 QR/账户/共享 Grant/数据传输仍待补。
+
+- 退出条件：两端真实连接完成发现→明确授权→Grant 绑定→受限数据操作→撤销/过期，并以设备级无障碍、后台、旋转和恢复证据复验；在此之前 M21 保持 `in_progress`。
+
+### 第二十二批 iOS Local Node 协议与真实连接边界里程碑（2026-07-18，in_progress）
+
+- 目标：让 iOS 与 Android 使用同一套 Local Node v1 通道语义；协议实现必须可由 Android/Python golden 验证，真实连接必须经过 TLS 1.3、证书 pin、HMAC session、序列/nonce/replay 检查和 active Grant，失败时清理密钥并关闭连接。
+- [x] 跨端协议编解码：新增 iOS `AgentLocalNodeChannelCodec`，覆盖 canonical JSON、pairing parser、client/server hello、session key、request/response frame、digest、HMAC 和 bounded replay ledger；Shared Smoke 与 Android/Python golden 向量逐字一致。
+- [x] Grant-bound 应用请求：新增 iOS `AgentLocalNodeCreateEventDraft` 和 `buildCreateEventRequest`，在序列化前校验 caller/Grant、purpose、space、data type、期限和 write scope；过期 Grant 不产生写请求。
+- [x] 真实网络边界：新增 Network.framework TLS 1.3 `AgentLocalNodeNetworkClient`，校验证书 SHA-256 pin，按序发送/接收 canonical frame；`BonjourAgentExperienceConnector` 只接受注入的 pairing/credential/active Grant factory，默认发现候选仍授权 fail closed。
+- [x] 通道生命周期：Bonjour connector 持有已认证 client registry，AppModel 断开时显式关闭底层 actor/channel；不会出现仅保存“已连接”展示状态、实际 session 已释放的假连接。
+- [x] 当前可复现证据：`swift build --target AmemeShared`、`swift run AmemeSharedSmoke`、`swift build --target AmemeApp`、iOS 目标源码 parse、Share 输入验证、accessibility 静态契约和 workspace validation 均通过；Smoke 新增 Android/Python channel golden 与 Grant-bound write request。
+- [x] 跨端真实传输子门：`scripts/dev/agent/smoke_ios_network_to_android.py` 在 API 36 / 16 KB AVD 上由 Swift Network.framework client 通过 ADB forward 完成 TLS 1.3/certificate pin/HMAC、Grant-bound `create_event`，事件在 Android Today 可见；pairing secret、forward 和临时构建产物均在 finally 清理，输出不含正文。
+- [ ] 真实端到端门禁：完整 Xcode/XCTest/Simulator、iOS/Android 物理设备、Android advertiser 与 iOS client 的 TLS/Grant 实连、二维码/账户设备 registry、撤销传播、后台/旋转、VoiceOver/TalkBack 仍待补；未把编解码通过写成设备传输通过。
+
+- 退出条件：iOS/Android 在真实设备完成发现→明确授权→Grant 绑定→受限 create_event→撤销/过期，并完成设备级无障碍、后台、旋转与恢复证据后，才能将 M22 改为 `done`。
+
+### 第二十三批双端配对解析与连接生命周期收口里程碑（2026-07-18，in_progress）
+
+- 目标：在二维码/账户 registry 和物理设备接入前，先把配对输入的严格解析、断开语义和“展示状态不等于活跃 session”的边界固定下来；任何 malformed pairing、重复 JSON key 或断开失败都不得静默晋升为已连接。
+- [x] iOS 严格配对解析：`AgentLocalNodePairingMaterial.parse` 复用重复 key/JSON grammar scanner，拒绝 duplicate key、非法 framing 和未知字段，不让 Foundation 的 last-value 语义越过网络边界。
+- [x] 双端断开契约：Android `PairingExperienceConnector` 与 iOS `AgentExperienceConnector` 都提供显式 `disconnect`；Android 设置页清理非敏感连接状态前通知 connector，iOS Bonjour connector 从 active client registry 移除并关闭 Network.framework actor。
+- [x] 回归证据：iOS App build、Shared Smoke、Android Debug/Release JVM 与 lint 通过；Shared Smoke 新增重复配对 key 拒绝，Android 连接 UI smoke 继续覆盖允许/成功/断开恢复。
+- [ ] 真实配对入口：定义并实现带短时 one-time secret 的跨端 QR envelope、iOS/Android 相机扫描与导入校验；不把手动复制 pairing JSON/secret 误标为普通用户扫码体验。
+- [x] 状态恢复真相：真实 client/credential 可安全恢复前，进程重启会清理非模拟连接展示元数据；演示连接仍可恢复，真实状态不会被标为活跃传输。
+- [ ] 设备级门禁：完整 Xcode/XCTest/Simulator、物理设备、后台/旋转、VoiceOver/TalkBack 和撤销传播仍与 M22 共用未闭合门禁。
+
+- 退出条件：配对 envelope 在 iOS/Android/Python 之间逐字一致，二维码扫描→授权→Grant-bound 传输→断开/重连可在真实设备通过，且重启、过期、撤销和无障碍证据闭合后，才能将 M23 改为 `done`。
 
 ### 当前门禁
 

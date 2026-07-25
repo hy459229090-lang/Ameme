@@ -79,6 +79,7 @@ dependencies {
     implementation(libs.androidx.navigation.compose)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.android)
+    implementation("com.google.zxing:core:3.5.3")
     implementation("net.zetetic:sqlcipher-android:4.15.0@aar")
     implementation("androidx.sqlite:sqlite:2.6.2")
 

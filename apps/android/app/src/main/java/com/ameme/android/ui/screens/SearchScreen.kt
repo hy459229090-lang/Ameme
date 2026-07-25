@@ -12,9 +12,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Clear
+import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.DatePickerState
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -25,16 +27,18 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.ameme.android.data.MemoryRepository
@@ -43,12 +47,14 @@ import com.ameme.android.domain.ExperienceMode
 import com.ameme.android.domain.DayGroup
 import com.ameme.android.domain.MemoryEvent
 import com.ameme.android.ui.components.EmptyMessage
+import com.ameme.android.ui.components.DemoModeNotice
 import com.ameme.android.ui.components.EventRow
 import com.ameme.android.ui.components.StateNotice
 import com.ameme.android.ui.displayDate
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
+import java.util.Locale
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -61,24 +67,29 @@ fun SearchScreen(
     ioExecutor: MemoryIoExecutor,
     experienceMode: ExperienceMode,
     onBack: () -> Unit,
+    onSettings: () -> Unit,
     onEvent: (String) -> Unit,
+    demoMode: Boolean = false,
 ) {
     var query by remember { mutableStateOf("") }
-    var selectedDate by remember { mutableStateOf<LocalDate?>(null) }
-    var showCalendar by remember { mutableStateOf(false) }
+    var selectedStartDate by remember { mutableStateOf<LocalDate?>(null) }
+    var selectedEndDate by remember { mutableStateOf<LocalDate?>(null) }
+    var calendarEndpoint by remember { mutableStateOf<CalendarEndpoint?>(null) }
     var page by remember(repository) { mutableStateOf<com.ameme.android.domain.MemoryPage?>(null) }
     var initialSearchInFlight by remember { mutableStateOf(false) }
     var loadMoreInFlight by remember { mutableStateOf(false) }
     var searchFailed by remember { mutableStateOf(false) }
+    var searchAttempt by remember { mutableIntStateOf(0) }
     var loadMoreJob by remember { mutableStateOf<Job?>(null) }
     val coordinator = remember { SearchRequestCoordinator() }
     val latestRepository by rememberUpdatedState(repository)
     val latestQuery by rememberUpdatedState(query)
-    val latestDate by rememberUpdatedState(selectedDate)
+    val latestStartDate by rememberUpdatedState(selectedStartDate)
+    val latestEndDate by rememberUpdatedState(selectedEndDate)
     val scope = rememberCoroutineScope()
     val searchInFlight = initialSearchInFlight || loadMoreInFlight
 
-    fun latestIdentity() = SearchRequestIdentity(latestRepository, latestQuery, latestDate)
+    fun latestIdentity() = SearchRequestIdentity(latestRepository, latestQuery, latestStartDate, latestEndDate)
 
     fun invalidateFor(identity: SearchRequestIdentity) {
         coordinator.begin(identity)
@@ -86,10 +97,18 @@ fun SearchScreen(
         loadMoreJob = null
         loadMoreInFlight = false
         page = null
+        searchFailed = false
     }
 
-    LaunchedEffect(repository, query, selectedDate) {
-        val identity = SearchRequestIdentity(repository, query, selectedDate)
+    fun retrySearch() {
+        if (searchInFlight) return
+        searchFailed = false
+        page = null
+        searchAttempt += 1
+    }
+
+    LaunchedEffect(repository, query, selectedStartDate, selectedEndDate, searchAttempt) {
+        val identity = SearchRequestIdentity(repository, query, selectedStartDate, selectedEndDate)
         val token = coordinator.begin(identity)
         loadMoreJob?.cancel()
         loadMoreJob = null
@@ -99,7 +118,14 @@ fun SearchScreen(
         searchFailed = false
         try {
             if (query.isNotBlank()) delay(SEARCH_DEBOUNCE_MS)
-            val result = ioExecutor.searchPage(repository, query, selectedDate, cursor = null, pageSize = PAGE_SIZE)
+            val result = ioExecutor.searchPage(
+                repository,
+                query,
+                selectedStartDate,
+                selectedEndDate,
+                cursor = null,
+                pageSize = PAGE_SIZE,
+            )
             coordinator.commitIfCurrent(token, latestIdentity()) { page = result }
         } catch (cancelled: CancellationException) {
             throw cancelled
@@ -131,6 +157,14 @@ fun SearchScreen(
                         Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "返回今天")
                     }
                 },
+                actions = {
+                    IconButton(
+                        onClick = onSettings,
+                        modifier = Modifier.semantics { contentDescription = "打开设置" },
+                    ) {
+                        Icon(Icons.Outlined.MoreVert, contentDescription = null)
+                    }
+                },
             )
         },
     ) { padding ->
@@ -145,7 +179,7 @@ fun SearchScreen(
                 onValueChange = { updated ->
                     if (updated != query) {
                         query = updated
-                        invalidateFor(SearchRequestIdentity(repository, updated, selectedDate))
+                        invalidateFor(SearchRequestIdentity(repository, updated, selectedStartDate, selectedEndDate))
                     }
                 },
                 modifier = Modifier.fillMaxWidth(),
@@ -155,7 +189,7 @@ fun SearchScreen(
                     if (query.isNotEmpty()) {
                         IconButton(onClick = {
                             query = ""
-                            invalidateFor(SearchRequestIdentity(repository, "", selectedDate))
+                            invalidateFor(SearchRequestIdentity(repository, "", selectedStartDate, selectedEndDate))
                         }) {
                             Icon(Icons.Outlined.Clear, contentDescription = "清除搜索词")
                         }
@@ -167,19 +201,29 @@ fun SearchScreen(
                 modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                OutlinedButton(onClick = { showCalendar = true }) {
+                OutlinedButton(onClick = { calendarEndpoint = CalendarEndpoint.Start }) {
                     Icon(Icons.Outlined.CalendarMonth, contentDescription = null)
-                    Text(selectedDate?.displayDate() ?: "选择日期", modifier = Modifier.padding(start = 8.dp))
+                    Text(
+                        selectedStartDate?.displayDate() ?: "开始日期",
+                        modifier = Modifier.padding(start = 8.dp),
+                    )
                 }
-                if (selectedDate != null) {
+                OutlinedButton(
+                    onClick = { calendarEndpoint = CalendarEndpoint.End },
+                    enabled = selectedStartDate != null,
+                ) {
+                    Text(selectedEndDate?.displayDate() ?: "结束日期", modifier = Modifier.padding(start = 8.dp))
+                }
+                if (selectedStartDate != null || selectedEndDate != null) {
                     TextButton(onClick = {
-                        selectedDate = null
-                        invalidateFor(SearchRequestIdentity(repository, query, null))
+                        selectedStartDate = null
+                        selectedEndDate = null
+                        invalidateFor(SearchRequestIdentity(repository, query, null, null))
                     }) { Text("清除日期") }
                 }
             }
             Text(
-                rangeDescription(experienceMode, selectedDate),
+                rangeDescription(experienceMode, selectedStartDate, selectedEndDate),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -187,6 +231,30 @@ fun SearchScreen(
                 mode = experienceMode,
                 modifier = Modifier.padding(top = 10.dp),
             )
+            if (demoMode) {
+                DemoModeNotice(modifier = Modifier.padding(top = 10.dp))
+            }
+            if (searchFailed) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Text(
+                        "搜索暂不可用",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                    Text(
+                        "已有内容保持安全；可以重试当前搜索。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    OutlinedButton(
+                        onClick = ::retrySearch,
+                        enabled = !searchInFlight,
+                    ) { Text("重试搜索") }
+                }
+            }
             Text(
                 "按日期从新到旧浏览，底部可加载更早记录",
                 modifier = Modifier.padding(top = 10.dp),
@@ -194,22 +262,25 @@ fun SearchScreen(
                 color = MaterialTheme.colorScheme.primary,
             )
             if (groups.isEmpty()) {
-                EmptyMessage(
-                    title = when {
-                        searchInFlight -> "正在读取本机索引"
-                        searchFailed -> "搜索暂不可用"
-                        query.isBlank() && selectedDate == null -> "当前可见范围内没有记录"
-                        else -> "当前条件没有结果"
-                    },
-                    detail = if (searchFailed) {
-                        "已有内容保持安全；可以稍后重试当前搜索。"
-                    } else if (query.isBlank()) {
-                        "这只说明当前本机与获准范围没有可见事件。"
-                    } else {
-                        "未找到“$query”；可以清除搜索词或日期，不代表这件事从未发生。"
-                    },
-                    modifier = Modifier.weight(1f),
-                )
+                if (searchFailed) {
+                    androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
+                } else {
+                    EmptyMessage(
+                        title = if (searchInFlight) {
+                            "正在读取本机索引"
+                        } else if (query.isBlank() && selectedStartDate == null && selectedEndDate == null) {
+                            "当前可见范围内没有记录"
+                        } else {
+                            "当前条件没有结果"
+                        },
+                        detail = if (query.isBlank()) {
+                            "这只说明当前本机与获准范围没有可见事件。"
+                        } else {
+                            "未找到“$query”；可以清除搜索词或日期，不代表这件事从未发生。"
+                        },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
             } else {
                 LazyColumn(
                     modifier = Modifier.fillMaxWidth().weight(1f),
@@ -236,7 +307,7 @@ fun SearchScreen(
                                 onClick = {
                                     val current = page ?: return@OutlinedButton
                                     if (!initialSearchInFlight && !loadMoreInFlight) {
-                                        val identity = SearchRequestIdentity(repository, query, selectedDate)
+                                        val identity = SearchRequestIdentity(repository, query, selectedStartDate, selectedEndDate)
                                         val token = coordinator.current(identity) ?: return@OutlinedButton
                                         loadMoreInFlight = true
                                         loadMoreJob = scope.launch {
@@ -244,7 +315,8 @@ fun SearchScreen(
                                                 val next = ioExecutor.searchPage(
                                                     repository,
                                                     query,
-                                                    selectedDate,
+                                                    selectedStartDate,
+                                                    selectedEndDate,
                                                     current.nextCursor,
                                                     PAGE_SIZE,
                                                 )
@@ -287,14 +359,25 @@ fun SearchScreen(
         }
     }
 
-    if (showCalendar) {
+    calendarEndpoint?.let { endpoint ->
         CalendarDialog(
-            selectedDate = selectedDate,
-            onDismiss = { showCalendar = false },
+            selectedDate = if (endpoint == CalendarEndpoint.Start) selectedStartDate else selectedEndDate,
+            title = if (endpoint == CalendarEndpoint.Start) "选择开始日期" else "选择结束日期",
+            onDismiss = { calendarEndpoint = null },
             onSelected = {
-                selectedDate = it
-                invalidateFor(SearchRequestIdentity(repository, query, it))
-                showCalendar = false
+                if (endpoint == CalendarEndpoint.Start) {
+                    selectedStartDate = it
+                    if (selectedEndDate != null && selectedEndDate!!.isBefore(it)) selectedEndDate = it
+                } else {
+                    if (selectedStartDate != null && it.isBefore(selectedStartDate)) {
+                        selectedEndDate = selectedStartDate
+                        selectedStartDate = it
+                    } else {
+                        selectedEndDate = it
+                    }
+                }
+                invalidateFor(SearchRequestIdentity(repository, query, selectedStartDate, selectedEndDate))
+                calendarEndpoint = null
             },
         )
     }
@@ -303,19 +386,29 @@ fun SearchScreen(
 private const val PAGE_SIZE = 20
 private const val SEARCH_DEBOUNCE_MS = 200L
 
+private enum class CalendarEndpoint {
+    Start,
+    End,
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun CalendarDialog(
     selectedDate: LocalDate?,
+    title: String,
     onDismiss: () -> Unit,
     onSelected: (LocalDate) -> Unit,
 ) {
-    val state = rememberDatePickerState(
-        initialSelectedDateMillis = selectedDate
-            ?.atStartOfDay(ZoneOffset.UTC)
-            ?.toInstant()
-            ?.toEpochMilli(),
-    )
+    val initialSelectedDateMillis = selectedDate
+        ?.atStartOfDay(ZoneOffset.UTC)
+        ?.toInstant()
+        ?.toEpochMilli()
+    val state = remember(selectedDate) {
+        DatePickerState(
+            locale = Locale.SIMPLIFIED_CHINESE,
+            initialSelectedDateMillis = initialSelectedDateMillis,
+        )
+    }
     DatePickerDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
@@ -330,13 +423,37 @@ private fun CalendarDialog(
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
     ) {
-        DatePicker(state = state)
+        Column {
+            Text(title, modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp), style = MaterialTheme.typography.titleMedium)
+            DatePicker(
+                state = state,
+                title = { Text("选择日期") },
+                headline = {
+                    Text(
+                        state.selectedDateMillis
+                            ?.let { millis ->
+                                Instant.ofEpochMilli(millis).atZone(ZoneOffset.UTC).toLocalDate().displayDate()
+                            }
+                            ?: "尚未选择日期",
+                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+                    )
+                },
+            )
+        }
     }
 }
 
-private fun rangeDescription(mode: ExperienceMode, date: LocalDate?): String = buildString {
-    append(date?.let { "${it.displayDate()} · " } ?: "全部可见日期 · ")
-    append("Personal 合成空间 · 本机")
+private fun rangeDescription(mode: ExperienceMode, startDate: LocalDate?, endDate: LocalDate?): String = buildString {
+    append(
+        when {
+            startDate == null && endDate == null -> "全部可见日期 · "
+            startDate != null && endDate == null -> "从 ${startDate.displayDate()} 起 · "
+            startDate == null && endDate != null -> "截至 ${endDate.displayDate()} · "
+            startDate == endDate -> "${startDate!!.displayDate()} · "
+            else -> "${startDate!!.displayDate()} 至 ${endDate!!.displayDate()} · "
+        },
+    )
+    append("Personal 空间 · 仅本机")
     when (mode) {
         ExperienceMode.Partial -> append(" + 1 台设备未同步")
         ExperienceMode.Offline -> append(" · 离线结果")

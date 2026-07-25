@@ -129,6 +129,40 @@ class MemoryRepositoryAgentLocalNodeEndpointTest {
     }
 
     @Test
+    fun localAccessGrantPolicyIsEnforcedBeforePayloadScopeChecks() = runBlocking {
+        val repository = FakeMemoryRepository(clock)
+        val grant = AgentAccessGrant(
+            schemaVersion = AgentAccessGrant.CURRENT_SCHEMA_VERSION,
+            grantId = "grant_synthetic",
+            ownerId = "user_synthetic",
+            callerId = "agent_synthetic",
+            purposes = setOf("autonomous_memory"),
+            spaces = setOf("space_work"),
+            dataTypes = setOf("event"),
+            notBefore = Instant.parse("2026-07-14T03:00:00Z"),
+            expiresAt = Instant.parse("2026-07-14T05:00:00Z"),
+            status = AgentAccessGrantStatus.Active,
+            createdAt = Instant.parse("2026-07-14T03:00:00Z"),
+        )
+        val endpoint = enabledEndpoint(
+            repository,
+            session = verifiedSession().copy(accessGrant = grant),
+        )
+
+        val approved = endpoint.exchange(request(goldenPayload(), requestId = "req_grant_allowed"))
+        val denied = endpoint.exchange(
+            request(
+                goldenPayload(),
+                spaces = setOf("space_personal"),
+                requestId = "req_grant_expansion",
+            ),
+        )
+
+        assertEquals(AgentLocalNodeStatus.Ok, approved.status)
+        assertError(denied, AgentLocalNodeErrorCode.SPACE_DENIED)
+    }
+
+    @Test
     fun tamperedDigestFailsBeforeRepositoryAndUnsupportedOperationIsStable() = runBlocking {
         val repository = FakeMemoryRepository(clock)
         val initialCount = repository.loadActiveEvents().size

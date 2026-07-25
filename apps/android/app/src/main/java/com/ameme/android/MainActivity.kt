@@ -31,9 +31,14 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    override fun onNewIntent(intent: Intent) {
+    public override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        receiveIncomingIntent(intent)
+    }
+
+    /** Routes a new share into the same pending-review path used by Android's lifecycle callback. */
+    fun receiveIncomingIntent(intent: Intent) {
         pendingShare = parseIncomingShare(intent)
     }
 

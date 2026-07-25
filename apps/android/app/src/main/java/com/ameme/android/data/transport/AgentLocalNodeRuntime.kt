@@ -32,6 +32,7 @@ enum class AgentLocalNodeRuntimeState {
 class AgentLocalNodeRuntime private constructor(
     private val repository: LocalMemoryRepository,
     private val pairing: ActiveAgentPairing,
+    private val accessGrantPolicy: AgentAccessGrantPolicy,
     private val sslServerSocketFactory: SSLServerSocketFactory,
     private val clock: Clock,
     private val onStateChanged: (AgentLocalNodeRuntimeState) -> Unit,
@@ -123,6 +124,10 @@ class AgentLocalNodeRuntime private constructor(
             allowedSensitivities = setOf("public", "personal", "confidential"),
             allowedDataClasses = setOf("structured"),
             expiresAt = pairing.expiresAt,
+            accessGrant = accessGrantPolicy.bind(
+                callerId = control.callerId,
+                grantId = control.grantId,
+            ),
         )
         val endpoint = MemoryRepositoryAgentLocalNodeEndpoint.enabledForVerifiedSession(
             repository = repository,
@@ -162,6 +167,7 @@ class AgentLocalNodeRuntime private constructor(
         fun launch(
             repository: LocalMemoryRepository,
             pairing: ActiveAgentPairing,
+            accessGrantPolicy: AgentAccessGrantPolicy = pairing.accessGrantPolicy,
             sslServerSocketFactory: SSLServerSocketFactory,
             clock: Clock = Clock.systemUTC(),
             onStateChanged: (AgentLocalNodeRuntimeState) -> Unit = {},
@@ -169,6 +175,7 @@ class AgentLocalNodeRuntime private constructor(
         ): AgentLocalNodeRuntime = AgentLocalNodeRuntime(
             repository = repository,
             pairing = pairing,
+            accessGrantPolicy = accessGrantPolicy,
             sslServerSocketFactory = sslServerSocketFactory,
             clock = clock,
             onStateChanged = onStateChanged,

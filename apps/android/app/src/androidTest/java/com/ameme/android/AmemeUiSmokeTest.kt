@@ -1,10 +1,12 @@
 package com.ameme.android
 
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -12,7 +14,19 @@ import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.test.platform.app.InstrumentationRegistry
+import com.ameme.android.data.local.AndroidKeystorePendingActionStore
+import com.ameme.android.data.local.PendingActionSnapshot
 import com.ameme.android.data.transport.PairingExperienceStore
+import com.ameme.android.domain.EvidenceState
+import com.ameme.android.domain.EventType
+import com.ameme.android.domain.FactStatus
+import com.ameme.android.domain.LocatorPermissionState
+import com.ameme.android.domain.Sensitivity
+import com.ameme.android.domain.SourceCaptureRequest
+import com.ameme.android.domain.SourceKind
+import java.time.LocalDate
+import java.time.LocalTime
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TestRule
@@ -33,13 +47,35 @@ class AmemeUiSmokeTest {
                     .edit()
                     .clear()
                     .commit()
-                base.evaluate()
+                runCatching {
+                    AndroidKeystorePendingActionStore(
+                        InstrumentationRegistry.getInstrumentation().targetContext,
+                    ).clear()
+                }
+                try {
+                    base.evaluate()
+                } finally {
+                    runCatching {
+                        AndroidKeystorePendingActionStore(
+                            InstrumentationRegistry.getInstrumentation().targetContext,
+                        ).clear()
+                    }
+                }
             }
         }
     }
 
     @get:Rule(order = 1)
     val composeRule = createAndroidComposeRule<MainActivity>()
+
+    private fun waitForCaptureEntry() {
+        composeRule.waitUntil(timeoutMillis = 15_000) {
+            runCatching {
+                composeRule.onNodeWithContentDescription("记录一件事").assertIsEnabled()
+                true
+            }.getOrDefault(false)
+        }
+    }
 
     @Test
     fun onboardingTodayAndCaptureSheet_areReachableWithoutPermissions() {
@@ -48,6 +84,7 @@ class AmemeUiSmokeTest {
 
         composeRule.onNodeWithText("今天").assertIsDisplayed()
         composeRule.onNodeWithContentDescription("搜索历史记录").assertIsDisplayed()
+        waitForCaptureEntry()
         composeRule.onNodeWithContentDescription("记录一件事").performClick()
         composeRule.onNodeWithText("文字").assertIsDisplayed()
         composeRule.onNodeWithText("语音").assertIsDisplayed()
@@ -69,9 +106,146 @@ class AmemeUiSmokeTest {
     }
 
     @Test
+    fun settingsSourceSection_explainsRuntimePermissionAndCapabilityStates() {
+        composeRule.onNodeWithText("查看今天").performClick()
+        composeRule.onNodeWithContentDescription("打开设置").performClick()
+        composeRule.onNodeWithTag("settings-list").performScrollToNode(hasText("来源与权限"))
+
+        composeRule.onNodeWithText("按次选择，不申请整库权限", substring = true).assertIsDisplayed()
+        assertTrue(
+            "Calendar permission state is not exposed",
+            composeRule.onAllNodesWithText("只读权限", substring = true).fetchSemanticsNodes().isNotEmpty(),
+        )
+        assertTrue(
+            "Voice capability state is not exposed",
+            composeRule.onAllNodesWithText("系统录音入口", substring = true).fetchSemanticsNodes().isNotEmpty() ||
+                composeRule.onAllNodesWithText("设备未提供系统录音入口", substring = true).fetchSemanticsNodes().isNotEmpty(),
+        )
+    }
+
+    @Test
+    fun incomingTextShare_requiresConfirmationBeforeLocalSave() {
+        composeRule.onNodeWithText("查看今天").performClick()
+        waitForCaptureEntry()
+        val sharedText = "外部分享需要先确认-${System.nanoTime()}"
+        composeRule.activityRule.scenario.onActivity { activity ->
+            activity.receiveIncomingIntent(
+                android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(android.content.Intent.EXTRA_TEXT, sharedText)
+                },
+            )
+        }
+
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            composeRule.onAllNodesWithText("保存分享内容？").fetchSemanticsNodes().isNotEmpty()
+        }
+        assertTrue(
+            "Incoming share was saved before user confirmation",
+            composeRule.onAllNodesWithContentDescription(sharedText, substring = true)
+                .fetchSemanticsNodes()
+                .isEmpty(),
+        )
+        composeRule.onNodeWithText("保存到本机").performClick()
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            composeRule.onAllNodesWithText("保存分享内容？").fetchSemanticsNodes().isEmpty()
+        }
+        composeRule.onNodeWithContentDescription(sharedText, substring = true).assertIsDisplayed()
+    }
+
+    @Test
+    fun pendingShare_recoversAfterActivityRecreationBeforeLocalSave() {
+        composeRule.onNodeWithText("查看今天").performClick()
+        waitForCaptureEntry()
+        val sharedText = "进程恢复分享-${System.nanoTime()}"
+        val request = SourceCaptureRequest(
+            sourceKind = SourceKind.SharedText,
+            title = sharedText,
+            detail = "通过系统分享入口保存的用户文字。",
+            factStatus = FactStatus.UserAsserted,
+            localDate = LocalDate.now(),
+            time = LocalTime.now().withSecond(0).withNano(0),
+            userWords = sharedText,
+            locatorPermissionState = LocatorPermissionState.NoLocator,
+            sourceInstanceKey = "ui-recovery-$sharedText",
+            eventType = EventType.Experience,
+            evidenceState = EvidenceState.UserAsserted,
+            sensitivity = Sensitivity.Personal,
+        )
+        composeRule.activityRule.scenario.onActivity { activity ->
+            AndroidKeystorePendingActionStore(activity).save(PendingActionSnapshot(incomingShare = request))
+        }
+        composeRule.activityRule.scenario.recreate()
+        composeRule.activityRule.scenario.onActivity { activity ->
+            assertTrue(
+                "Onboarding completion did not survive recreation",
+                activity.getSharedPreferences("ameme_onboarding", android.content.Context.MODE_PRIVATE)
+                    .getBoolean("completed", false),
+            )
+            assertTrue(
+                "Pending share snapshot did not survive recreation",
+                AndroidKeystorePendingActionStore(activity).load()?.incomingShare?.title == sharedText,
+            )
+        }
+
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            composeRule.onAllNodesWithText("保存分享内容？").fetchSemanticsNodes().isNotEmpty()
+        }
+        assertTrue(
+            "Recovered share was saved before confirmation",
+            composeRule.onAllNodesWithContentDescription(sharedText, substring = true)
+                .fetchSemanticsNodes()
+                .isEmpty(),
+        )
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            runCatching {
+                composeRule.onNodeWithText("保存到本机").assertIsEnabled()
+                true
+            }.getOrDefault(false)
+        }
+        composeRule.onNodeWithText("保存到本机").performClick()
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            composeRule.onAllNodesWithText("保存分享内容？").fetchSemanticsNodes().isEmpty()
+        }
+        composeRule.onNodeWithContentDescription(sharedText, substring = true).assertIsDisplayed()
+    }
+
+    @Test
+    fun pendingExport_canBeClearedWithoutTouchingLocalEvents() {
+        composeRule.onNodeWithText("查看今天").performClick()
+        waitForCaptureEntry()
+        composeRule.activityRule.scenario.onActivity { activity ->
+            AndroidKeystorePendingActionStore(activity).save(
+                PendingActionSnapshot(exportContent = "{\"synthetic\":\"private-export\"}"),
+            )
+        }
+        composeRule.activityRule.scenario.recreate()
+        composeRule.onNodeWithContentDescription("打开设置").performClick()
+        composeRule.onNodeWithTag("settings-list").performScrollToNode(hasText("结构化导出"))
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            composeRule.onAllNodesWithText("上次导出尚未保存", substring = true)
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
+        composeRule.onNodeWithTag("clear-export-button").performScrollTo().performClick()
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            composeRule.onAllNodesWithText("上次导出尚未保存", substring = true)
+                .fetchSemanticsNodes()
+                .isEmpty()
+        }
+        composeRule.activityRule.scenario.onActivity { activity ->
+            assertTrue(
+                "Clearing export snapshot must not leave encrypted pending content",
+                AndroidKeystorePendingActionStore(activity).load()?.exportContent == null,
+            )
+        }
+    }
+
+    @Test
     fun eventDetailAndDeleteImpact_areReachable() {
         val title = "合成详情-${System.nanoTime()}"
         composeRule.onNodeWithText("查看今天").performClick()
+        waitForCaptureEntry()
         composeRule.onNodeWithContentDescription("记录一件事").performClick()
         composeRule.onNodeWithText("文字").performClick()
         composeRule.onNodeWithText("写下一句话").performTextInput(title)
@@ -85,7 +259,39 @@ class AmemeUiSmokeTest {
         composeRule.onNodeWithText("事件详情").assertIsDisplayed()
         composeRule.onNodeWithText("查看删除影响").performScrollTo().performClick()
         composeRule.onNodeWithText("删除影响与进度").assertIsDisplayed()
-        composeRule.onNodeWithText("合成影响范围").assertIsDisplayed()
+        composeRule.onNodeWithText("影响范围").assertIsDisplayed()
+    }
+
+    @Test
+    fun demoData_roundTripRestoresRealLocalEvents() {
+        val realTitle = "真实本机-${System.nanoTime()}"
+        composeRule.onNodeWithText("查看今天").performClick()
+        waitForCaptureEntry()
+        composeRule.onNodeWithContentDescription("记录一件事").performClick()
+        composeRule.onNodeWithText("文字").performClick()
+        composeRule.onNodeWithText("写下一句话").performTextInput(realTitle)
+        composeRule.onNodeWithText("保存到本机").performClick()
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            composeRule.onAllNodesWithText("保存到本机").fetchSemanticsNodes().isEmpty()
+        }
+        composeRule.onNodeWithContentDescription("打开设置").performClick()
+        composeRule.onNodeWithTag("load-demo-button").performScrollTo().performClick()
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            composeRule.onAllNodesWithText("当前正在查看演示数据").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithText("当前正在查看演示数据").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("返回").performClick()
+        composeRule.onNodeWithContentDescription("演示数据。固定示例仅用于体验，不会写入真实本机记录。", substring = true)
+            .assertIsDisplayed()
+
+        composeRule.onNodeWithContentDescription("打开设置").performClick()
+        composeRule.onNodeWithTag("exit-demo-button").performScrollTo().performClick()
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            composeRule.onAllNodesWithText("使用演示数据").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithContentDescription("返回").performClick()
+        waitForCaptureEntry()
+        composeRule.onNodeWithContentDescription(realTitle, substring = true).performScrollTo().assertIsDisplayed()
     }
 
     @Test
@@ -100,6 +306,28 @@ class AmemeUiSmokeTest {
     }
 
     @Test
+    fun receiveDeviceConnection_generatesAReadableShortLivedQrCode() {
+        composeRule.onNodeWithText("查看今天").performClick()
+        waitForCaptureEntry()
+        composeRule.onNodeWithContentDescription("打开设置").performClick()
+        composeRule.onNodeWithTag("create-pairing-qr-button").performScrollTo().performClick()
+
+        composeRule.waitUntil(timeoutMillis = 15_000) {
+            composeRule.onAllNodesWithText("设备配对二维码").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithText("请让另一台设备在 5 分钟内扫描。扫描后，对方仍需确认授权。")
+            .assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("设备配对二维码，五分钟内有效")
+            .assertIsDisplayed()
+        composeRule.onNodeWithTag("copy-pairing-code-button").assertIsEnabled()
+        composeRule.onNodeWithText("完成").performClick()
+        composeRule.onNodeWithTag("revoke-pairing-button").performScrollTo().performClick()
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            composeRule.onAllNodesWithText("未配对").fetchSemanticsNodes().isNotEmpty()
+        }
+    }
+
+    @Test
     fun agentConnection_requiresAuthorizationAndCanBeDisconnected() {
         composeRule.onNodeWithText("查看今天").performClick()
         composeRule.onNodeWithContentDescription("打开设置").performClick()
@@ -109,6 +337,8 @@ class AmemeUiSmokeTest {
         composeRule.waitUntil(timeoutMillis = 5_000) {
             composeRule.onAllNodesWithText("允许 Agent 连接？").fetchSemanticsNodes().isNotEmpty()
         }
+        composeRule.onNodeWithText("拟授权范围：Personal 空间 · autonomous_memory · 结构化 event · 30 天")
+            .assertIsDisplayed()
         composeRule.onNodeWithText("体验模式 · 不建立真实网络连接").assertIsDisplayed()
         composeRule.onNodeWithText("允许并连接").performClick()
         composeRule.waitUntil(timeoutMillis = 5_000) {
@@ -119,7 +349,7 @@ class AmemeUiSmokeTest {
         composeRule.onNodeWithText("Codex · 体验连接").assertIsDisplayed()
         composeRule.onNodeWithTag("disconnect-device-button").performClick()
         composeRule.waitUntil(timeoutMillis = 5_000) {
-            composeRule.onAllNodesWithText("连接设备").fetchSemanticsNodes().isNotEmpty()
+            composeRule.onAllNodesWithText("主动连接 Agent").fetchSemanticsNodes().isNotEmpty()
         }
         composeRule.onNodeWithTag("connect-device-button").assertIsDisplayed()
     }

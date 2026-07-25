@@ -21,17 +21,27 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Text
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.unit.dp
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.navArgument
 import com.ameme.android.data.MemoryRepository
 import com.ameme.android.data.MemoryIoExecutor
+import com.ameme.android.data.FakeMemoryRepository
+import com.ameme.android.data.StructuredExportWriter
 import com.ameme.android.data.UnavailableMemoryRepository
 import com.ameme.android.data.runCatchingCancellable
 import com.ameme.android.data.local.LocalEventDatabase
 import com.ameme.android.data.local.LocalMemoryRepository
+import com.ameme.android.data.local.AndroidKeystorePendingActionStore
 import com.ameme.android.data.summary.DaySummaryClient
 import com.ameme.android.data.summary.DaySummaryClientException
 import com.ameme.android.data.summary.HttpDaySummaryClient
@@ -62,6 +72,7 @@ import com.ameme.android.domain.CaptureKind
 import com.ameme.android.domain.DaySummarySnapshot
 import com.ameme.android.domain.DaySummaryState
 import com.ameme.android.domain.ExperienceMode
+import com.ameme.android.domain.FactStatus
 import com.ameme.android.domain.SourceCaptureRequest
 import com.ameme.android.ui.screens.DeleteScreen
 import com.ameme.android.ui.screens.CalendarImportDialog
@@ -71,6 +82,8 @@ import com.ameme.android.ui.screens.SearchScreen
 import com.ameme.android.ui.screens.SettingsScreen
 import com.ameme.android.ui.screens.TodayScreen
 import java.time.LocalDate
+import java.time.Duration
+import java.time.Instant
 import java.time.ZoneId
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
@@ -112,9 +125,10 @@ fun AmemeApp(
     val scope = rememberCoroutineScope()
     val ioExecutor = remember { MemoryIoExecutor() }
     val pairingManager = remember(appContext) { AgentPairingManager(appContext) }
+    val pendingActionStore = remember(appContext) { AndroidKeystorePendingActionStore(appContext) }
     val pairingExperienceConnector: PairingExperienceConnector? =
         remember(pairingExperienceConnectorOverride) {
-            pairingExperienceConnectorOverride ?: PairingExperienceConnectorProvider.create()
+            pairingExperienceConnectorOverride ?: PairingExperienceConnectorProvider.create(appContext)
         }
     val pairingExperienceStore = remember(appContext) { PairingExperienceStore(appContext) }
     var pairingExperienceConnection: PairingExperienceConnection? by remember(pairingExperienceStore) {
@@ -122,6 +136,7 @@ fun AmemeApp(
     }
     val unavailableRepository = remember { UnavailableMemoryRepository() }
     var repository by remember(repositoryOverride) { mutableStateOf(repositoryOverride) }
+    var demoMode by rememberSaveable(repositoryOverride) { mutableStateOf(false) }
     val uiRepository = repository ?: unavailableRepository
     val events = remember { mutableStateListOf<com.ameme.android.domain.MemoryEvent>() }
     var daySummary by remember {
@@ -138,24 +153,49 @@ fun AmemeApp(
     var persistenceError by remember { mutableStateOf<String?>(null) }
     var agentPairingMaterial by remember { mutableStateOf<AgentPairingMaterial?>(null) }
     var createdAgentPairing by remember { mutableStateOf<CreatedAgentPairing?>(null) }
+    var createdAgentPairingQrPayload by remember { mutableStateOf<String?>(null) }
+    var createdAgentPairingQrExpiresAt by remember { mutableStateOf<Instant?>(null) }
     var agentRuntime by remember { mutableStateOf<AgentLocalNodeRuntime?>(null) }
     var agentRuntimeState by remember { mutableStateOf(AgentLocalNodeRuntimeState.Stopped) }
     var pairingInFlight by remember { mutableStateOf(false) }
     var pairingGeneration by remember { mutableIntStateOf(0) }
+    var pendingExportContent by remember { mutableStateOf<String?>(null) }
+    var exportInFlight by remember { mutableStateOf(false) }
+    var pendingIncomingShare by remember { mutableStateOf<SourceCaptureRequest?>(null) }
+    var incomingShareInFlight by remember { mutableStateOf(false) }
     var experienceModeName by rememberSaveable {
         mutableStateOf(if (repositoryOverride == null) ExperienceMode.Loading.name else ExperienceMode.Ready.name)
     }
 
-    LaunchedEffect(repositoryOverride, appContext) {
+    LaunchedEffect(pendingActionStore) {
+        runCatchingCancellable {
+            ioExecutor.runSourceIo { pendingActionStore.load() }
+        }.onSuccess { snapshot ->
+            if (snapshot == null) return@onSuccess
+            if (pendingIncomingShare == null) pendingIncomingShare = snapshot.incomingShare
+            if (pendingExportContent == null) pendingExportContent = snapshot.exportContent
+            if (snapshot.incomingShare != null || snapshot.exportContent != null) {
+                persistenceError = "已恢复上次未完成操作；确认或重试前不会修改本机事件。"
+            }
+        }.onFailure {
+            persistenceError = "待处理操作恢复失败；本机事件没有改变，请检查设备安全状态后重试。"
+        }
+    }
+
+    LaunchedEffect(repositoryOverride, appContext, demoMode) {
         var unclaimedRepository: MemoryRepository? = null
         var primaryFailure: Throwable? = null
         try {
-            val readyRepository = repositoryOverride ?: ioExecutor.open {
+            val readyRepository = when {
+                repositoryOverride != null -> repositoryOverride
+                demoMode -> FakeMemoryRepository()
+                else -> ioExecutor.open {
                     LocalMemoryRepository.open(
                         context = appContext,
                         spaceId = LocalEventDatabase.DEFAULT_SPACE_ID,
                     )
                 }.also { unclaimedRepository = it }
+            }
             val restored = ioExecutor.loadActiveEvents(readyRepository)
             currentCoroutineContext().ensureActive()
             events.clear()
@@ -218,6 +258,7 @@ fun AmemeApp(
             AgentLocalNodeRuntime.launch(
                 repository = localRepository,
                 pairing = active,
+                accessGrantPolicy = active.accessGrantPolicy,
                 sslServerSocketFactory = socketFactory,
                 onStateChanged = { state -> scope.launch { agentRuntimeState = state } },
                 onEventPersisted = {
@@ -240,7 +281,11 @@ fun AmemeApp(
         val ownedRuntime = agentRuntime
         onDispose { ownedRuntime?.close() }
     }
-    val experienceMode = ExperienceMode.valueOf(experienceModeName)
+    val baseExperienceMode = ExperienceMode.valueOf(experienceModeName)
+    val experienceMode = baseExperienceMode.resolvedFor(
+        eventCount = events.size,
+        deriveFromEvents = repositoryOverride == null,
+    )
     val uriGrantResolver = remember(appContext) { ContentUriGrantResolver(appContext.contentResolver) }
     val photoCoordinator = remember(uiRepository, uriGrantResolver) {
         PhotoCaptureCoordinator(uiRepository, uriGrantResolver)
@@ -263,6 +308,7 @@ fun AmemeApp(
     var calendarDialogCalendars by remember { mutableStateOf<List<ReadableCalendar>?>(null) }
     var calendarImporting by remember { mutableStateOf(false) }
     var calendarCancellation by remember { mutableStateOf<CalendarImportCancellation?>(null) }
+    var sourcePermissionRevision by remember { mutableIntStateOf(0) }
     val voiceCaptureGate = remember { ExplicitCaptureGate() }
     var voiceCaptureInFlight by remember { mutableStateOf(false) }
 
@@ -330,6 +376,39 @@ fun AmemeApp(
     val canRecordVoice = remember(appContext) {
         Intent(MediaStore.Audio.Media.RECORD_SOUND_ACTION).resolveActivity(appContext.packageManager) != null
     }
+    val exportDocument = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json"),
+    ) { uri ->
+        val content = pendingExportContent
+        if (uri == null || content == null) {
+            exportInFlight = false
+            if (uri == null) persistenceError = "导出已取消；本机数据没有改变，可以重试保存。"
+        } else {
+            scope.launch {
+                val writeResult = runCatchingCancellable {
+                    ioExecutor.runSourceIo {
+                        val output = requireNotNull(appContext.contentResolver.openOutputStream(uri))
+                        output.use { it.write(content.toByteArray(Charsets.UTF_8)) }
+                    }
+                }
+                if (writeResult.isFailure) {
+                    exportInFlight = false
+                    persistenceError = "导出文件写入失败；本机数据没有改变，请重试。"
+                } else {
+                    val clearResult = runCatchingCancellable {
+                        ioExecutor.runSourceIo { pendingActionStore.clearExport() }
+                    }
+                    exportInFlight = false
+                    if (clearResult.isSuccess) {
+                        pendingExportContent = null
+                        persistenceError = "结构化导出已保存；不包含受限事件或原始媒体文件。"
+                    } else {
+                        persistenceError = "结构化导出已保存；恢复快照清理失败，请稍后重试清理。"
+                    }
+                }
+            }
+        }
+    }
 
     val openCalendarDialog: () -> Unit = openCalendarDialog@{
         val previous = calendarCancellation
@@ -361,8 +440,10 @@ fun AmemeApp(
     }
     val calendarPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) {
+            sourcePermissionRevision += 1
             openCalendarDialog()
         } else {
+            sourcePermissionRevision += 1
             persistenceError = "日历只读权限未授予；未读取或保存任何日历内容。"
         }
     }
@@ -395,17 +476,14 @@ fun AmemeApp(
             .onFailure { persistenceError = "系统来源授权清理暂不可用；待处理记录仍保留在本机并会重试。" }
     }
 
-    LaunchedEffect(incomingShare, repository) {
-        val readyRepository = repository
-        if (incomingShare != null && readyRepository != null) {
-            runCatchingCancellable { ioExecutor.captureSource(readyRepository, incomingShare) }
-                .onSuccess {
-                    events.add(it)
-                    daySummary = ioExecutor.loadDaySummary(readyRepository, LocalDate.now())
-                    persistenceError = null
-                }
-                .onFailure { persistenceError = "分享内容尚未保存；请返回来源后重新分享。" }
-            onIncomingShareConsumed()
+    LaunchedEffect(incomingShare) {
+        if (incomingShare != null) {
+            pendingIncomingShare = incomingShare
+            runCatchingCancellable {
+                ioExecutor.runSourceIo { pendingActionStore.saveIncomingShare(incomingShare) }
+            }.onFailure {
+                persistenceError = "分享内容已暂存于当前会话，但持久恢复快照不可用；请尽快确认或取消。"
+            }
         }
     }
 
@@ -417,7 +495,12 @@ fun AmemeApp(
             OnboardingScreen(
                 onContinue = {
                     if (repositoryOverride == null) {
-                        onboardingPreferences.edit().putBoolean("completed", true).apply()
+                        // This flag determines the first screen after process/activity
+                        // recreation, so make the navigation decision durable before
+                        // replacing the onboarding destination.
+                        check(onboardingPreferences.edit().putBoolean("completed", true).commit()) {
+                            "Could not persist onboarding completion"
+                        }
                     }
                     navController.navigate(Routes.Today) {
                         popUpTo(Routes.Onboarding) { inclusive = true }
@@ -431,6 +514,7 @@ fun AmemeApp(
                 daySummary = daySummary,
                 summaryInFlight = summaryInFlight,
                 experienceMode = experienceMode,
+                demoMode = demoMode,
                 onSearch = { navController.navigate(Routes.Search) },
                 onSettings = { navController.navigate(Routes.Settings) },
                 onEvent = { navController.navigate(Routes.event(it)) },
@@ -567,7 +651,9 @@ fun AmemeApp(
                 ioExecutor = ioExecutor,
                 experienceMode = experienceMode,
                 onBack = navController::popBackStack,
+                onSettings = { navController.navigate(Routes.Settings) },
                 onEvent = { navController.navigate(Routes.event(it)) },
+                demoMode = demoMode,
             )
         }
         composable(Routes.Settings) {
@@ -595,13 +681,19 @@ fun AmemeApp(
                     connected
                 },
                 onDisconnectPairingExperience = {
+                    pairingExperienceConnection?.let { connected ->
+                        requireNotNull(pairingExperienceConnector).disconnect(connected)
+                    }
                     ioExecutor.runSourceIo { pairingExperienceStore.clear() }
                     pairingExperienceConnection = null
                     true
                 },
                 showDeveloperPairingControls = com.ameme.android.BuildConfig.DEBUG,
+                agentPairingAvailable = repository is LocalMemoryRepository,
                 developerAgentPairingDetail = developerAgentPairingDetail,
                 developerPairingInFlight = pairingInFlight,
+                developerPairingQrPayload = createdAgentPairingQrPayload,
+                developerPairingQrExpiresAt = createdAgentPairingQrExpiresAt,
                 developerPairingJson = createdAgentPairing?.pairingJson(),
                 developerPairingSecret = createdAgentPairing?.oneTimeSecret,
                 onCreateDeveloperAgentPairing = {
@@ -611,10 +703,25 @@ fun AmemeApp(
                             runCatchingCancellable {
                                 ioExecutor.runSourceIo { pairingManager.create() }
                             }.onSuccess { created ->
-                                createdAgentPairing = created
-                                agentPairingMaterial = created.material
-                                pairingGeneration += 1
-                                persistenceError = null
+                                val qrCreatedAt = Instant.now()
+                                runCatching { created.pairingQrPayload(qrCreatedAt) }
+                                    .onSuccess { qrPayload ->
+                                        createdAgentPairing = created
+                                        createdAgentPairingQrPayload = qrPayload
+                                        createdAgentPairingQrExpiresAt =
+                                            minOf(created.expiresAt, qrCreatedAt.plus(Duration.ofMinutes(5)))
+                                        agentPairingMaterial = created.material
+                                        pairingGeneration += 1
+                                        persistenceError = null
+                                    }
+                                    .onFailure {
+                                        createdAgentPairing = null
+                                        createdAgentPairingQrPayload = null
+                                        createdAgentPairingQrExpiresAt = null
+                                        agentPairingMaterial = created.material
+                                        pairingGeneration += 1
+                                        persistenceError = "配对已创建，但二维码生成失败；请重新生成。"
+                                    }
                             }.onFailure {
                                 persistenceError = "Agent 配对创建失败；没有生成或显示不完整的密钥。"
                             }
@@ -632,6 +739,8 @@ fun AmemeApp(
                                 .onSuccess {
                                     agentPairingMaterial = null
                                     createdAgentPairing = null
+                                    createdAgentPairingQrPayload = null
+                                    createdAgentPairingQrExpiresAt = null
                                     pairingGeneration += 1
                                     persistenceError = null
                                 }
@@ -640,18 +749,142 @@ fun AmemeApp(
                         }
                     }
                 },
-                onDismissDeveloperPairingSecret = { createdAgentPairing = null },
+                onDismissDeveloperPairingSecret = {
+                    createdAgentPairing = null
+                    createdAgentPairingQrPayload = null
+                    createdAgentPairingQrExpiresAt = null
+                },
+                demoMode = demoMode,
+                onExport = {
+                    if (!exportInFlight) {
+                        val readyRepository = repository
+                        if (readyRepository == null) {
+                            persistenceError = "本机加密节点仍在打开，请稍后重试。"
+                        } else {
+                            exportInFlight = true
+                            scope.launch {
+                                val generated = runCatchingCancellable {
+                                    val currentEvents = ioExecutor.loadActiveEvents(readyRepository)
+                                    StructuredExportWriter.encode(
+                                        events = currentEvents,
+                                        space = LocalEventDatabase.DEFAULT_SPACE_ID,
+                                    )
+                                }
+                                if (generated.isFailure) {
+                                    exportInFlight = false
+                                    persistenceError = "导出尚未生成；本机数据保持不变，请重试。"
+                                } else {
+                                    val content = generated.getOrThrow()
+                                    pendingExportContent = content
+                                    val persisted = runCatchingCancellable {
+                                        ioExecutor.runSourceIo { pendingActionStore.saveExport(content) }
+                                    }
+                                    if (persisted.isFailure) {
+                                        persistenceError = "导出已准备好，但恢复快照不可用；请尽快保存。"
+                                    }
+                                    runCatching {
+                                        exportDocument.launch("ameme-export-${LocalDate.now()}.json")
+                                    }.onFailure {
+                                        exportInFlight = false
+                                        persistenceError = "导出入口暂不可用；本机数据没有改变，请重试。"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                exportPending = pendingExportContent != null,
+                exportInFlight = exportInFlight,
+                onRetryExport = {
+                    if (!exportInFlight && pendingExportContent != null) {
+                        exportInFlight = true
+                        runCatching {
+                            exportDocument.launch("ameme-export-${LocalDate.now()}.json")
+                        }.onFailure {
+                            exportInFlight = false
+                            persistenceError = "导出入口暂不可用；本机数据没有改变，请重试。"
+                        }
+                    }
+                },
+                onClearExport = {
+                    if (!exportInFlight) {
+                        exportInFlight = true
+                        scope.launch {
+                            runCatchingCancellable {
+                                ioExecutor.runSourceIo { pendingActionStore.clearExport() }
+                            }.onSuccess {
+                                pendingExportContent = null
+                                persistenceError = "已清除未完成导出；本机事件没有改变。"
+                            }.onFailure {
+                                persistenceError = "未完成导出尚未清除，请稍后重试。"
+                            }
+                            exportInFlight = false
+                        }
+                    }
+                },
+                onDemoModeChanged = { enabled ->
+                    if (repositoryOverride == null && enabled != demoMode) {
+                        experienceModeName = ExperienceMode.Loading.name
+                        demoMode = enabled
+                    }
+                },
+                calendarReadPermissionGranted = sourcePermissionRevision.let {
+                    appContext.checkSelfPermission(Manifest.permission.READ_CALENDAR) ==
+                        PackageManager.PERMISSION_GRANTED
+                },
+                voiceCaptureAvailable = canRecordVoice,
             )
         }
         composable(
             route = Routes.Event,
             arguments = listOf(navArgument("eventId") { type = NavType.StringType }),
         ) { entry ->
-            val event = events.firstOrNull { it.id == entry.arguments?.getString("eventId") }
+            val eventId = entry.arguments?.getString("eventId").orEmpty()
+            val event = events.firstOrNull { it.id == eventId }
             EventDetailScreen(
                 event = event,
                 onBack = navController::popBackStack,
                 onDelete = { id -> navController.navigate(Routes.delete(id)) },
+                onSaveAddendum = { words ->
+                    val readyRepository = repository
+                    if (readyRepository == null) {
+                        persistenceError = "本机加密节点仍在打开，请稍后重试。"
+                        false
+                    } else {
+                        runCatchingCancellable {
+                            ioExecutor.updateEvent(readyRepository, eventId, userWords = words)
+                        }.onSuccess { updated ->
+                            if (updated != null) {
+                                val index = events.indexOfFirst { it.id == updated.id }
+                                if (index >= 0) events[index] = updated
+                                daySummary = ioExecutor.loadDaySummary(readyRepository, updated.localDate)
+                                persistenceError = null
+                            }
+                        }.onFailure {
+                            persistenceError = "补充尚未保存；本机加密节点写入失败，请重试。"
+                        }.getOrNull() != null
+                    }
+                },
+                onUpdateFactStatus = { status ->
+                    val readyRepository = repository
+                    if (readyRepository == null) {
+                        persistenceError = "本机加密节点仍在打开，请稍后重试。"
+                        false
+                    } else {
+                        runCatchingCancellable {
+                            ioExecutor.updateEvent(readyRepository, eventId, factStatus = status)
+                        }.onSuccess { updated ->
+                            if (updated != null) {
+                                val index = events.indexOfFirst { it.id == updated.id }
+                                if (index >= 0) events[index] = updated
+                                daySummary = ioExecutor.loadDaySummary(readyRepository, updated.localDate)
+                                persistenceError = null
+                            }
+                        }.onFailure {
+                            persistenceError = "核验尚未保存；本机加密节点写入失败，请重试。"
+                        }.getOrNull() != null
+                    }
+                },
             )
         }
         composable(
@@ -684,12 +917,12 @@ fun AmemeApp(
                                 },
                                 onFailure = { "事件已删除；系统来源授权清理待稍后重试。" },
                             )
-                        navController.popBackStack(Routes.Today, false)
                     } else {
                         persistenceError = "删除尚未持久化；本机事件仍保持可见。"
                     }
                     deleted
                 },
+                onDeleteComplete = { navController.popBackStack(Routes.Today, false) },
             )
         }
     }
@@ -752,4 +985,125 @@ fun AmemeApp(
             },
         )
     }
+
+    val currentRoute = navController.currentBackStackEntryAsState().value?.destination?.route
+    LaunchedEffect(pendingIncomingShare, currentRoute) {
+        // A completed user who was interrupted while a share was waiting should
+        // return to the review surface even if the launch-time preference read
+        // briefly selected onboarding during Activity recreation.
+        if (
+            pendingIncomingShare != null &&
+            currentRoute == Routes.Onboarding &&
+            onboardingPreferences.getBoolean("completed", false)
+        ) {
+            navController.navigate(Routes.Today) {
+                popUpTo(Routes.Onboarding) { inclusive = true }
+            }
+        }
+    }
+    pendingIncomingShare?.let { request ->
+        if (currentRoute == Routes.Today) {
+            IncomingShareReviewDialog(
+                request = request,
+                inFlight = incomingShareInFlight,
+                canConfirm = repository != null,
+                onDismiss = {
+                    if (!incomingShareInFlight) {
+                        pendingIncomingShare = null
+                        onIncomingShareConsumed()
+                        scope.launch {
+                            val cleared = runCatchingCancellable {
+                                ioExecutor.runSourceIo { pendingActionStore.clearIncomingShare() }
+                            }
+                            if (cleared.isFailure) {
+                                persistenceError = "已取消当前分享，但恢复快照清理失败；下次启动仍会提醒处理。"
+                            }
+                        }
+                    }
+                },
+                onConfirm = {
+                    if (!incomingShareInFlight) {
+                        val readyRepository = repository
+                        if (readyRepository == null) {
+                            persistenceError = "本机加密节点仍在打开；分享内容尚未保存，请稍后重试。"
+                        } else {
+                            incomingShareInFlight = true
+                            scope.launch {
+                                val captured = runCatchingCancellable {
+                                    val event = ioExecutor.captureSource(readyRepository, request)
+                                    val summary = ioExecutor.loadDaySummary(readyRepository, LocalDate.now())
+                                    event to summary
+                                }
+                                if (captured.isSuccess) {
+                                    val (event, summary) = captured.getOrThrow()
+                                    events.add(event)
+                                    daySummary = summary
+                                    pendingIncomingShare = null
+                                    onIncomingShareConsumed()
+                                    val cleared = runCatchingCancellable {
+                                        ioExecutor.runSourceIo { pendingActionStore.clearIncomingShare() }
+                                    }
+                                    persistenceError = if (cleared.isSuccess) {
+                                        null
+                                    } else {
+                                        "分享内容已保存，但恢复快照清理失败；请稍后重试清理。"
+                                    }
+                                } else {
+                                    persistenceError = "分享内容尚未保存；本机数据没有改变，请重试。"
+                                }
+                                incomingShareInFlight = false
+                            }
+                        }
+                    }
+                },
+            )
+        }
+    }
+}
+
+@Composable
+private fun IncomingShareReviewDialog(
+    request: SourceCaptureRequest,
+    inFlight: Boolean,
+    canConfirm: Boolean,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    val preview = request.userWords?.trim()?.takeIf(String::isNotEmpty) ?: request.title
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("保存分享内容？") },
+        text = {
+            androidx.compose.foundation.layout.Column(
+                verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
+            ) {
+                Text(preview.take(1_024))
+                Text(
+                    request.detail,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    "确认后才会写入 Personal 空间；取消不会创建事件。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (!canConfirm) {
+                    Text(
+                        "本机加密节点正在恢复；恢复完成后才可以保存。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = onConfirm, enabled = canConfirm && !inFlight) {
+                Text(if (inFlight) "正在保存" else "保存到本机")
+            }
+        },
+        dismissButton = {
+            OutlinedButton(onClick = onDismiss, enabled = !inFlight) { Text("取消") }
+        },
+    )
 }

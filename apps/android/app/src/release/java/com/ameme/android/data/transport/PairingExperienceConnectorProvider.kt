@@ -1,5 +1,8 @@
 package com.ameme.android.data.transport
 
+import android.content.Context
+
 object PairingExperienceConnectorProvider {
-    fun create(): PairingExperienceConnector? = null
+    @Suppress("UNUSED_PARAMETER")
+    fun create(context: Context): PairingExperienceConnector? = null
 }

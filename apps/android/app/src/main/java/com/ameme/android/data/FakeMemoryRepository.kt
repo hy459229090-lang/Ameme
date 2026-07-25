@@ -57,6 +57,7 @@ class FakeMemoryRepository(
                 detail = "这是用于验证生活事件表达的合成记录，不代表真实位置。",
                 factStatus = FactStatus.Inferred,
                 sourceLabel = "合成照片 + 用户补充",
+                sensitivity = Sensitivity.Confidential,
             ),
             MemoryEvent(
                 id = "evt_synth_question",
@@ -66,6 +67,18 @@ class FakeMemoryRepository(
                 detail = "合成日历只证明原计划，是否实际发生仍需确认。",
                 factStatus = FactStatus.NeedsReview,
                 sourceLabel = "合成日历",
+                sensitivity = Sensitivity.Confidential,
+            ),
+            MemoryEvent(
+                id = "evt_synth_addendum",
+                localDate = today,
+                time = LocalTime.of(16, 20),
+                title = "补充一段原话",
+                detail = "这条用户陈述用于体验小结、详情补充和 Revision 更新。",
+                factStatus = FactStatus.UserAsserted,
+                sourceLabel = "合成文字补充",
+                isLocalOnly = true,
+                userWords = "今天把可验证的部分先落下来。",
             ),
             MemoryEvent(
                 id = "evt_synth_offline",
@@ -86,6 +99,7 @@ class FakeMemoryRepository(
                 detail = "仅保留合成媒体引用，用于验证来源失效时事件仍可阅读。",
                 factStatus = FactStatus.Confirmed,
                 sourceLabel = "合成照片引用",
+                sensitivity = Sensitivity.Confidential,
             ),
             MemoryEvent(
                 id = "evt_synth_run",
@@ -220,9 +234,22 @@ class FakeMemoryRepository(
     override fun search(query: String, date: LocalDate?): List<DayGroup> = search(events, query, date)
 
     override fun searchPage(query: String, date: LocalDate?, cursor: String?, pageSize: Int): MemoryPage {
+        return searchPage(query, date, date, cursor, pageSize)
+    }
+
+    override fun searchPage(
+        query: String,
+        startDate: LocalDate?,
+        endDate: LocalDate?,
+        cursor: String?,
+        pageSize: Int,
+    ): MemoryPage {
         require(pageSize in 1..100) { "pageSize must be between 1 and 100" }
+        require(startDate == null || endDate == null || !endDate.isBefore(startDate)) {
+            "Search end date must not be before start date"
+        }
         val offset = cursor?.removePrefix("offset:")?.toIntOrNull() ?: 0
-        val matches = search(events, query, date).flatMap(DayGroup::events)
+        val matches = search(events, query, startDate, endDate).flatMap(DayGroup::events)
         val page = matches.drop(offset).take(pageSize)
         val nextOffset = offset + page.size
         return MemoryPage(
@@ -236,14 +263,22 @@ class FakeMemoryRepository(
         events: List<MemoryEvent>,
         query: String,
         date: LocalDate?,
+    ): List<DayGroup> = search(events, query, date, date)
+
+    fun search(
+        events: List<MemoryEvent>,
+        query: String,
+        startDate: LocalDate?,
+        endDate: LocalDate?,
     ): List<DayGroup> {
-        val normalized = query.trim()
+        val terms = searchTerms(query)
         return events
             .asSequence()
-            .filter { date == null || it.localDate == date }
+            .filter { startDate == null || !it.localDate.isBefore(startDate) }
+            .filter { endDate == null || !it.localDate.isAfter(endDate) }
             .filter {
-                normalized.isEmpty() || listOf(it.title, it.detail, it.sourceLabel, it.userWords.orEmpty())
-                    .any { value -> value.contains(normalized, ignoreCase = true) }
+                val fields = listOf(it.title, it.detail, it.sourceLabel, it.userWords.orEmpty())
+                terms.all { term -> fields.any { value -> value.contains(term, ignoreCase = true) } }
             }
             .groupBy { it.localDate }
             .toSortedMap(compareByDescending { it })
@@ -275,9 +310,38 @@ class FakeMemoryRepository(
 
     override fun markSourceLocatorReleased(eventId: String): Boolean = pendingReleases.remove(eventId) != null
 
+    override fun updateEvent(
+        eventId: String,
+        factStatus: FactStatus?,
+        userWords: String?,
+    ): MemoryEvent? {
+        val index = events.indexOfFirst { it.id == eventId }
+        if (index < 0) return null
+        val current = events[index]
+        val updated = current.copy(
+            factStatus = factStatus ?: current.factStatus,
+            userWords = userWords?.trim()?.ifEmpty { null } ?: current.userWords,
+            revision = current.revision + 1,
+        )
+        events[index] = updated
+        ledgerRevisions.merge(updated.localDate, 1, Int::plus)
+        summaries.remove(updated.localDate)
+        return updated
+    }
+
     private fun SourceCaptureRequest.sourceIdentity(): String? {
         val uri = locatorUri ?: return null
         val instance = sourceInstanceKey ?: return null
         return listOf(sourceKind.name, uri, instance).joinToString("\u0000")
+    }
+
+    private fun searchTerms(value: String): List<String> = value
+        .trim()
+        .split(Regex("\\s+"))
+        .filter(String::isNotBlank)
+        .take(MAX_SEARCH_TERMS)
+
+    private companion object {
+        const val MAX_SEARCH_TERMS = 16
     }
 }

@@ -30,6 +30,8 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import com.ameme.android.data.transport.channel.AgentPairingEnvelope
+import com.ameme.android.data.transport.channel.AndroidLocalNodePairingMaterial
 
 @Serializable
 data class AgentPairingMaterial(
@@ -50,12 +52,34 @@ data class CreatedAgentPairing(
     val expiresAt: Instant,
 ) {
     fun pairingJson(): String = AgentPairingManager.json.encodeToString(material)
+
+    fun pairingQrPayload(now: Instant = Instant.now()): String = AgentPairingEnvelope.encode(
+        pairing = AndroidLocalNodePairingMaterial(
+            channelProtocol = material.channelProtocol,
+            endpointRef = material.endpointRef,
+            credentialRef = material.credentialRef,
+            expectedDeviceId = material.expectedDeviceId,
+            sessionBindingRef = material.sessionBindingRef,
+            pairingId = material.pairingId,
+            host = material.host,
+            port = material.port,
+            tlsCertificateSha256 = material.tlsCertificateSha256,
+        ),
+        oneTimeSecret = oneTimeSecret,
+        expiresAt = minOf(expiresAt, now.plus(QR_ENVELOPE_DURATION)),
+        pairingExpiresAt = expiresAt,
+    )
+
+    private companion object {
+        val QR_ENVELOPE_DURATION: Duration = Duration.ofMinutes(5)
+    }
 }
 
 data class ActiveAgentPairing(
     val material: AgentPairingMaterial,
     val secret: ByteArray,
     val expiresAt: Instant,
+    val accessGrantPolicy: AgentAccessGrantPolicy,
 ) : AutoCloseable {
     override fun close() = secret.fill(0)
 }
@@ -75,6 +99,12 @@ class AgentPairingManager(
             }
         val pairingId = "pair_${UUID.randomUUID().toString().replace("-", "")}"
         val expiresAt = clock.instant().plus(PAIRING_DURATION)
+        val createdAt = clock.instant()
+        val accessGrantPolicy = AgentAccessGrantPolicy.default(
+            ownerId = "owner_$deviceId",
+            createdAt = createdAt,
+            expiresAt = expiresAt,
+        )
         val material = AgentPairingMaterial(
             channelProtocol = CHANNEL_PROTOCOL,
             endpointRef = "endpoint-ref:android/$deviceId",
@@ -96,6 +126,12 @@ class AgentPairingManager(
             .putString(KEY_SECRET_IV, Base64.getEncoder().encodeToString(encrypted.iv))
             .putString(KEY_SECRET_CIPHERTEXT, Base64.getEncoder().encodeToString(encrypted.ciphertext))
             .putLong(KEY_EXPIRES_AT, expiresAt.toEpochMilli())
+            .putString(KEY_GRANT_OWNER, accessGrantPolicy.ownerId)
+            .putString(KEY_GRANT_PURPOSES, accessGrantPolicy.purposes.joinToString(SCOPE_SEPARATOR))
+            .putString(KEY_GRANT_SPACES, accessGrantPolicy.spaces.joinToString(SCOPE_SEPARATOR))
+            .putString(KEY_GRANT_DATA_TYPES, accessGrantPolicy.dataTypes.joinToString(SCOPE_SEPARATOR))
+            .putLong(KEY_GRANT_NOT_BEFORE, accessGrantPolicy.notBefore.toEpochMilli())
+            .putLong(KEY_GRANT_CREATED_AT, accessGrantPolicy.createdAt.toEpochMilli())
             .commit()
         encrypted.clear()
         check(committed) { "Could not persist Agent pairing" }
@@ -113,6 +149,10 @@ class AgentPairingManager(
         }
         val material = runCatching { json.decodeFromString<AgentPairingMaterial>(materialJson) }.getOrNull()
             ?: return null
+        val accessGrantPolicy = loadAccessGrantPolicy(expiresAt) ?: run {
+            revoke()
+            return null
+        }
         val iv = preferences.getString(KEY_SECRET_IV, null)?.let(Base64.getDecoder()::decode) ?: return null
         val ciphertext = preferences.getString(KEY_SECRET_CIPHERTEXT, null)?.let(Base64.getDecoder()::decode)
             ?: return null
@@ -126,7 +166,7 @@ class AgentPairingManager(
             secret.fill(0)
             return null
         }
-        return ActiveAgentPairing(material, secret, expiresAt)
+        return ActiveAgentPairing(material, secret, expiresAt, accessGrantPolicy)
     }
 
     fun revoke() {
@@ -135,6 +175,12 @@ class AgentPairingManager(
             .remove(KEY_SECRET_IV)
             .remove(KEY_SECRET_CIPHERTEXT)
             .remove(KEY_EXPIRES_AT)
+            .remove(KEY_GRANT_OWNER)
+            .remove(KEY_GRANT_PURPOSES)
+            .remove(KEY_GRANT_SPACES)
+            .remove(KEY_GRANT_DATA_TYPES)
+            .remove(KEY_GRANT_NOT_BEFORE)
+            .remove(KEY_GRANT_CREATED_AT)
             .commit()
         File(context.filesDir, PAIRING_FILE).delete()
     }
@@ -142,6 +188,45 @@ class AgentPairingManager(
     fun sslServerSocketFactory(): SSLServerSocketFactory = identity.sslServerSocketFactory()
 
     fun pairingFile(): File = File(context.filesDir, PAIRING_FILE)
+
+    private fun loadAccessGrantPolicy(expiresAt: Instant): AgentAccessGrantPolicy? {
+        if (
+            !preferences.contains(KEY_GRANT_OWNER) ||
+            !preferences.contains(KEY_GRANT_PURPOSES) ||
+            !preferences.contains(KEY_GRANT_SPACES) ||
+            !preferences.contains(KEY_GRANT_DATA_TYPES) ||
+            !preferences.contains(KEY_GRANT_NOT_BEFORE) ||
+            !preferences.contains(KEY_GRANT_CREATED_AT)
+        ) {
+            return null
+        }
+        val ownerId = preferences.getString(KEY_GRANT_OWNER, null) ?: return null
+        val purposes = preferences.getString(KEY_GRANT_PURPOSES, null)
+            ?.split(SCOPE_SEPARATOR)?.filter(String::isNotBlank)?.toSet() ?: return null
+        val spaces = preferences.getString(KEY_GRANT_SPACES, null)
+            ?.split(SCOPE_SEPARATOR)?.filter(String::isNotBlank)?.toSet() ?: return null
+        val dataTypes = preferences.getString(KEY_GRANT_DATA_TYPES, null)
+            ?.split(SCOPE_SEPARATOR)?.filter(String::isNotBlank)?.toSet() ?: return null
+        val notBefore = runCatching {
+            Instant.ofEpochMilli(preferences.getLong(KEY_GRANT_NOT_BEFORE, Long.MIN_VALUE))
+        }.getOrNull() ?: return null
+        val createdAt = runCatching {
+            Instant.ofEpochMilli(preferences.getLong(KEY_GRANT_CREATED_AT, Long.MIN_VALUE))
+        }.getOrNull() ?: return null
+        return runCatching {
+            AgentAccessGrantPolicy(
+                schemaVersion = AgentAccessGrant.CURRENT_SCHEMA_VERSION,
+                ownerId = ownerId,
+                purposes = purposes,
+                spaces = spaces,
+                dataTypes = dataTypes,
+                notBefore = notBefore,
+                expiresAt = expiresAt,
+                status = AgentAccessGrantStatus.Active,
+                createdAt = createdAt,
+            )
+        }.getOrNull()?.takeIf { it.isActive(clock.instant()) }
+    }
 
     private fun writePairingMaterial(value: String) {
         val target = pairingFile()
@@ -229,6 +314,13 @@ class AgentPairingManager(
         private const val KEY_SECRET_IV = "secret_iv"
         private const val KEY_SECRET_CIPHERTEXT = "secret_ciphertext"
         private const val KEY_EXPIRES_AT = "expires_at"
+        private const val KEY_GRANT_OWNER = "grant_owner"
+        private const val KEY_GRANT_PURPOSES = "grant_purposes"
+        private const val KEY_GRANT_SPACES = "grant_spaces"
+        private const val KEY_GRANT_DATA_TYPES = "grant_data_types"
+        private const val KEY_GRANT_NOT_BEFORE = "grant_not_before"
+        private const val KEY_GRANT_CREATED_AT = "grant_created_at"
+        private const val SCOPE_SEPARATOR = "\u001f"
         private const val PAIRING_FILE = "agent-pairing/pairing.json"
         private const val ANDROID_KEYSTORE = "AndroidKeyStore"
         private const val PAIRING_KEY_ALIAS = "ameme-agent-pairing-wrap-v1"

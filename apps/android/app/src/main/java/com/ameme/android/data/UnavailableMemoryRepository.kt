@@ -46,6 +46,14 @@ class UnavailableMemoryRepository : MemoryRepository {
     override fun searchPage(query: String, date: LocalDate?, cursor: String?, pageSize: Int): MemoryPage =
         MemoryPage(emptyList(), null, SearchBackend.LikeFallback)
 
+    override fun searchPage(
+        query: String,
+        startDate: LocalDate?,
+        endDate: LocalDate?,
+        cursor: String?,
+        pageSize: Int,
+    ): MemoryPage = MemoryPage(emptyList(), null, SearchBackend.LikeFallback)
+
     override fun deleteEvent(eventId: String): Boolean = false
 
     override fun sourceLocator(eventId: String): SourceLocator? = null
@@ -53,4 +61,10 @@ class UnavailableMemoryRepository : MemoryRepository {
     override fun pendingSourceLocatorReleases(): List<PendingSourceLocatorRelease> = emptyList()
 
     override fun markSourceLocatorReleased(eventId: String): Boolean = false
+
+    override fun updateEvent(
+        eventId: String,
+        factStatus: com.ameme.android.domain.FactStatus?,
+        userWords: String?,
+    ): MemoryEvent? = null
 }

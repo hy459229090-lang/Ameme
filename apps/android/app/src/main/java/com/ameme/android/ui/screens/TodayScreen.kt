@@ -48,6 +48,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.onClick as semanticsOnClick
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -58,6 +63,7 @@ import com.ameme.android.domain.ExperienceMode
 import com.ameme.android.domain.FactStatus
 import com.ameme.android.domain.MemoryEvent
 import com.ameme.android.ui.components.EmptyMessage
+import com.ameme.android.ui.components.DemoModeNotice
 import com.ameme.android.ui.components.EventRow
 import com.ameme.android.ui.components.StateNotice
 import com.ameme.android.ui.displayDate
@@ -83,11 +89,13 @@ fun TodayScreen(
     onRequestCalendar: () -> Unit,
     onCapture: suspend (CaptureKind, String) -> Boolean,
     onGenerateSummary: suspend () -> Boolean,
+    demoMode: Boolean = false,
 ) {
     var showCapture by remember { mutableStateOf(false) }
     var showSummaryConsent by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val today = LocalDate.now()
+    val captureReady = experienceMode != ExperienceMode.Loading && experienceMode != ExperienceMode.RecoverableError
     val allToday = events.filter { it.localDate == today }.sortedBy { it.time }
     val visibleToday = when (experienceMode) {
         ExperienceMode.Empty -> emptyList()
@@ -122,10 +130,31 @@ fun TodayScreen(
         },
         floatingActionButton = {
             ExtendedFloatingActionButton(
-                onClick = { showCapture = true },
+                onClick = { if (captureReady) showCapture = true },
                 icon = { Icon(Icons.Rounded.Add, contentDescription = null) },
                 text = { Text("记录") },
-                modifier = Modifier.semantics { contentDescription = "记录一件事" },
+                containerColor = if (captureReady) {
+                    MaterialTheme.colorScheme.primaryContainer
+                } else {
+                    MaterialTheme.colorScheme.surfaceVariant
+                },
+                contentColor = if (captureReady) {
+                    MaterialTheme.colorScheme.onPrimaryContainer
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+                modifier = Modifier.clearAndSetSemantics {
+                    contentDescription = "记录一件事"
+                    role = Role.Button
+                    if (!captureReady) {
+                        disabled()
+                    } else {
+                        semanticsOnClick {
+                            showCapture = true
+                            true
+                        }
+                    }
+                },
             )
         },
     ) { padding ->
@@ -154,6 +183,11 @@ fun TodayScreen(
                     onAction = if (experienceMode != ExperienceMode.Ready) onSettings else null,
                 )
             }
+            if (demoMode) {
+                item {
+                    DemoModeNotice(modifier = Modifier.padding(bottom = 12.dp))
+                }
+            }
             persistenceError?.let { error ->
                 item {
                     Text(
@@ -175,16 +209,16 @@ fun TodayScreen(
                 items(visibleToday, key = { it.id }) { event ->
                     EventRow(event = event, onClick = { onEvent(event.id) })
                     if (event.factStatus == FactStatus.NeedsReview) {
-                        VerificationPrompt(eventTitle = event.title)
+                        VerificationPrompt(eventTitle = event.title, onOpen = { onEvent(event.id) })
                     }
                 }
-                item {
-                    DaySummarySection(
-                        snapshot = daySummary,
-                        inFlight = summaryInFlight,
-                        onGenerate = { showSummaryConsent = true },
-                    )
-                }
+            }
+            item {
+                DaySummarySection(
+                    snapshot = daySummary,
+                    inFlight = summaryInFlight,
+                    onGenerate = { showSummaryConsent = true },
+                )
             }
         }
     }
@@ -251,16 +285,17 @@ fun TodayScreen(
 }
 
 @Composable
-private fun VerificationPrompt(eventTitle: String) {
+private fun VerificationPrompt(eventTitle: String, onOpen: () -> Unit) {
     Card(Modifier.fillMaxWidth().padding(vertical = 10.dp)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("需要核验", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-            Text("“$eventTitle”实际发生了吗？", fontWeight = FontWeight.Medium)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = {}) { Text("发生了") }
-                OutlinedButton(onClick = {}) { Text("没发生") }
-                OutlinedButton(onClick = {}) { Text("稍后") }
-            }
+            Text("“$eventTitle”需要你的确认。", fontWeight = FontWeight.Medium)
+            Text(
+                "打开详情后可补充原话、查看来源并继续处理；不会用未保存的按钮操作改变事实。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            OutlinedButton(onClick = onOpen) { Text("查看并核验") }
         }
     }
 }
@@ -347,6 +382,7 @@ private fun CaptureBottomSheet(
     var selectedKind by remember { mutableStateOf<CaptureKind?>(null) }
     var text by remember { mutableStateOf("") }
     var isSaving by remember { mutableStateOf(false) }
+    var saveError by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
@@ -405,7 +441,10 @@ private fun CaptureBottomSheet(
                 if (kind == CaptureKind.Text) {
                     OutlinedTextField(
                         value = text,
-                        onValueChange = { text = it },
+                        onValueChange = {
+                            text = it
+                            saveError = null
+                        },
                         modifier = Modifier.fillMaxWidth(),
                         label = { Text("写下一句话") },
                         minLines = 2,
@@ -418,8 +457,13 @@ private fun CaptureBottomSheet(
                             if (!isSaving) {
                                 isSaving = true
                                 scope.launch {
-                                    onSave(kind, text)
+                                    val saved = onSave(kind, text)
                                     isSaving = false
+                                    if (saved) {
+                                        onDismiss()
+                                    } else {
+                                        saveError = "保存失败；本机数据没有改变，请重试。"
+                                    }
                                 }
                             }
                         },
@@ -427,6 +471,14 @@ private fun CaptureBottomSheet(
                         enabled = !isSaving && (kind != CaptureKind.Text || text.isNotBlank()),
                     ) {
                         Text(if (isSaving) "正在保存…" else "保存到本机")
+                    }
+                    saveError?.let {
+                        Text(
+                            it,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(top = 8.dp),
+                        )
                     }
                 }
                 OutlinedButton(
@@ -452,6 +504,8 @@ private fun CaptureChoice(
         headlineContent = { Text(kind.label) },
         supportingContent = { Text(detail) },
         leadingContent = { Icon(icon, contentDescription = null) },
-        modifier = Modifier.clickable { onClick(kind) },
+        modifier = Modifier
+            .clickable(role = Role.Button) { onClick(kind) }
+            .semantics { contentDescription = "${kind.label}：$detail" },
     )
 }

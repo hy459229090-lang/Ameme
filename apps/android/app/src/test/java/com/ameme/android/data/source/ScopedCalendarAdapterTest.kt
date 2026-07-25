@@ -5,6 +5,7 @@ import com.ameme.android.data.MemoryRepository
 import com.ameme.android.domain.SourceCaptureRequest
 import com.ameme.android.domain.FactStatus
 import com.ameme.android.domain.LocatorPermissionState
+import com.ameme.android.domain.Sensitivity
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -39,6 +40,7 @@ class ScopedCalendarAdapterTest {
             LocatorPermissionState.ProviderRead,
             repository.sourceLocator(imported.single().id)?.permissionState,
         )
+        assertEquals(Sensitivity.Confidential, imported.single().sensitivity)
         assertTrue(cancellation.isCommitComplete)
     }
 

@@ -43,6 +43,7 @@ class PairingExperienceStoreInstrumentedTest {
             method = PairingExperienceMethod.LanDiscovery,
             capabilities = listOf("写入结构化工作记录"),
             connectedAt = Instant.parse("2026-07-15T01:02:03Z"),
+            expiresAt = Instant.parse("2026-08-14T01:02:03Z"),
             simulated = true,
         )
 
@@ -51,7 +52,7 @@ class PairingExperienceStoreInstrumentedTest {
         assertEquals(connection, store.load())
         val keys = context.getSharedPreferences(PairingExperienceStore.PREFERENCES, Context.MODE_PRIVATE).all.keys
         assertEquals(
-            setOf("connection_id", "device_name", "agent_name", "method", "capabilities", "connected_at", "simulated"),
+            setOf("connection_id", "device_name", "agent_name", "method", "capabilities", "connected_at", "expires_at", "simulated"),
             keys,
         )
         store.clear()
@@ -68,5 +69,42 @@ class PairingExperienceStoreInstrumentedTest {
 
         assertNull(store.load())
         assertEquals(emptyMap<String, Any>(), preferences.all)
+    }
+
+    @Test
+    fun expiredState_isClearedBeforeItCanAppearConnected() {
+        val preferences = context.getSharedPreferences(PairingExperienceStore.PREFERENCES, Context.MODE_PRIVATE)
+        preferences.edit()
+            .putString("connection_id", "debug-expired")
+            .putString("device_name", "Ameme Desktop")
+            .putString("agent_name", "Codex")
+            .putString("method", PairingExperienceMethod.LanDiscovery.wireValue)
+            .putString("capabilities", "写入结构化工作记录")
+            .putLong("connected_at", Instant.parse("2026-07-15T01:02:03Z").toEpochMilli())
+            .putLong("expires_at", Instant.parse("2026-07-15T01:02:04Z").toEpochMilli())
+            .putBoolean("simulated", true)
+            .commit()
+
+        assertNull(store.load())
+        assertEquals(emptyMap<String, Any>(), preferences.all)
+    }
+
+    @Test
+    fun realConnectionMetadata_doesNotRelaunchAsAnActiveTransport() {
+        store.save(
+            PairingExperienceConnection(
+                id = "desktop-real-001",
+                deviceName = "Ameme Desktop",
+                agentName = "Codex",
+                method = PairingExperienceMethod.LanDiscovery,
+                capabilities = listOf("写入结构化工作记录"),
+                connectedAt = Instant.parse("2026-07-15T01:02:03Z"),
+                expiresAt = Instant.parse("2026-08-14T01:02:03Z"),
+                simulated = false,
+            ),
+        )
+
+        assertNull(store.load())
+        assertEquals(emptyMap<String, Any>(), context.getSharedPreferences(PairingExperienceStore.PREFERENCES, Context.MODE_PRIVATE).all)
     }
 }

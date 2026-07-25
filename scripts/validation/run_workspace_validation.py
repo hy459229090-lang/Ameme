@@ -57,6 +57,10 @@ COMMANDS = [
     ),
     ("ai_fixed_eval", [sys.executable, "scripts/validation/run_ai_reference_eval.py"]),
     ("skill_package", [sys.executable, "scripts/validation/validate_ameme_skill.py"]),
+    ("ios_installable_project", [sys.executable, "scripts/validation/validate_ios_project.py"]),
+    ("ios_share_extension_inputs", [sys.executable, "scripts/validation/validate_ios_share_extension_inputs.py"]),
+    ("ios_accessibility_contract", [sys.executable, "scripts/validation/validate_ios_accessibility_contract.py"]),
+    ("pairing_qr_contract", [sys.executable, "scripts/validation/validate_pairing_qr_contract.py"]),
     ("markdown_links", [sys.executable, "scripts/governance/check_markdown_links.py"]),
     ("workspace_governance", [sys.executable, "scripts/governance/check_workspace.py"]),
 ]

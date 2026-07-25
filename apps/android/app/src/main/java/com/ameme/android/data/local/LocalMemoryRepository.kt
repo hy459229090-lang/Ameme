@@ -119,6 +119,14 @@ class LocalMemoryRepository(
     override fun searchPage(query: String, date: LocalDate?, cursor: String?, pageSize: Int): MemoryPage =
         database.readPage(query, date, cursor, pageSize)
 
+    override fun searchPage(
+        query: String,
+        startDate: LocalDate?,
+        endDate: LocalDate?,
+        cursor: String?,
+        pageSize: Int,
+    ): MemoryPage = database.readPage(query, startDate, endDate, cursor, pageSize)
+
     override fun deleteEvent(eventId: String): Boolean = database.deleteEvent(eventId)
 
     override fun sourceLocator(eventId: String): SourceLocator? = database.sourceLocator(eventId)
@@ -128,6 +136,12 @@ class LocalMemoryRepository(
 
     override fun markSourceLocatorReleased(eventId: String): Boolean =
         database.markSourceLocatorReleased(eventId)
+
+    override fun updateEvent(
+        eventId: String,
+        factStatus: FactStatus?,
+        userWords: String?,
+    ): MemoryEvent? = database.updateEvent(eventId, factStatus, userWords)
 
     override fun close() = database.close()
 
