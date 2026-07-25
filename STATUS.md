@@ -13,7 +13,7 @@
 - 工程实现：Android API 36 16 KB arm64 AVD 上 `PAGE_SIZE=16384`、`font_scale=1.3`，本轮 `connectedDebugAndroidTest` 为 67 discovered / 60 passed / 7 显式 Gate skipped / 0 failed；Debug/Release JVM、Lint、APK 和测试 APK 同轮通过。iOS 已有 XcodeGen App、静态 Shared Core、嵌入式 Share Extension、Unit/UI Test targets 与共享 scheme；本地 Shared/App build 和 Shared Smoke 通过，GitHub macOS 15 + Xcode 16.4 完成 App/Extension build、22 Unit + 1 UI Tests 和 4 张当前截图。14/14 workspace gate、iOS project 44、Share inputs 30、iOS accessibility 25、QR contract 32 和治理 143 均 0 error。真实 OpenAI live 按设计跳过；物理设备、签名、生产账户/模型与商店发布不在这些通过结论内。
 - 本轮跨端收口：iOS SwiftUI 源码已补齐与 Android 当前进度对应的本机记录、Today/Search/Capture/Event/Settings/Delete 体验；Android 修复搜索设置入口、事件补充 Revision、删除真实执行、空白页小结和不可操作/误导性设计文案。iOS Shared/App 包级源码构建通过；Android `testDebugUnitTest`、`lintDebug`、`assembleDebug` 通过，lint 无阻断项。
 - 第八至二十四批双端产品完善：两端均支持不污染真实数据的演示模式、日期范围搜索、Revision、结构化导出、恢复/清理、严格配对与显式断开；完整 Xcode/iOS SDK 已由 CI 接管真实 App/Share Extension build、Unit/UI Tests 与截图附件。本机仍只有 Command Line Tools；iOS/Android 物理设备、真实 TalkBack/VoiceOver、签名/Provisioning 和商店流程未闭合。
-- 当前里程碑：M24 状态为 `done`；实现证据提交 `03c45d1` 的 workspace、iOS、Android PR head CI 已签收，状态文档提交不改变实现范围，PR #1 可人工 review。详见 `docs/quality/M24-双端真实构建与设备交付验证-20260726.md`。
+- 当前里程碑：M24 状态为 `done`；PR #1 最新实现提交与最终 PR head 的 workspace、iOS、Android CI 已签收，状态文档提交不改变实现范围，PR #1 可人工 review。详见 `docs/quality/M24-双端真实构建与设备交付验证-20260726.md`。
 
 ## 发布保留门
 

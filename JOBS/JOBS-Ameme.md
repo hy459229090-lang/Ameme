@@ -439,7 +439,7 @@
 - [x] Android 构建与设备：Debug/Release JVM、Lint、APK、测试 APK 同轮通过；API 36 16 KB arm64 AVD、`font_scale=1.3` 下 67 discovered / 60 passed / 7 显式 Gate skipped / 0 failed。
 - [x] 真实/Mock UX：双端均提供隔离的固定演示数据；Android 大字号 Onboarding CTA 固定可见，真实 Today 和 Mock Today 当前截图/语义树无 P0/P1；iOS XCUITest 覆盖 Mock→Today→Settings→Search、深色、无障碍超大字体与旋转。
 - [x] 跨端真连接：QR envelope 的 HMAC secret 表示统一，Swift Network.framework 经 TLS 1.3/pin/HMAC/Grant 写入 Android SQLCipher/Today；Host→Android 路径重启仍可见且 ADB 未注入事件。
-- [x] 仓库门禁：14/14 workspace gates、iOS project 44、Share inputs 30、iOS accessibility 25、QR contract 32、governance 143 和 diff 检查通过；实现证据提交 `03c45d1` 已推 PR #1，状态文档提交不改变实现范围。
+- [x] 仓库门禁：14/14 workspace gates、iOS project 44、Share inputs 30、iOS accessibility 25、QR contract 32、governance 143 和 diff 检查通过；实现证据以 PR #1 最新实现提交为准，状态文档提交不改变实现范围。
 - [x] 最新 PR head CI 签收：workspace、iOS、Android 全部绿色；iOS 22 Unit + 1 XCUITest 及 4 张当前运行截图已下载并视觉复核；运行链接以 PR #1 Checks 和三份 workflow 历史为准。
 - [ ] 发布保留门：至少一台 iPhone/iPad 和一台 Android 14+ OEM 物理设备、真实 VoiceOver/TalkBack、签名/App Group/Share Sheet、来源权限撤销、后台/旋转、物理 LAN、商店隐私申报和回滚演练。
 - 验证报告：`docs/quality/M24-双端真实构建与设备交付验证-20260726.md`。

@@ -2,6 +2,7 @@ package com.ameme.android
 
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
@@ -90,7 +91,7 @@ class AmemeUiSmokeTest {
         composeRule.onNodeWithContentDescription("记录一件事").performClick()
         composeRule.onNodeWithText("文字").assertIsDisplayed()
         composeRule.onNodeWithText("语音").assertIsDisplayed()
-        composeRule.onNodeWithText("照片").assertIsDisplayed()
+        composeRule.onNodeWithText("照片").performScrollTo().assertIsDisplayed()
     }
 
     @Test
@@ -152,6 +153,8 @@ class AmemeUiSmokeTest {
         composeRule.waitUntil(timeoutMillis = 10_000) {
             composeRule.onAllNodesWithText("保存分享内容？").fetchSemanticsNodes().isEmpty()
         }
+        composeRule.onNodeWithTag("today-list")
+            .performScrollToNode(hasContentDescription(sharedText, substring = true))
         composeRule.onNodeWithContentDescription(sharedText, substring = true).assertIsDisplayed()
     }
 
@@ -209,6 +212,8 @@ class AmemeUiSmokeTest {
         composeRule.waitUntil(timeoutMillis = 10_000) {
             composeRule.onAllNodesWithText("保存分享内容？").fetchSemanticsNodes().isEmpty()
         }
+        composeRule.onNodeWithTag("today-list")
+            .performScrollToNode(hasContentDescription(sharedText, substring = true))
         composeRule.onNodeWithContentDescription(sharedText, substring = true).assertIsDisplayed()
     }
 
