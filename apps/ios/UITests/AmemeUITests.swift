@@ -20,6 +20,7 @@ final class AmemeUITests: XCTestCase {
         onboardingContinue.tap()
         let settingsMenu = app.buttons["today.settings"]
         XCTAssertTrue(settingsMenu.waitForExistence(timeout: 5))
+        XCTAssertTrue(settingsMenu.isHittable)
         XCTAssertFalse(onboardingContinue.exists)
         attachScreenshot(named: "01-today-empty")
 

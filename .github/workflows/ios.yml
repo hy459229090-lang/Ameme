@@ -64,7 +64,6 @@ jobs:
             -scheme Ameme \
             -destination "platform=iOS Simulator,id=$device_id" \
             -resultBundlePath "$RUNNER_TEMP/AmemeTests.xcresult" \
-            CODE_SIGNING_ALLOWED=NO \
             test
       - name: Export reviewable UI screenshots
         if: always()

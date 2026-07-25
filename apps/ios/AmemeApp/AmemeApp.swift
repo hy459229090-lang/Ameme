@@ -715,6 +715,8 @@ struct TodayView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Button(action: onSearch) {
                     Image(systemName: "magnifyingglass")
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
                 }
                 .accessibilityLabel("搜索历史记录")
                 .accessibilityIdentifier("today.search")
@@ -724,6 +726,8 @@ struct TodayView: View {
                     Button("设置", action: onSettings)
                 } label: {
                     Image(systemName: "ellipsis.circle")
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
                 }
                 .accessibilityLabel("打开设置")
                 .accessibilityIdentifier("today.settings")
@@ -2142,6 +2146,7 @@ private struct DaySummaryView: View {
 }
 
 private struct StateNoticeView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let mode: ExperienceMode
     let onAction: (() -> Void)?
 
@@ -2152,21 +2157,19 @@ private struct StateNoticeView: View {
 
     var body: some View {
         if ![.ready, .empty, .sparse].contains(mode) {
-            HStack(alignment: .top, spacing: 12) {
-                Label {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(mode.label).font(.headline)
-                        Text(mode.detail).font(.footnote)
+            Group {
+                if dynamicTypeSize.isAccessibilitySize {
+                    VStack(alignment: .leading, spacing: 12) {
+                        statusLabel
+                        retryButton
                     }
-                } icon: {
-                    Image(systemName: iconName)
-                }
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel("\(mode.label)：\(mode.detail)")
-                Spacer(minLength: 8)
-                if mode == .recoverableError, let onAction {
-                    Button("重试", action: onAction)
-                        .buttonStyle(.bordered)
+                } else {
+                    HStack(alignment: .top, spacing: 12) {
+                        statusLabel
+                            .layoutPriority(1)
+                        Spacer(minLength: 8)
+                        retryButton
+                    }
                 }
             }
             .padding(12)
@@ -2176,6 +2179,29 @@ private struct StateNoticeView: View {
             // Keep the retry control as a separate VoiceOver action. Combining
             // this container would flatten the status and hide the button trait.
             .accessibilityElement(children: .contain)
+        }
+    }
+
+    private var statusLabel: some View {
+        Label {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(mode.label).font(.headline)
+                Text(mode.detail).font(.footnote)
+            }
+            .fixedSize(horizontal: false, vertical: true)
+        } icon: {
+            Image(systemName: iconName)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(mode.label)：\(mode.detail)")
+    }
+
+    @ViewBuilder
+    private var retryButton: some View {
+        if mode == .recoverableError, let onAction {
+            Button("重试", action: onAction)
+                .buttonStyle(.bordered)
+                .frame(minWidth: 44, minHeight: 44)
         }
     }
 

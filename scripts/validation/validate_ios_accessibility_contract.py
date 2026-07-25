@@ -56,6 +56,22 @@ def main() -> int:
         "State notice preserves retry as a separate accessible child action",
         checks,
     )
+    require(
+        "dynamicTypeSize.isAccessibilitySize" in state_notice,
+        "State notice switches away from a compressed horizontal layout at accessibility sizes",
+        checks,
+    )
+    require(
+        ".frame(minWidth: 44, minHeight: 44)" in state_notice,
+        "State notice retry action preserves the minimum touch target",
+        checks,
+    )
+    today_view = section(source, "struct TodayView", "struct SearchView")
+    require(
+        today_view.count(".frame(width: 44, height: 44)") >= 2,
+        "Today toolbar actions preserve minimum touch targets",
+        checks,
+    )
     event_row = section(source, "private struct EventRowView", "private struct DaySummaryView")
     require(
         ".accessibilityElement(children: .combine)" in event_row and ".accessibilityLabel(" in event_row,
