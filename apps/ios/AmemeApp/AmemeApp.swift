@@ -274,16 +274,16 @@ final class AppModel: ObservableObject {
                 let identifier = calendarEvent.eventIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard let title, !title.isEmpty, let identifier, !identifier.isEmpty else { return nil }
                 return MemoryEventDraft(
+                    localDate: calendarEvent.startDate,
+                    time: calendarEvent.isAllDay ? nil : calendarEvent.startDate,
                     title: title,
                     detail: calendarEvent.notes?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
                         ? calendarEvent.notes!
                         : "来自你主动选择的日历计划。",
-                    captureKind: .importFile,
+                    factStatus: .planned,
                     sourceLabel: "系统日历（只读）",
                     sourceLocator: "eventkit://\(identifier)",
-                    factStatus: .planned,
-                    localDate: calendarEvent.startDate,
-                    time: calendarEvent.isAllDay ? nil : calendarEvent.startDate,
+                    captureKind: .importFile,
                     eventType: .activity,
                     evidenceState: .observed,
                     sensitivity: .confidential
@@ -313,10 +313,7 @@ final class AppModel: ObservableObject {
     }
 
     private func requestCalendarAccess(_ eventStore: EKEventStore) async throws -> Bool {
-        if #available(iOS 17.0, *) {
-            return try await eventStore.requestFullAccessToEvents()
-        }
-        return try await eventStore.requestAccess(to: .event)
+        try await eventStore.requestFullAccessToEvents()
     }
 
     func saveAddendum(_ text: String, to eventID: UUID) {
@@ -934,13 +931,7 @@ struct CaptureSheet: View {
         .presentationDetents([.medium, .large])
         .onChange(of: photoItem) { _, item in
             guard let item else { return }
-            Task {
-                do {
-                    if model.addPhotoReference(item.itemIdentifier) { dismiss() }
-                } catch {
-                    model.notice = "照片尚未保存；请重试系统照片选择。"
-                }
-            }
+            if model.addPhotoReference(item.itemIdentifier) { dismiss() }
         }
         .fileImporter(
             isPresented: $showingFileImporter,
@@ -1206,11 +1197,11 @@ final class VoiceRecorder: NSObject, ObservableObject {
         do {
             let session = AVAudioSession.sharedInstance()
             let permissionGranted: Bool
-            if session.recordPermission == .granted {
+            if AVAudioApplication.shared.recordPermission == .granted {
                 permissionGranted = true
             } else {
                 permissionGranted = await withCheckedContinuation { continuation in
-                    session.requestRecordPermission { granted in
+                    AVAudioApplication.requestRecordPermission { granted in
                         continuation.resume(returning: granted)
                     }
                 }
@@ -1616,7 +1607,7 @@ struct SettingsView: View {
     }
 
     private var voicePermissionDetail: String {
-        switch AVAudioSession.sharedInstance().recordPermission {
+        switch AVAudioApplication.shared.recordPermission {
         case .granted:
             "已允许 · 点击录音时使用，不常驻监听"
         case .denied:
@@ -1630,29 +1621,17 @@ struct SettingsView: View {
 
     private var calendarPermissionDetail: String {
         let status = EKEventStore.authorizationStatus(for: .event)
-        if #available(iOS 17.0, *) {
-            switch status {
-            case .fullAccess:
-                return "只读权限已允许 · 仍须选择日历和日期范围"
-            case .writeOnly:
-                return "仅有写入权限 · 无法读取计划"
-            case .notDetermined:
-                return "尚未请求 · 主动导入时按次申请"
-            case .denied, .restricted:
-                return "未允许 · 可继续使用文字和其他来源"
-            @unknown default:
-                return "状态未知 · 主动导入时重新确认"
-            }
-        }
         switch status {
-        case .authorized:
-            return "只读权限已允许 · 仍须选择日历和日期范围"
+        case .fullAccess, .authorized:
+            "只读权限已允许 · 仍须选择日历和日期范围"
+        case .writeOnly:
+            "仅有写入权限 · 无法读取计划"
         case .notDetermined:
-            return "尚未请求 · 主动导入时按次申请"
+            "尚未请求 · 主动导入时按次申请"
         case .denied, .restricted:
-            return "未允许 · 可继续使用文字和其他来源"
+            "未允许 · 可继续使用文字和其他来源"
         @unknown default:
-            return "状态未知 · 主动导入时重新确认"
+            "状态未知 · 主动导入时重新确认"
         }
     }
 }
