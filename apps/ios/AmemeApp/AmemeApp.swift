@@ -811,6 +811,7 @@ struct SearchView: View {
             .padding(.horizontal, 20)
             .padding(.bottom, 24)
         }
+        .accessibilityIdentifier("search.results")
         .navigationTitle("搜索")
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "搜索历史记录")

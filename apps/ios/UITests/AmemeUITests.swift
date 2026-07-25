@@ -53,7 +53,15 @@ final class AmemeUITests: XCTestCase {
 
         XCUIDevice.shared.orientation = .landscapeLeft
         XCTAssertTrue(app.navigationBars["搜索"].waitForExistence(timeout: 5))
-        XCTAssertTrue(scrollToElement(app.staticTexts["记录一段晚间想法"], in: app))
+        let searchResults = app.scrollViews["search.results"]
+        XCTAssertTrue(searchResults.waitForExistence(timeout: 5))
+        XCTAssertTrue(
+            scrollToElement(
+                app.staticTexts["记录一段晚间想法"],
+                in: app,
+                scrollContainer: searchResults
+            )
+        )
         let landscapeSettings = app.buttons["search.settings"]
         XCTAssertTrue(landscapeSettings.waitForExistence(timeout: 5))
         XCTAssertTrue(landscapeSettings.isHittable)
@@ -62,12 +70,21 @@ final class AmemeUITests: XCTestCase {
     }
 
     @MainActor
-    private func scrollToElement(_ element: XCUIElement, in app: XCUIApplication) -> Bool {
+    private func scrollToElement(
+        _ element: XCUIElement,
+        in app: XCUIApplication,
+        scrollContainer: XCUIElement? = nil
+    ) -> Bool {
+        let scroller = scrollContainer ?? app
         for _ in 0..<8 {
             if element.exists && element.isHittable { return true }
-            app.swipeUp()
+            scroller.swipeUp()
         }
-        return element.exists
+        for _ in 0..<8 {
+            if element.exists && element.isHittable { return true }
+            scroller.swipeDown()
+        }
+        return element.exists && element.isHittable
     }
 
     @MainActor
