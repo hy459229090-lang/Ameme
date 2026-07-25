@@ -60,7 +60,7 @@ xcodebuild \
   build
 ```
 
-仓库的 iOS GitHub Actions 会在 iOS 18.5 Simulator、深色模式和无障碍超大字体下执行单元/UI 测试，保存当前运行截图到 `.xcresult`。本地环境若只有 Command Line Tools，仍不能把 Shared Smoke 当作完整 Xcode、Simulator、签名或真机证据。
+仓库的 iOS GitHub Actions 会在 iOS 18.5 Simulator、深色模式和无障碍超大字体下执行单元/UI 测试，把当前运行截图同时保存在 `.xcresult` 并导出为可直接复核的 artifact 附件。本地环境若只有 Command Line Tools，仍不能把 Shared Smoke 当作完整 Xcode、Simulator、签名或真机证据。
 
 在没有完整 XCTest runtime 的当前环境，可先运行共享核心 smoke gate：
 

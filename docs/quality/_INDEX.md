@@ -12,6 +12,7 @@
 | iOS Shared Core 验证 | `iOS-Shared-Core验证-20260718.md` | conditional_pass；加密本机闭环、媒体边界、录音启动/清理、SwiftUI accessibility contract、来源搜索、跨端导出 wire value、加密导出恢复/清理、Bonjour 发现与真实/演示连接边界、AccessGrant policy、批量导入回滚/幂等、Share Extension target 输入和 Smoke 通过；完整 Xcode/iOS UI/真机/无障碍待补 |
 | 双端体验状态矩阵 | `双端体验状态矩阵-20260718.md` | conditional_pass；共同状态规则、逐页恢复动作、本机/Mock 证据和 AccessGrant 本地 scope 门禁已登记；设备级状态、真实来源、完整无障碍待补 |
 | M23 配对与连接生命周期验证 | `M23-配对与连接生命周期验证-20260718.md` | conditional_pass；iOS duplicate-key pairing 拒绝、双端 disconnect 契约、既有 Swift→Android AVD 真实传输子门通过；QR/account/reconnect/设备级门禁待补 |
+| M24 双端真实构建与设备交付验证 | `M24-双端真实构建与设备交付验证-20260726.md` | 仓库工程候选 pass；双端真实/Mock 核心闭环、QR→Android TLS/HMAC/Grant、Android 16 KB 大字号设备回归、iOS Xcode/XCUITest 截图和仓库门禁通过；物理设备/读屏/签名与商店发布仍为保留门 |
 
 ## 当前正本
 
@@ -54,3 +55,4 @@
 | 2026-07-18 | 新增/验证 | 第二十批双端连接入口对齐：iOS 设置页接入 Bonjour 真实发现、授权前候选和显式演示连接；二维码/账户设备未接入时明确失败，真实候选不会保存为连接；iOS Shared/App build、Smoke/目标解析与 Android 既有 NSD/Mock/AVD 基线通过 |
 | 2026-07-18 | 新增/验证 | 第二十一批双端 AccessGrant/policy：iOS Shared 增加 canonical Grant 与本地 policy 绑定，Android pairing 持久化 30 天 Personal/`autonomous_memory`/structured `event` scope 并在 endpoint 前置拒绝扩权；两端授权卡片显示拟授权范围。iOS Shared/App build、Smoke/目标解析、Share 输入 25 项和 accessibility 静态契约 14 项通过；Android Debug/Release JVM、lint、assemble、64/57/7/0 AVD、1/1 授权 UI smoke、TalkBack AVD 语义探针与配对 Host/Android/SQLCipher/Today smoke 通过 |
 | 2026-07-18 | 新增/验证 | 第二十二/二十三批连接收口：iOS Local Node TLS 1.3/pin/HMAC client、Grant-bound request 与 Swift→Android AVD 真实传输子门通过；随后补齐 iOS duplicate-key pairing 拒绝和 Android/iOS connector disconnect 契约，iOS App build、Shared Smoke、Android Debug/Release JVM 与 lint 通过；QR/account registry、reconnect 和设备级门禁仍待补 |
+| 2026-07-26 | 新增/验证 | M24 双端工程交付收口：补齐 installable Xcode 工程/Share Extension/Unit/UI CI、Android Debug/Release 与 API 36 16 KB 设备 CI、短时 QR 真连接、真实/Mock 双路径、大字号和截图证据；仓库工程候选 pass，物理设备/读屏/签名/商店继续 hold |

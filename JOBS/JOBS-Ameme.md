@@ -1,6 +1,6 @@
 # Ameme 项目 Job
 
-> 文档状态：当前执行中；MVP 工程实现与第九/十/十一/十二/十三/十四/十五/十六/十七/十八/十九/二十批双端产品完善并行推进，真实设备与发布 Gate 仍未关闭。
+> 文档状态：M24 双端仓库工程候选已完成；真实/Mock 核心闭环和模拟器/AVD 设备门已收口，物理设备与公开发布 Gate 仍未关闭。
 > 适合读者：产品、研发、设计、安全、测试、AI、发布协作人。
 > 人类快速阅读：先看各批次标题、当前门禁和最后一条验证结果，再按任务域展开。
 > AI 阅读提示：以本文件和 `STATUS.md` 为状态正本；不得把 AVD、Mock、合成评测或跳过 Gate 写成真机、生产或公开发布通过。
@@ -158,7 +158,7 @@
 
 - 状态：`in_progress`
 - 目标：按 M1–M6 依赖把研发前正本变成可构建、可复跑、可恢复的真实实现；Gate 1/2、真实数据和公开发布边界保持不变。
-- 当前环境：Windows + Android SDK 可执行；iOS 源码、构建和真机证据等待产品负责人后续提供 Mac 环境。
+- 当前环境：macOS Command Line Tools 可运行 Swift Shared/App/Smoke；Android JDK 17 + SDK 36 + API 36 16 KB arm64 AVD 可运行；完整 iOS App/Extension/Unit/UI Test 由 GitHub macOS 15 + Xcode 16.4 CI 执行，物理 iOS/Android 仍待发布负责人提供。
 
 ### 已集成首批切片
 
@@ -431,6 +431,19 @@
 - [ ] 设备级门禁：完整 Xcode/XCTest/Simulator、物理设备、后台/旋转、VoiceOver/TalkBack 和撤销传播仍与 M22 共用未闭合门禁。
 
 - 退出条件：配对 envelope 在 iOS/Android/Python 之间逐字一致，二维码扫描→授权→Grant-bound 传输→断开/重连可在真实设备通过，且重启、过期、撤销和无障碍证据闭合后，才能将 M23 改为 `done`。
+
+### 第二十四批双端真实构建与设备交付里程碑（2026-07-26，done）
+
+- 目标：把 iOS/Android 的真实本机与固定 Mock 核心闭环、跨端功能/设计差异、可装配工程、自动化、无障碍、设备证据和仓库交付门统一收口。
+- [x] iOS 可装配工程：XcodeGen 2.46.0 冻结 App、静态 Shared Core、嵌入式 Share Extension、Unit/UI Tests 和共享 scheme；静态 framework 只链接、不错误嵌入，App/Extension bundle 元数据受门禁。
+- [x] Android 构建与设备：Debug/Release JVM、Lint、APK、测试 APK 同轮通过；API 36 16 KB arm64 AVD、`font_scale=1.3` 下 67 discovered / 60 passed / 7 显式 Gate skipped / 0 failed。
+- [x] 真实/Mock UX：双端均提供隔离的固定演示数据；Android 大字号 Onboarding CTA 固定可见，真实 Today 和 Mock Today 当前截图/语义树无 P0/P1；iOS XCUITest 覆盖 Mock→Today→Settings→Search、深色、无障碍超大字体与旋转。
+- [x] 跨端真连接：QR envelope 的 HMAC secret 表示统一，Swift Network.framework 经 TLS 1.3/pin/HMAC/Grant 写入 Android SQLCipher/Today；Host→Android 路径重启仍可见且 ADB 未注入事件。
+- [x] 仓库门禁：14/14 workspace gates、iOS project 44、Share inputs 30、iOS accessibility 25、QR contract 32、governance 143 和 diff 检查通过；实现证据提交 `03c45d1` 已推 PR #1，状态文档提交不改变实现范围。
+- [x] 最新 PR head CI 签收：workspace、iOS、Android 全部绿色；iOS 22 Unit + 1 XCUITest 及 4 张当前运行截图已下载并视觉复核；运行链接以 PR #1 Checks 和三份 workflow 历史为准。
+- [ ] 发布保留门：至少一台 iPhone/iPad 和一台 Android 14+ OEM 物理设备、真实 VoiceOver/TalkBack、签名/App Group/Share Sheet、来源权限撤销、后台/旋转、物理 LAN、商店隐私申报和回滚演练。
+- 验证报告：`docs/quality/M24-双端真实构建与设备交付验证-20260726.md`。
+- 退出条件：仓库门可在 CI 全绿后关闭；物理设备 Beta 与公开发布维持独立 `hold`，不得由 Simulator/AVD/Mock 代替。
 
 ### 当前门禁
 
