@@ -47,6 +47,18 @@ def main() -> int:
         require(path.is_file(), f"required file exists: {path.relative_to(ROOT)}", checks)
 
     extension_plist = load_plist(extension_plist_path)
+    for key, expected in (
+        ("CFBundleExecutable", "$(EXECUTABLE_NAME)"),
+        ("CFBundleIdentifier", "$(PRODUCT_BUNDLE_IDENTIFIER)"),
+        ("CFBundleName", "$(PRODUCT_NAME)"),
+        ("CFBundleShortVersionString", "$(MARKETING_VERSION)"),
+        ("CFBundleVersion", "$(CURRENT_PROJECT_VERSION)"),
+    ):
+        require(
+            extension_plist.get(key) == expected,
+            f"Share Extension {key} uses the Xcode build setting",
+            checks,
+        )
     extension = extension_plist.get("NSExtension")
     require(isinstance(extension, dict), "Share Extension NSExtension dictionary exists", checks)
     require(
