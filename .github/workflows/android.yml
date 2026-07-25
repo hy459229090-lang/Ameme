@@ -83,10 +83,17 @@ jobs:
             "build-tools;36.0.0" \
             "emulator" \
             "system-images;android-36;google_apis_ps16k;x86_64"
-          echo no | "$avdmanager_path" create avd \
+          avd_home="$RUNNER_TEMP/ameme-avd-home"
+          mkdir -p "$avd_home"
+          echo "ANDROID_AVD_HOME=$avd_home" >> "$GITHUB_ENV"
+          echo no | ANDROID_AVD_HOME="$avd_home" "$avdmanager_path" create avd \
             --force \
             --name ameme-ci-api36-16k \
-            --package "system-images;android-36;google_apis_ps16k;x86_64"
+            --package "system-images;android-36;google_apis_ps16k;x86_64" \
+            --path "$avd_home/ameme-ci-api36-16k.avd"
+          test -f "$avd_home/ameme-ci-api36-16k.ini"
+          ANDROID_AVD_HOME="$avd_home" "$ANDROID_HOME/emulator/emulator" -list-avds \
+            | grep -Fx ameme-ci-api36-16k
           echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
           echo "$ANDROID_HOME/emulator" >> "$GITHUB_PATH"
       - name: Run device and accessibility contract tests
@@ -105,17 +112,25 @@ jobs:
             >"$RUNNER_TEMP/ameme-emulator.log" 2>&1 &
           emulator_pid=$!
           trap 'adb emu kill >/dev/null 2>&1 || kill "$emulator_pid" >/dev/null 2>&1 || true' EXIT
-          adb wait-for-device
           for attempt in $(seq 1 180); do
-            if [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ]; then
+            if ! kill -0 "$emulator_pid" >/dev/null 2>&1; then
+              cat "$RUNNER_TEMP/ameme-emulator.log"
+              exit 1
+            fi
+            boot_completed="$(
+              timeout 5 adb shell getprop sys.boot_completed 2>/dev/null \
+                | tr -d '\r' \
+                || true
+            )"
+            if [ "$boot_completed" = "1" ]; then
               break
             fi
             sleep 2
           done
-          test "$(adb shell getprop sys.boot_completed | tr -d '\r')" = "1"
+          test "$boot_completed" = "1"
           test "$(adb shell getconf PAGE_SIZE | tr -d '\r')" = "16384"
           adb shell settings put system font_scale 1.3
-          ./gradlew --no-daemon connectedDebugAndroidTest
+          timeout 30m ./gradlew --no-daemon --console=plain connectedDebugAndroidTest
       - name: Upload Android device evidence
         if: always()
         uses: actions/upload-artifact@v4.6.2
