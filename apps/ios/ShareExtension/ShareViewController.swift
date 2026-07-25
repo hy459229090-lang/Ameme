@@ -3,6 +3,12 @@ import UIKit
 import UniformTypeIdentifiers
 import AmemeShared
 
+private enum ShareLoadResult: Sendable {
+    case text(String)
+    case file(Data, String)
+    case failure(String)
+}
+
 /// The real Share Extension entry point. It only writes a bounded, opaque handoff
 /// into the App Group; the containing app remains responsible for user confirmation
 /// and the final local Event commit.
@@ -76,15 +82,14 @@ final class ShareViewController: UIViewController {
             return
         }
 
-        let store = IncomingShareHandoffStore(rootDirectory: groupRoot)
         if provider.hasItemConformingToTypeIdentifier(UTType.pdf.identifier) {
-            loadFile(provider, type: .pdf, kind: .pdf, store: store)
+            loadFile(provider, type: .pdf, kind: .pdf, rootDirectory: groupRoot)
         } else if provider.hasItemConformingToTypeIdentifier(UTType.image.identifier) {
-            loadFile(provider, type: .image, kind: .image, store: store)
+            loadFile(provider, type: .image, kind: .image, rootDirectory: groupRoot)
         } else if provider.hasItemConformingToTypeIdentifier(UTType.plainText.identifier) {
-            loadText(provider, typeIdentifier: UTType.plainText.identifier, store: store)
+            loadText(provider, typeIdentifier: UTType.plainText.identifier, rootDirectory: groupRoot)
         } else if provider.hasItemConformingToTypeIdentifier(UTType.url.identifier) {
-            loadText(provider, typeIdentifier: UTType.url.identifier, store: store)
+            loadText(provider, typeIdentifier: UTType.url.identifier, rootDirectory: groupRoot)
         } else {
             fail("暂不支持此分享类型；没有保存内容。")
         }
@@ -93,36 +98,44 @@ final class ShareViewController: UIViewController {
     private func loadText(
         _ provider: NSItemProvider,
         typeIdentifier: String,
-        store: IncomingShareHandoffStore
+        rootDirectory: URL
     ) {
         provider.loadItem(forTypeIdentifier: typeIdentifier, options: nil) { [weak self] item, error in
-            guard let self else { return }
+            let result: ShareLoadResult
             if let error {
-                self.fail("读取分享文字失败：\(error.localizedDescription)")
-                return
+                result = .failure("读取分享文字失败：\(error.localizedDescription)")
+            } else {
+                let text: String?
+                switch item {
+                case let value as String:
+                    text = value
+                case let value as URL:
+                    text = value.absoluteString
+                case let value as NSURL:
+                    text = value.absoluteString
+                case let value as Data:
+                    text = String(data: value, encoding: .utf8)
+                default:
+                    text = nil
+                }
+                result = text.map(ShareLoadResult.text)
+                    ?? .failure("分享内容不是可读取的文字；没有保存内容。")
             }
-            let text: String?
-            switch item {
-            case let value as String:
-                text = value
-            case let value as URL:
-                text = value.absoluteString
-            case let value as NSURL:
-                text = value.absoluteString
-            case let value as Data:
-                text = String(data: value, encoding: .utf8)
-            default:
-                text = nil
-            }
-            guard let text else {
-                self.fail("分享内容不是可读取的文字；没有保存内容。")
-                return
-            }
-            do {
-                let handoffURL = try store.writeText(text)
-                self.openApp(handoffURL)
-            } catch {
-                self.fail(self.userMessage(for: error))
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                switch result {
+                case let .text(text):
+                    do {
+                        let store = IncomingShareHandoffStore(rootDirectory: rootDirectory)
+                        self.openApp(try store.writeText(text))
+                    } catch {
+                        self.fail(self.userMessage(for: error))
+                    }
+                case let .failure(message):
+                    self.fail(message)
+                case .file:
+                    self.fail("分享内容不符合安全边界；没有保存内容。")
+                }
             }
         }
     }
@@ -131,39 +144,48 @@ final class ShareViewController: UIViewController {
         _ provider: NSItemProvider,
         type: UTType,
         kind: IncomingShareKind,
-        store: IncomingShareHandoffStore
+        rootDirectory: URL
     ) {
         provider.loadFileRepresentation(forTypeIdentifier: type.identifier) { [weak self] temporaryURL, error in
-            guard let self else { return }
+            let result: ShareLoadResult
             if let error {
-                self.fail("读取分享文件失败：\(error.localizedDescription)")
-                return
+                result = .failure("读取分享文件失败：\(error.localizedDescription)")
+            } else if let temporaryURL,
+                      let data = try? Data(contentsOf: temporaryURL) {
+                result = .file(data, temporaryURL.lastPathComponent)
+            } else {
+                result = .failure("分享文件不可用；没有保存内容。")
             }
-            guard let temporaryURL,
-                  let data = try? Data(contentsOf: temporaryURL) else {
-                self.fail("分享文件不可用；没有保存内容。")
-                return
-            }
-            do {
-                let handoffURL = try store.writeFile(
-                    data,
-                    kind: kind,
-                    mimeType: kind.mimeType,
-                    displayName: temporaryURL.lastPathComponent
-                )
-                self.openApp(handoffURL)
-            } catch {
-                self.fail(self.userMessage(for: error))
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                switch result {
+                case let .file(data, displayName):
+                    do {
+                        let store = IncomingShareHandoffStore(rootDirectory: rootDirectory)
+                        self.openApp(try store.writeFile(
+                            data,
+                            kind: kind,
+                            mimeType: kind.mimeType,
+                            displayName: displayName
+                        ))
+                    } catch {
+                        self.fail(self.userMessage(for: error))
+                    }
+                case let .failure(message):
+                    self.fail(message)
+                case .text:
+                    self.fail("分享内容不符合安全边界；没有保存内容。")
+                }
             }
         }
     }
 
     private func openApp(_ url: URL) {
-        DispatchQueue.main.async { [weak self] in
-            guard let self, !self.didFinish else { return }
-            self.activityIndicator.stopAnimating()
-            self.statusLabel.text = "已准备分享内容，正在交给 Ameme 确认…"
-            self.extensionContext?.open(url) { [weak self] opened in
+        guard !didFinish else { return }
+        activityIndicator.stopAnimating()
+        statusLabel.text = "已准备分享内容，正在交给 Ameme 确认…"
+        extensionContext?.open(url) { [weak self] opened in
+            Task { @MainActor [weak self] in
                 guard let self else { return }
                 if opened {
                     self.finish()
@@ -175,14 +197,12 @@ final class ShareViewController: UIViewController {
     }
 
     private func fail(_ message: String) {
-        DispatchQueue.main.async { [weak self] in
-            guard let self, !self.didFinish else { return }
-            self.activityIndicator.stopAnimating()
-            self.statusLabel.text = message
-            self.statusLabel.accessibilityLabel = message
-            self.retryButton.isHidden = false
-            self.didStart = false
-        }
+        guard !didFinish else { return }
+        activityIndicator.stopAnimating()
+        statusLabel.text = message
+        statusLabel.accessibilityLabel = message
+        retryButton.isHidden = false
+        didStart = false
     }
 
     private func finish() {
