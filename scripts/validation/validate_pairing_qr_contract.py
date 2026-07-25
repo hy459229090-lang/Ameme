@@ -15,6 +15,7 @@ SWIFT_ENVELOPE = ROOT / "apps/ios/Ameme/Shared/AgentPairingEnvelope.swift"
 SWIFT_CONNECTOR = ROOT / "apps/ios/Ameme/Shared/AgentExperienceConnector.swift"
 SWIFT_APP = ROOT / "apps/ios/AmemeApp/AmemeApp.swift"
 SWIFT_SMOKE = ROOT / "apps/ios/Smoke/main.swift"
+SWIFT_LOCAL_NODE_SMOKE = ROOT / "apps/ios/LocalNodeSmoke/main.swift"
 IOS_INFO = ROOT / "apps/ios/Ameme/Info.plist"
 KOTLIN_ENVELOPE = (
     ROOT
@@ -64,6 +65,7 @@ def main() -> int:
     swift_connector = read(SWIFT_CONNECTOR)
     swift_app = read(SWIFT_APP)
     swift_smoke = read(SWIFT_SMOKE)
+    swift_local_node_smoke = read(SWIFT_LOCAL_NODE_SMOKE)
     ios_info = read(IOS_INFO)
     kotlin_envelope = read(KOTLIN_ENVELOPE)
     kotlin_manager = read(KOTLIN_MANAGER)
@@ -138,6 +140,22 @@ def main() -> int:
     require(
         "AgentLocalNodeNetworkClient" in swift_connector and "AgentAccessGrantPolicy.default" in swift_connector,
         "iOS QR connection binds the authenticated Local Node client to a Grant",
+        checks,
+    )
+    require(
+        "var channelSecret: Data" in swift_envelope
+        and "Data(Self.encodeBase64URL(secret).utf8)" in swift_envelope,
+        "iOS derives channel HMAC bytes from the QR base64url secret text",
+        checks,
+    )
+    require(
+        "secret: envelope.channelSecret" in swift_connector,
+        "iOS production QR connector uses the cross-platform channel HMAC representation",
+        checks,
+    )
+    require(
+        "secret: envelope.channelSecret" in swift_local_node_smoke,
+        "iOS-to-Android smoke uses the production channel HMAC representation",
         checks,
     )
     require("AgentQRCodeScannerSheet" in swift_app, "iOS exposes a camera QR scanner sheet", checks)

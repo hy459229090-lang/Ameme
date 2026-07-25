@@ -36,6 +36,7 @@ targets:
           - README.md
     dependencies:
       - target: AmemeShared
+        embed: false
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.ameme.ios.share
@@ -55,6 +56,7 @@ targets:
       - path: Ameme/Assets.xcassets
     dependencies:
       - target: AmemeShared
+        embed: false
       - target: AmemeShareExtension
         embed: true
     settings:

@@ -159,16 +159,21 @@ final class AgentExperienceTests: XCTestCase {
             port: 44_321,
             tlsCertificateSHA256: "sha256_" + String(repeating: "a", count: 64)
         )
-        let payload = try AgentPairingEnvelope(
+        let envelope = try AgentPairingEnvelope(
             pairing: pairing,
             secret: Data(repeating: 0x42, count: 32),
             expiresAt: now.addingTimeInterval(300),
             pairingExpiresAt: now.addingTimeInterval(30 * 24 * 60 * 60)
-        ).encodedPayload()
+        )
+        let payload = try envelope.encodedPayload()
         let connector = BonjourAgentExperienceConnector(now: { now })
 
         let candidate = try await connector.resolve(pairingPayload: payload)
 
+        XCTAssertEqual(
+            envelope.channelSecret,
+            Data("QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI".utf8)
+        )
         XCTAssertEqual(candidate.id, pairing.pairingID)
         XCTAssertEqual(candidate.method, .qrCode)
         XCTAssertEqual(candidate.capabilities, ["写入结构化工作记录"])

@@ -16,6 +16,13 @@ public struct AgentPairingEnvelope: Equatable, Sendable {
     public let expiresAt: Date
     public let pairingExpiresAt: Date
 
+    /// Channel HMAC credentials use the same printable base64url value that
+    /// Android stores in Keystore and the developer Host receives by reference.
+    /// `secret` remains the decoded 32-byte entropy for validation/round-trip.
+    public var channelSecret: Data {
+        Data(Self.encodeBase64URL(secret).utf8)
+    }
+
     public init(
         pairing: AgentLocalNodePairingMaterial,
         secret: Data,

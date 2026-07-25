@@ -125,7 +125,7 @@ public final class BonjourAgentExperienceConnector: @unchecked Sendable, AgentEx
             do {
                 client = try AgentLocalNodeNetworkClient(
                     pairing: envelope.pairing,
-                    secret: envelope.secret,
+                    secret: envelope.channelSecret,
                     accessGrant: grant
                 )
             } catch {

@@ -81,6 +81,24 @@ class Adb:
                 return True
         return False
 
+    def wait_for_text(self, expected: str, attempts: int = 12) -> bool:
+        for attempt in range(attempts):
+            if expected in self.ui_xml():
+                return True
+            if attempt >= 2:
+                self.run("shell", "input", "swipe", "540", "1500", "540", "500", "250")
+            time.sleep(1)
+        return False
+
+    def click_text_after_scroll(self, expected: str, attempts: int = 6) -> bool:
+        for attempt in range(attempts):
+            if self.click_text(expected):
+                return True
+            if attempt < attempts - 1:
+                self.run("shell", "input", "swipe", "540", "1500", "540", "500", "250")
+                time.sleep(1)
+        return False
+
 
 def main() -> int:
     options = parse_args()
@@ -128,10 +146,10 @@ def main() -> int:
             ]
             diagnostic = diagnostic_lines[-1][:160] if diagnostic_lines else "no_diagnostic"
             raise RuntimeError("swift_network_to_android_smoke_failed:" + diagnostic)
-        if "查看今天" in adb.ui_xml() and not adb.click_text("查看今天"):
+        current_ui = adb.ui_xml()
+        if "自动整理你的一天" in current_ui and not adb.click_text_after_scroll("查看今天"):
             raise RuntimeError("android_onboarding_continue_not_clickable")
-        time.sleep(2)
-        if SMOKE_CONTENT not in adb.ui_xml():
+        if not adb.wait_for_text(SMOKE_CONTENT):
             raise RuntimeError("swift_network_event_not_visible_in_android_today")
         print(json.dumps({
             "status": "passed",

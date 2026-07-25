@@ -14,7 +14,6 @@
 		1FD525BC1F092D384ABE666B /* PendingExportStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD48E84B816F888602C1B022 /* PendingExportStoreTests.swift */; };
 		22AEB84D2571711CA14F361A /* AmemeUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 902763A74317F7A6DEDA7267 /* AmemeUITests.swift */; };
 		30A3A21F0037791FFAF24006 /* AmemeShared.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 136E3A12237D7A2B2C940AC7 /* AmemeShared.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
-		34D77ACCBE44DD69CC6CB733 /* AmemeShared.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 136E3A12237D7A2B2C940AC7 /* AmemeShared.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		3774BF1AC56CBC36691FEC46 /* AmemeApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 775A067B3C4EA7B0C5C6E605 /* AmemeApp.swift */; };
 		4C689F87CC6CEAC2132A2658 /* AgentExperienceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7809EE1E7C60A5DB5FE62357 /* AgentExperienceTests.swift */; };
 		5A4A308EAE46F8F17E630B52 /* AgentExperience.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA8654E87F2C3F85F41455E3 /* AgentExperience.swift */; };
@@ -91,17 +90,6 @@
 			dstSubfolderSpec = 10;
 			files = (
 				30A3A21F0037791FFAF24006 /* AmemeShared.framework in Embed Frameworks */,
-			);
-			name = "Embed Frameworks";
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		D77267C7707DB5D9C3DD883F /* Embed Frameworks */ = {
-			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
-			dstPath = "";
-			dstSubfolderSpec = 10;
-			files = (
-				34D77ACCBE44DD69CC6CB733 /* AmemeShared.framework in Embed Frameworks */,
 			);
 			name = "Embed Frameworks";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -309,7 +297,6 @@
 				29D2622F41C3984C0407A77A /* Resources */,
 				FE3F6F5C24B5BF620553BA84 /* Frameworks */,
 				0524760DCF37AE9B5E011161 /* Embed Foundation Extensions */,
-				D77267C7707DB5D9C3DD883F /* Embed Frameworks */,
 			);
 			buildRules = (
 			);

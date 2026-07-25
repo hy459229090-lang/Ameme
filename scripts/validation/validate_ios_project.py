@@ -95,16 +95,22 @@ def main() -> int:
 
     app = targets["AmemeApp"]
     extension = targets["AmemeShareExtension"]
-    require(dependency(app, "AmemeShared") is not None, "App links AmemeShared", checks)
+    app_shared = dependency(app, "AmemeShared")
+    require(
+        app_shared is not None and app_shared.get("embed") is False,
+        "App links but does not embed the static AmemeShared framework",
+        checks,
+    )
     embedded_extension = dependency(app, "AmemeShareExtension")
     require(
         embedded_extension is not None and embedded_extension.get("embed") is True,
         "App embeds the Share Extension",
         checks,
     )
+    extension_shared = dependency(extension, "AmemeShared")
     require(
-        dependency(extension, "AmemeShared") is not None,
-        "Share Extension links the same shared core",
+        extension_shared is not None and extension_shared.get("embed") is False,
+        "Share Extension links but does not embed the static shared core",
         checks,
     )
     require(

@@ -14,12 +14,9 @@ struct AmemeLocalNodeSmoke {
             let now = Date()
             let connector = BonjourAgentExperienceConnector()
             let candidate = try await connector.resolve(pairingPayload: pairingPayload)
-            let connection = try await connector.connect(candidate: candidate)
-            guard connection.method == .qrCode, !connection.simulated else {
+            guard candidate.method == .qrCode, !candidate.simulated else {
                 throw SmokeError.applicationRejected
             }
-            await connector.disconnect(connection: connection)
-            try await Task.sleep(nanoseconds: 500_000_000)
 
             let envelope = try AgentPairingEnvelope.parse(pairingPayload)
             let grant = AgentAccessGrantPolicy.default(
@@ -31,25 +28,37 @@ struct AmemeLocalNodeSmoke {
             )
             let client = try AgentLocalNodeNetworkClient(
                 pairing: envelope.pairing,
-                secret: envelope.secret,
+                secret: envelope.channelSecret,
                 accessGrant: grant
             )
-            try await client.connect()
-            let nowText = ISO8601DateFormatter().string(from: now)
-            let response = try await client.exchangeCreateEvent(
-                draft: AgentLocalNodeCreateEventDraft(
-                    requestID: "req_ios_network_smoke",
-                    idempotencyKey: "ios-network-smoke-idempotency",
-                    content: "iOS Local Node 网络闭环合成事件",
-                    eventType: "activity",
-                    evidenceState: "observed",
-                    factStatus: "confirmed",
-                    sensitivity: "personal",
-                    now: nowText,
-                    eventTime: nowText
-                ),
-                authorizationDate: now
-            )
+            do {
+                try await client.connect()
+            } catch {
+                throw SmokeError.channelConnect(error)
+            }
+            let dateFormatter = ISO8601DateFormatter()
+            dateFormatter.timeZone = .current
+            dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            let nowText = dateFormatter.string(from: now)
+            let response: AgentLocalNodeResponseFrame
+            do {
+                response = try await client.exchangeCreateEvent(
+                    draft: AgentLocalNodeCreateEventDraft(
+                        requestID: "req_ios_network_smoke",
+                        idempotencyKey: "ios-network-smoke-idempotency",
+                        content: "iOS Local Node 网络闭环合成事件",
+                        eventType: "activity",
+                        evidenceState: "observed",
+                        factStatus: "confirmed",
+                        sensitivity: "personal",
+                        now: nowText,
+                        eventTime: nowText
+                    ),
+                    authorizationDate: now
+                )
+            } catch {
+                throw SmokeError.channelExchange(error)
+            }
             let responseObject = try JSONSerialization.jsonObject(with: response.applicationLine) as? [String: Any]
             guard responseObject?["status"] as? String == "ok" else {
                 throw SmokeError.applicationRejected
@@ -66,4 +75,6 @@ struct AmemeLocalNodeSmoke {
 private enum SmokeError: Error {
     case configurationMissing
     case applicationRejected
+    case channelConnect(Error)
+    case channelExchange(Error)
 }

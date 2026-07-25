@@ -151,8 +151,8 @@ public actor AgentLocalNodeNetworkClient {
         sec_protocol_options_set_max_tls_protocol_version(tls.securityProtocolOptions, .TLSv13)
         let expectedPin = pairing.tlsCertificateSHA256
         sec_protocol_options_set_verify_block(tls.securityProtocolOptions, { _, trust, complete in
-            let chain = SecTrustCopyCertificateChain(sec_trust_copy_ref(trust).takeRetainedValue()) as? [SecCertificate]
-            guard let certificate = chain?.first else {
+            let secTrust = sec_trust_copy_ref(trust).takeRetainedValue()
+            guard let certificate = SecTrustGetCertificateAtIndex(secTrust, 0) else {
                 complete(false)
                 return
             }

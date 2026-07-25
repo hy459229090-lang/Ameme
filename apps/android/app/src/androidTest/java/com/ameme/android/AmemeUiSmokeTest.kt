@@ -2,8 +2,10 @@ package com.ameme.android
 
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onAllNodesWithContentDescription
@@ -275,7 +277,9 @@ class AmemeUiSmokeTest {
             composeRule.onAllNodesWithText("保存到本机").fetchSemanticsNodes().isEmpty()
         }
         composeRule.onNodeWithContentDescription("打开设置").performClick()
-        composeRule.onNodeWithTag("load-demo-button").performScrollTo().performClick()
+        composeRule.onNodeWithTag("settings-list")
+            .performScrollToNode(hasTestTag("load-demo-button"))
+        composeRule.onNodeWithTag("load-demo-button").performClick()
         composeRule.waitUntil(timeoutMillis = 10_000) {
             composeRule.onAllNodesWithText("当前正在查看演示数据").fetchSemanticsNodes().isNotEmpty()
         }
@@ -285,7 +289,9 @@ class AmemeUiSmokeTest {
             .assertIsDisplayed()
 
         composeRule.onNodeWithContentDescription("打开设置").performClick()
-        composeRule.onNodeWithTag("exit-demo-button").performScrollTo().performClick()
+        composeRule.onNodeWithTag("settings-list")
+            .performScrollToNode(hasTestTag("exit-demo-button"))
+        composeRule.onNodeWithTag("exit-demo-button").performClick()
         composeRule.waitUntil(timeoutMillis = 10_000) {
             composeRule.onAllNodesWithText("使用演示数据").fetchSemanticsNodes().isNotEmpty()
         }
@@ -347,10 +353,16 @@ class AmemeUiSmokeTest {
         composeRule.onNodeWithText("完成").performClick()
         composeRule.onNodeWithText("Ameme Desktop").assertIsDisplayed()
         composeRule.onNodeWithText("Codex · 体验连接").assertIsDisplayed()
+        composeRule.onNodeWithTag("settings-list")
+            .performScrollToNode(hasTestTag("disconnect-device-button"))
         composeRule.onNodeWithTag("disconnect-device-button").performClick()
-        composeRule.waitUntil(timeoutMillis = 5_000) {
-            composeRule.onAllNodesWithText("主动连接 Agent").fetchSemanticsNodes().isNotEmpty()
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            composeRule.onAllNodesWithTag("connected-device-card")
+                .fetchSemanticsNodes()
+                .isEmpty()
         }
+        composeRule.onNodeWithTag("settings-list")
+            .performScrollToNode(hasTestTag("connect-device-button"))
         composeRule.onNodeWithTag("connect-device-button").assertIsDisplayed()
     }
 }

@@ -4,7 +4,8 @@
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timedelta, timezone
+import base64
+from datetime import datetime, timedelta
 import json
 import os
 from pathlib import Path
@@ -27,6 +28,8 @@ RUNNER = f"{PACKAGE}.test/androidx.test.runner.AndroidJUnitRunner"
 PROVISION_CLASS = (
     "com.ameme.android.data.transport.AgentPairingProvisioningInstrumentedTest"
 )
+PAIRING_ENVELOPE_PREFIX = "ameme-pairing-v1:"
+PAIRING_ENVELOPE_FILE = "cache/agent-pairing-e2e/pairing-envelope.txt"
 SYNTHETIC_UI_TITLE = "合成 Agent 通道事件：配对传输已完成"
 
 
@@ -155,6 +158,30 @@ def click_text(adb: Adb, expected: str) -> bool:
     return False
 
 
+def channel_secret_from_envelope(payload: bytes) -> bytes:
+    text = payload.decode("utf-8")
+    if not text.startswith(PAIRING_ENVELOPE_PREFIX):
+        raise RuntimeError("paired_android_envelope_invalid")
+    encoded = text.removeprefix(PAIRING_ENVELOPE_PREFIX)
+    padded = encoded + ("=" * (-len(encoded) % 4))
+    envelope = json.loads(base64.urlsafe_b64decode(padded))
+    if set(envelope) != {
+        "envelope_version",
+        "expires_at_ms",
+        "pairing",
+        "pairing_expires_at_ms",
+        "secret",
+    } or envelope.get("envelope_version") != 1:
+        raise RuntimeError("paired_android_envelope_invalid")
+    secret = envelope.get("secret")
+    if not isinstance(secret, str):
+        raise RuntimeError("paired_android_envelope_invalid")
+    decoded = base64.urlsafe_b64decode(secret + ("=" * (-len(secret) % 4)))
+    if len(decoded) != 32:
+        raise RuntimeError("paired_android_envelope_invalid")
+    return secret.encode("ascii")
+
+
 def main() -> int:
     options = arguments()
     for artifact in (DEBUG_APK, TEST_APK):
@@ -176,8 +203,8 @@ def main() -> int:
         try:
             adb.instrument("provisionLocalLoopbackPairing", "amemeProvisionPairing")
             pairing_bytes = adb.private_file("files/agent-pairing/pairing.json")
-            secret_bytes.extend(adb.private_file("cache/agent-pairing-e2e/secret.txt"))
-            adb.run("shell", "run-as", PACKAGE, "rm", "cache/agent-pairing-e2e/secret.txt")
+            secret_bytes.extend(channel_secret_from_envelope(adb.private_file(PAIRING_ENVELOPE_FILE)))
+            adb.run("shell", "run-as", PACKAGE, "rm", PAIRING_ENVELOPE_FILE)
             pairing_file = temp / "pairing.json"
             pairing_file.write_bytes(pairing_bytes)
             pairing = json.loads(pairing_bytes)
@@ -192,7 +219,7 @@ def main() -> int:
                 "initialize",
                 {"protocolVersion": "2024-11-05", "capabilities": {}, "clientInfo": {"name": "ameme-android-smoke", "version": "0.1"}},
             )
-            now = datetime.now(timezone.utc)
+            now = datetime.now().astimezone()
             pending = client.tool(
                 "pair",
                 {
