@@ -11,18 +11,18 @@ final class AmemeUITests: XCTestCase {
         app.launchArguments = [
             "-AppleLanguages", "(zh-Hans)",
             "-AppleLocale", "zh_CN",
-            "-ameme.onboarding.completed", "NO",
         ]
+        app.launchEnvironment["AMEME_UI_TEST_RESET_ONBOARDING"] = "1"
         app.launch()
 
         let onboardingContinue = app.buttons["查看今天"]
         XCTAssertTrue(onboardingContinue.waitForExistence(timeout: 10))
         onboardingContinue.tap()
-        XCTAssertTrue(app.navigationBars["今天"].waitForExistence(timeout: 5))
+        let settingsMenu = app.buttons["today.settings"]
+        XCTAssertTrue(settingsMenu.waitForExistence(timeout: 5))
+        XCTAssertFalse(onboardingContinue.exists)
         attachScreenshot(named: "01-today-empty")
 
-        let settingsMenu = app.buttons["打开设置"]
-        XCTAssertTrue(settingsMenu.waitForExistence(timeout: 5))
         settingsMenu.tap()
         let settingsItem = app.buttons["设置"]
         XCTAssertTrue(settingsItem.waitForExistence(timeout: 3))

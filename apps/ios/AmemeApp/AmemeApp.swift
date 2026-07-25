@@ -14,6 +14,12 @@ import AmemeShared
 struct AmemeApp: App {
     @StateObject private var model = AppModel()
 
+    init() {
+        if ProcessInfo.processInfo.environment["AMEME_UI_TEST_RESET_ONBOARDING"] == "1" {
+            UserDefaults.standard.removeObject(forKey: "ameme.onboarding.completed")
+        }
+    }
+
     var body: some Scene {
         WindowGroup {
             RootView()
@@ -711,6 +717,7 @@ struct TodayView: View {
                     Image(systemName: "magnifyingglass")
                 }
                 .accessibilityLabel("搜索历史记录")
+                .accessibilityIdentifier("today.search")
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
@@ -719,6 +726,7 @@ struct TodayView: View {
                     Image(systemName: "ellipsis.circle")
                 }
                 .accessibilityLabel("打开设置")
+                .accessibilityIdentifier("today.settings")
             }
         }
         .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 8) }
