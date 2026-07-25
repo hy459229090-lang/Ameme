@@ -173,10 +173,13 @@ final class AgentExperienceTests: XCTestCase {
         XCTAssertEqual(candidate.method, .qrCode)
         XCTAssertEqual(candidate.capabilities, ["写入结构化工作记录"])
         XCTAssertFalse(candidate.simulated)
-        await XCTAssertThrowsErrorAsync {
+        do {
             _ = try await BonjourAgentExperienceConnector(
                 now: { now.addingTimeInterval(301) }
             ).resolve(pairingPayload: payload)
+            XCTFail("expired QR pairing envelope was accepted")
+        } catch {
+            // Expected.
         }
     }
 
@@ -255,18 +258,5 @@ final class AgentExperienceTests: XCTestCase {
 
         XCTAssertNil(try store.load())
         XCTAssertNil(defaults.data(forKey: AgentExperienceStore.userDefaultsKey))
-    }
-}
-
-private func XCTAssertThrowsErrorAsync(
-    _ expression: () async throws -> Void,
-    file: StaticString = #filePath,
-    line: UInt = #line
-) async {
-    do {
-        try await expression()
-        XCTFail("Expected expression to throw", file: file, line: line)
-    } catch {
-        // Expected.
     }
 }

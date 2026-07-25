@@ -66,11 +66,22 @@ jobs:
             -resultBundlePath "$RUNNER_TEMP/AmemeTests.xcresult" \
             CODE_SIGNING_ALLOWED=NO \
             test
+      - name: Export reviewable UI screenshots
+        if: always()
+        run: |
+          if [[ -d "$RUNNER_TEMP/AmemeTests.xcresult" ]]; then
+            mkdir -p "$RUNNER_TEMP/AmemeScreenshots"
+            xcrun xcresulttool export attachments \
+              --path "$RUNNER_TEMP/AmemeTests.xcresult" \
+              --output-path "$RUNNER_TEMP/AmemeScreenshots"
+          fi
       - name: Upload UI test evidence
         if: always()
         uses: actions/upload-artifact@v4.6.2
         with:
           name: ameme-ios-test-evidence
-          path: ${{ runner.temp }}/AmemeTests.xcresult
+          path: |
+            ${{ runner.temp }}/AmemeTests.xcresult
+            ${{ runner.temp }}/AmemeScreenshots
           if-no-files-found: warn
           retention-days: 14
