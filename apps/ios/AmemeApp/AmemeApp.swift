@@ -313,7 +313,15 @@ final class AppModel: ObservableObject {
     }
 
     private func requestCalendarAccess(_ eventStore: EKEventStore) async throws -> Bool {
-        try await eventStore.requestFullAccessToEvents()
+        try await withCheckedThrowingContinuation { continuation in
+            eventStore.requestFullAccessToEvents { granted, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume(returning: granted)
+                }
+            }
+        }
     }
 
     func saveAddendum(_ text: String, to eventID: UUID) {
@@ -1623,15 +1631,15 @@ struct SettingsView: View {
         let status = EKEventStore.authorizationStatus(for: .event)
         switch status {
         case .fullAccess, .authorized:
-            "只读权限已允许 · 仍须选择日历和日期范围"
+            return "只读权限已允许 · 仍须选择日历和日期范围"
         case .writeOnly:
-            "仅有写入权限 · 无法读取计划"
+            return "仅有写入权限 · 无法读取计划"
         case .notDetermined:
-            "尚未请求 · 主动导入时按次申请"
+            return "尚未请求 · 主动导入时按次申请"
         case .denied, .restricted:
-            "未允许 · 可继续使用文字和其他来源"
+            return "未允许 · 可继续使用文字和其他来源"
         @unknown default:
-            "状态未知 · 主动导入时重新确认"
+            return "状态未知 · 主动导入时重新确认"
         }
     }
 }
