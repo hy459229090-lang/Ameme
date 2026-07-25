@@ -135,6 +135,12 @@ def main() -> int:
         "shared Ameme scheme runs unit and UI tests",
         checks,
     )
+    shared_settings = targets["AmemeShared"].get("settings", {}).get("base", {})
+    require(
+        shared_settings.get("CODE_SIGNING_ALLOWED") is False,
+        "static Shared framework remains unsigned while installable test hosts can use Simulator signing",
+        checks,
+    )
 
     width, height, color_type = png_metadata(icon_path)
     require((width, height) == (1024, 1024), "App Icon master is exactly 1024x1024", checks)

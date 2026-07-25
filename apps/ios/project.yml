@@ -26,6 +26,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.ameme.ios.shared
         DEFINES_MODULE: true
         SKIP_INSTALL: true
+        CODE_SIGNING_ALLOWED: false
 
   AmemeShareExtension:
     type: app-extension
