@@ -5,6 +5,7 @@
 **让散落在设备与服务里的生活片段，成为由你控制、可追溯、可纠正的长期上下文。**
 
 [![Workspace Health](https://github.com/hy459229090-lang/Ameme/actions/workflows/workspace-health.yml/badge.svg)](https://github.com/hy459229090-lang/Ameme/actions/workflows/workspace-health.yml)
+[![iOS CI](https://github.com/hy459229090-lang/Ameme/actions/workflows/ios.yml/badge.svg)](https://github.com/hy459229090-lang/Ameme/actions/workflows/ios.yml)
 [![Android CI](https://github.com/hy459229090-lang/Ameme/actions/workflows/android.yml/badge.svg)](https://github.com/hy459229090-lang/Ameme/actions/workflows/android.yml)
 ![Status](https://img.shields.io/badge/status-active%20development-6C63FF)
 ![Privacy](https://img.shields.io/badge/privacy-local--first-0F9D8A)
@@ -14,7 +15,7 @@
 Ameme 是一个正在开发中的、本地优先的个人记忆基础设施。它把用户主动记录或明确授权的信息组织成连续的 `DayLedger`（每日事件账本），保留来源、修改和删除链路，再向 AI 提供边界清晰的长期上下文。
 
 > [!IMPORTANT]
-> Ameme 目前处于 Discovery / MVP 工程实现阶段，尚未公开发布。仓库中的 Android Debug 流程、合成数据和模拟连接用于验证产品与技术闭环，不代表真实联网、跨设备同步或生产可用性。
+> Ameme 目前处于 Discovery / MVP 工程实现阶段，尚未公开发布。仓库已包含可构建的 iOS 与 Android 原生产品；固定演示数据和模拟连接用于无外部依赖体验，真实本机数据路径与受限 Local Node 通道用于工程验证。它们都不等于公开发布、生产账户服务或任意设备间同步已经通过。
 
 ## 为什么做 Ameme
 
@@ -46,7 +47,7 @@ DayLedger（连续的一天）
 
 ![从日常片段到可追溯 DayLedger 的功能闭环](docs/product/assets/ameme-feature-dayledger.png)
 
-当前 Android 原型以“今天”为唯一默认主页，通过一个记录按钮接收文字、照片、语音和日历导入；统一历史日流负责找回。数据稀疏是正常状态，产品不会用虚构内容填满界面。
+iOS 与 Android 均以“今天”为唯一默认主页，通过一个记录按钮接收文字、照片、语音、文件/分享和日历导入；统一历史日流负责找回。两端都可在真实本机加密库和隔离的固定演示数据之间体验核心闭环，数据稀疏是正常状态，产品不会在真实路径中用虚构内容填满界面。
 
 ![今天、单一记录入口与统一历史日流的产品设计](docs/product/assets/ameme-feature-mobile-design.png)
 
@@ -54,19 +55,20 @@ DayLedger（连续的一天）
 
 | 领域 | 当前仓库中的实现 | 边界 |
 |---|---|---|
-| Android | 原生 Kotlin / Jetpack Compose 客户端，`minSdk 34` | 主要证据来自 API 36 x86_64 AVD，仍需真机验证 |
+| iOS | SwiftUI 客户端、Swift Shared Core、可嵌入 Share Extension、XcodeGen 工程、Unit/UI Test targets | Xcode 16.4 CI 可真实构建 App 与扩展；签名、App Store 和物理设备仍需发布验收 |
+| Android | 原生 Kotlin / Jetpack Compose 客户端，`minSdk 34` | Debug/Release 构建与 API 36 16 KB arm64 AVD 为回归基线；OEM/物理设备仍需发布验收 |
 | 本地存储 | SQLCipher 加密 Event、Revision、DayLedger、Summary 与搜索索引 | 完整物理清除和分布式删除仍待验证 |
-| 信息输入 | 文字、Photo Picker、显式 Share、系统语音结果、范围化日历导入 | 不做后台全量采集，不申请媒体库或麦克风权限 |
+| 信息输入 | 双端文字、按次照片、显式 Share、语音结果/录音、范围化日历导入 | 不做后台全量采集；每种敏感来源都在用户主动操作时授权 |
 | Agent | `ameme-memory` Skill、本地 MCP Host、授权与风险评测 | 真实第三方宿主与共享账户 Grant 尚未完成 |
 | AI | 可替换推理网关、固定合成评测、用户确认后生成每日小结 | 真实模型、成本和生产安全证据仍待补齐 |
-| 同步 | 协议、确定性模拟器与一致性向量 | 真实 LAN 发现、真机 P2P 与后台同步尚未完成 |
+| 连接/同步 | 跨端协议、确定性模拟器、QR 短时配对、TLS 1.3/pin/HMAC Local Node 子门 | 账户设备 registry、真机 P2P、共享 Grant 撤销传播与后台同步尚未完成 |
 
 更完整的当前状态与证据边界见 [STATUS.md](STATUS.md)。
 
 ## 仓库导航
 
 ```text
-apps/          用户端应用（当前包含 Android MVP）
+apps/          iOS 与 Android 原生用户端应用
 packages/      共享契约、Core、同步协议、AI 与 Agent Skill
 services/      本地 Host、MCP mock 与可替换推理网关
 connectors/    信息源适配器入口
@@ -108,12 +110,25 @@ cd apps/android
 
 同一设备序列号上不要并行运行 instrumentation 测试；这些任务会重装同一 application ID。详细环境与已验证范围见 [Android README](apps/android/README.md)。
 
+iOS 工程构建与测试（Xcode 16.4、iOS 18.5 Simulator）：
+
+```bash
+xcodebuild \
+  -project apps/ios/Ameme.xcodeproj \
+  -scheme Ameme \
+  -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=18.5' \
+  CODE_SIGNING_ALLOWED=NO \
+  test
+```
+
+工程由固定版本的 XcodeGen 从 `apps/ios/project.yml` 生成，包含 App、嵌入式 Share Extension、Unit Tests 与 UI Tests。详细边界和无完整 Xcode 时可用的 Shared Smoke 见 [iOS README](apps/ios/README.md)。
+
 ## 数据与隐私
 
 本仓库只允许合成测试数据。请勿提交真实浏览历史、聊天正文、照片、音频、精确位置、账单、健康数据、数据库、密钥或访问令牌。测试夹具位于 `tests/fixtures/synthetic/` 及其他明确标记的 synthetic 目录。
 
 ## 项目状态
 
-当前 Gate 1 为 `hold`：工程实现可以继续，但真实用户、双端真机、真实 LAN / Agent 宿主、生产模型、安全合规与商店审核证据尚未闭环。Ameme 会把失败、跳过和阻塞保留为正式证据，不用“文档写完”替代验证通过。
+当前 Gate 1 为 `hold`：双端工程与合成核心闭环可以持续验证，但真实用户、双端物理设备、账户/共享 Grant、生产模型、安全合规与商店审核证据尚未闭环。Ameme 会把失败、跳过和阻塞保留为正式证据，不用“文档写完”替代验证通过。
 
 欢迎通过 Issue 讨论产品边界、架构、安全模型和可复跑验证。当前仓库尚未声明开源许可证；除非另有说明，代码与文档不自动授予再分发或商用许可。

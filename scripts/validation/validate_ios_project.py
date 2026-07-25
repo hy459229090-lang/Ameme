@@ -137,6 +137,16 @@ def main() -> int:
     app_plist = load_plist(IOS / "Ameme" / "Info.plist")
     require(app_plist.get("CFBundlePackageType") == "APPL", "App plist declares an application bundle", checks)
     require(
+        app_plist.get("CFBundleExecutable") == "$(EXECUTABLE_NAME)",
+        "App plist declares the built executable",
+        checks,
+    )
+    require(
+        app_plist.get("CFBundleIdentifier") == "$(PRODUCT_BUNDLE_IDENTIFIER)",
+        "App plist declares the target bundle identifier",
+        checks,
+    )
+    require(
         app_plist.get("NSCameraUsageDescription"),
         "App plist explains camera use for QR scanning",
         checks,

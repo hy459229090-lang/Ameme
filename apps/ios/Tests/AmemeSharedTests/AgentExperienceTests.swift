@@ -223,17 +223,18 @@ final class AgentExperienceTests: XCTestCase {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let connectedAt = Date(timeIntervalSince1970: 1_800_000_000)
-        let store = AgentExperienceStore(
+        let activeStore = AgentExperienceStore(defaults: defaults, now: { connectedAt })
+        let expiredStore = AgentExperienceStore(
             defaults: defaults,
             now: { connectedAt.addingTimeInterval(AgentExperienceConnection.defaultLifetime + 1) }
         )
 
-        try store.save(.simulatedDemo(method: .accountDevice, connectedAt: connectedAt))
-        XCTAssertNil(try store.load())
+        try activeStore.save(.simulatedDemo(method: .accountDevice, connectedAt: connectedAt))
+        XCTAssertNil(try expiredStore.load())
         XCTAssertNil(defaults.data(forKey: AgentExperienceStore.userDefaultsKey))
 
         defaults.set(Data("not-json".utf8), forKey: AgentExperienceStore.userDefaultsKey)
-        XCTAssertThrowsError(try store.load())
+        XCTAssertThrowsError(try expiredStore.load())
         XCTAssertNil(defaults.data(forKey: AgentExperienceStore.userDefaultsKey))
     }
 
