@@ -722,10 +722,8 @@ struct TodayView: View {
                 .accessibilityIdentifier("today.search")
             }
             ToolbarItem(placement: .topBarTrailing) {
-                Menu {
-                    Button("设置", action: onSettings)
-                } label: {
-                    Image(systemName: "ellipsis.circle")
+                Button(action: onSettings) {
+                    Image(systemName: "gearshape")
                         .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
                 }
@@ -821,12 +819,13 @@ struct SearchView: View {
                 .accessibilityLabel("选择日期")
             }
             ToolbarItem(placement: .topBarTrailing) {
-                Menu {
-                    Button("设置", action: onSettings)
-                } label: {
-                    Image(systemName: "ellipsis.circle")
+                Button(action: onSettings) {
+                    Image(systemName: "gearshape")
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
                 }
                 .accessibilityLabel("打开设置")
+                .accessibilityIdentifier("search.settings")
             }
         }
         .sheet(isPresented: $showingDateFilter) {

@@ -18,16 +18,13 @@ final class AmemeUITests: XCTestCase {
         let onboardingContinue = app.buttons["查看今天"]
         XCTAssertTrue(onboardingContinue.waitForExistence(timeout: 10))
         onboardingContinue.tap()
-        let settingsMenu = app.buttons["today.settings"]
-        XCTAssertTrue(settingsMenu.waitForExistence(timeout: 5))
-        XCTAssertTrue(settingsMenu.isHittable)
+        let settingsButton = app.buttons["today.settings"]
+        XCTAssertTrue(settingsButton.waitForExistence(timeout: 5))
+        XCTAssertTrue(settingsButton.isHittable)
         XCTAssertFalse(onboardingContinue.exists)
         attachScreenshot(named: "01-today-empty")
 
-        settingsMenu.tap()
-        let settingsItem = app.buttons["设置"]
-        XCTAssertTrue(settingsItem.waitForExistence(timeout: 3))
-        settingsItem.tap()
+        settingsButton.tap()
 
         XCTAssertTrue(app.navigationBars["设置"].waitForExistence(timeout: 5))
         let loadDemo = app.buttons["载入演示数据"]

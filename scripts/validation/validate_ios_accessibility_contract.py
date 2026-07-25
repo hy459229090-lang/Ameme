@@ -72,6 +72,17 @@ def main() -> int:
         "Today toolbar actions preserve minimum touch targets",
         checks,
     )
+    require(
+        'Button(action: onSettings)' in today_view and 'accessibilityIdentifier("today.settings")' in today_view,
+        "Today uses a direct accessible settings action instead of a nested single-item menu",
+        checks,
+    )
+    search_view = section(source, "struct SearchView", "struct CaptureSheet")
+    require(
+        'Button(action: onSettings)' in search_view and 'accessibilityIdentifier("search.settings")' in search_view,
+        "Search uses a direct accessible settings action",
+        checks,
+    )
     event_row = section(source, "private struct EventRowView", "private struct DaySummaryView")
     require(
         ".accessibilityElement(children: .combine)" in event_row and ".accessibilityLabel(" in event_row,
