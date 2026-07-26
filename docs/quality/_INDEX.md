@@ -13,6 +13,7 @@
 | 双端体验状态矩阵 | `双端体验状态矩阵-20260718.md` | conditional_pass；共同状态规则、逐页恢复动作、本机/Mock 证据和 AccessGrant 本地 scope 门禁已登记；设备级状态、真实来源、完整无障碍待补 |
 | M23 配对与连接生命周期验证 | `M23-配对与连接生命周期验证-20260718.md` | conditional_pass；iOS duplicate-key pairing 拒绝、双端 disconnect 契约、既有 Swift→Android AVD 真实传输子门通过；QR/account/reconnect/设备级门禁待补 |
 | M24 双端真实构建与设备交付验证 | `M24-双端真实构建与设备交付验证-20260726.md` | 仓库工程候选 pass；双端真实/Mock 核心闭环、QR→Android TLS/HMAC/Grant、Android 16 KB 大字号设备回归、iOS Xcode/XCUITest 截图和仓库门禁通过；物理设备/读屏/签名与商店发布仍为保留门 |
+| M25 双端平台视觉升级与设备复验 | `M25-双端平台视觉升级与设备复验-20260726.md` | 仓库工程候选 pass；iOS 26 Liquid Glass、Android 当前稳定 Material 3、双端字号/语义/同屏视觉与 Simulator/16 KB AVD 全绿；物理设备/真实读屏/签名与商店继续 hold |
 
 ## 当前正本
 
@@ -56,3 +57,4 @@
 | 2026-07-18 | 新增/验证 | 第二十一批双端 AccessGrant/policy：iOS Shared 增加 canonical Grant 与本地 policy 绑定，Android pairing 持久化 30 天 Personal/`autonomous_memory`/structured `event` scope 并在 endpoint 前置拒绝扩权；两端授权卡片显示拟授权范围。iOS Shared/App build、Smoke/目标解析、Share 输入 25 项和 accessibility 静态契约 14 项通过；Android Debug/Release JVM、lint、assemble、64/57/7/0 AVD、1/1 授权 UI smoke、TalkBack AVD 语义探针与配对 Host/Android/SQLCipher/Today smoke 通过 |
 | 2026-07-18 | 新增/验证 | 第二十二/二十三批连接收口：iOS Local Node TLS 1.3/pin/HMAC client、Grant-bound request 与 Swift→Android AVD 真实传输子门通过；随后补齐 iOS duplicate-key pairing 拒绝和 Android/iOS connector disconnect 契约，iOS App build、Shared Smoke、Android Debug/Release JVM 与 lint 通过；QR/account registry、reconnect 和设备级门禁仍待补 |
 | 2026-07-26 | 新增/验证 | M24 双端工程交付收口：补齐 installable Xcode 工程/Share Extension/Unit/UI CI、Android Debug/Release 与 API 36 16 KB 设备 CI、短时 QR 真连接、真实/Mock 双路径、大字号和截图证据；仓库工程候选 pass，物理设备/读屏/签名/商店继续 hold |
+| 2026-07-26 | 新增/验证 | M25 双端平台视觉升级：iOS 按选定方向收敛为原生 Liquid Glass 控制层与平面内容，Android 对齐当前稳定 Material 3 并迁移 Material Symbols；默认/XXXL、130%/200%、深色、语义、真实构建和设备自动化全绿，物理设备/真实读屏/签名/商店继续 hold |

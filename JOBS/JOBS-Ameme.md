@@ -445,6 +445,20 @@
 - 验证报告：`docs/quality/M24-双端真实构建与设备交付验证-20260726.md`。
 - 退出条件：仓库门可在 CI 全绿后关闭；物理设备 Beta 与公开发布维持独立 `hold`，不得由 Simulator/AVD/Mock 代替。
 
+### 第二十五批双端平台视觉升级与设备复验里程碑（2026-07-26，done）
+
+- 目标：在不改变真实本机与固定 Mock 闭环的前提下，把 iOS “今天”页升级为更简洁的 iOS 26 Liquid Glass 控制层，并把 Android 从早期基础 Material 3 视觉升级到当前稳定 Material 3 平台表达；以设备截图、字体缩放、语义树和真实构建复验跨端差异。
+- [x] 视觉目标：iOS 以已选第一版方向为基础进一步减法，保留暖白内容画布、单列时间流、一个顶部玻璃控制面和一个右下记录控制；内容行不玻璃化，不新增装饰性卡片、标签轨道或自定义玻璃绘制。
+- [x] iOS 平台实现：iOS 26+ 使用 SwiftUI 原生 `glassEffect` / prominent glass button；iOS 18–25 使用系统 Material 降级。Today 搜索/设置保持独立 44 pt 语义按钮，记录入口保留禁用状态和减少动态效果兼容。
+- [x] Android 平台实现：保持 stable Material 3 / Compose BOM 生产基线，不采用仍为 alpha/internal 的 Expressive API；补齐类型、形状、明暗色和受控动态色，改为成组顶部操作、安静文字状态、原生 FAB，并在大字体下切换纵向事件布局。
+- [x] 本机构建门：Android Debug 单测、Lint、Debug APK 和测试 APK 通过；iOS Shared/App 包级构建、目标源码解析、Project/Share/Accessibility 静态契约与工作流 YAML 通过。
+- [x] Android 设备复验：API 36 / 16 KB AVD 的 Debug/Release、设备回归与截图 artifact 全绿；本地 130%/200% 字号同屏和 UIAutomator 语义树无 P0/P1。
+- [x] iOS 渲染复验：Xcode 26.6 / iOS 26.5 Simulator 的 App/Share Extension、22 Unit、默认浅色与深色 XXXL XCUITest 全绿；设计参考、默认实现和无障碍实现已在同一输入中签收。
+- [x] 发布保留门已登记：物理 iPhone/iPad、Android 14+ OEM、真实 VoiceOver/TalkBack、签名/App Group/Share Sheet、权限撤销、后台/旋转、物理 LAN 和商店流程继续 `hold`。
+- 最终 CI：workspace `30193059061`、iOS `30193059096`、Android `30193059066`；实现证据提交 `229d12a`。
+- 验证报告：`docs/quality/M25-双端平台视觉升级与设备复验-20260726.md`；双端细项见 `apps/ios/design-qa.md` 与 `apps/android/design-qa.md`。
+- 退出条件：同一 Mock 状态的双端当前截图无 P0/P1 视觉或可用性问题，核心真实/Mock 闭环回归不退化，字体缩放和语义证据可复跑；物理设备与发布门必须继续单独登记，不能由模拟器替代。
+
 ### 当前门禁
 
 1. SQLCipher 若不能在 API 34+/16KB 页面约束下工作，保留失败证据并走 ADR 的安全回退评审，不允许静默改成明文 SQLite。

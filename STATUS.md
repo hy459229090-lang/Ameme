@@ -14,6 +14,7 @@
 - 本轮跨端收口：iOS SwiftUI 源码已补齐与 Android 当前进度对应的本机记录、Today/Search/Capture/Event/Settings/Delete 体验；Android 修复搜索设置入口、事件补充 Revision、删除真实执行、空白页小结和不可操作/误导性设计文案。iOS Shared/App 包级源码构建通过；Android `testDebugUnitTest`、`lintDebug`、`assembleDebug` 通过，lint 无阻断项。
 - 第八至二十四批双端产品完善：两端均支持不污染真实数据的演示模式、日期范围搜索、Revision、结构化导出、恢复/清理、严格配对与显式断开；完整 Xcode/iOS SDK 已由 CI 接管真实 App/Share Extension build、Unit/UI Tests 与截图附件。本机仍只有 Command Line Tools；iOS/Android 物理设备、真实 TalkBack/VoiceOver、签名/Provisioning 和商店流程未闭合。
 - 当前里程碑：M24 状态为 `done`；PR #1 最新实现提交与最终 PR head 的 workspace、iOS、Android CI 已签收，状态文档提交不改变实现范围，PR #1 可人工 review。详见 `docs/quality/M24-双端真实构建与设备交付验证-20260726.md`。
+- M25 平台视觉复验：状态为 `done`，仓库工程候选 `pass`。iOS Today 已按选定方向收敛为内容优先单列时间流，iOS 26+ 使用原生 Liquid Glass 控制面、iOS 18–25 使用系统 Material 降级；Android 保持 Compose BOM `2026.06.00` / Material 3 `1.4.0` 稳定生产基线，并迁移官方 Material Symbols。Android Debug/Release、Lint、APK、API 36 / 16 KB 设备、130%/200% 字号和语义证据通过；Xcode 26.6 / iOS 26.5 的 App/Share Extension、22 Unit、默认浅色与深色 XXXL XCUITest 通过。最终 runs：workspace `30193059061`、iOS `30193059096`、Android `30193059066`；物理设备与发布门仍 `hold`。
 
 ## 发布保留门
 
@@ -27,6 +28,7 @@
 | MVP 三线并行设计与技术方案 | accepted | 产品、交互、契约、架构、安全、质量和工程计划完成全链审计 |
 | MVP 研发前准备 Goal | done | owner/local gap 清零；13 项正式决策已登记（ADR-003 被替代）；Skill/Schema/治理/链接/编译门禁通过，只保留 Spike/外部证据 |
 | MVP 工程实现 | done | M24 双端仓库工程候选 pass；物理 iOS/Android、真实读屏、签名/商店、账户共享 Grant、后台、正式用户和生产模型继续作为发布保留门 |
+| M25 双端平台视觉与设备复验 | done | 仓库工程候选 pass；双端当前平台视觉、字号、语义、真实构建与 Simulator/16 KB AVD 通过，物理设备和发布门继续 hold |
 | R0 用户与场景研究 | plan_ready | 按产品决策有意后置 |
 | R1 多端信息源调研 | plan_ready | 按产品决策有意后置，后续只做 MVP 定向补证 |
 | Event/每日事件记录模型 | plan_ready | v0.4 保留情绪/关系/重要性独立字段，但禁止其提高事实置信度或触发扩权 |
@@ -54,4 +56,4 @@
 
 ## 下一执行门
 
-M24 仓库工程候选为 `pass`：Android 最新本地设备回归为 67 discovered / 60 passed / 7 显式 Gate skipped / 0 failed，Debug/Release 单测、Lint 和 APK 同轮通过；iOS/Android 的短时 QR envelope 已经由 Swift Network.framework→TLS 1.3/pin/HMAC→Grant-bound `create_event`→Android SQLCipher/Today 完成真连接子门；iOS 完成真实 Xcode App/Extension build、22 Unit + 1 UI Tests 与超大字体/深色/旋转截图复核。下一执行门由发布负责人执行双端物理设备、真实 VoiceOver/TalkBack、签名/Provisioning、OEM/来源/后台、物理 LAN、商店申报和回滚清单。Gate 1 与公开发布继续 `hold`。
+M24/M25 仓库工程候选均为 `pass`。下一执行门由发布负责人完成双端物理设备、真实 VoiceOver/TalkBack、签名/Provisioning、OEM/来源/后台、物理 LAN、商店申报和回滚清单；产品侧继续执行 T0 真实 Pilot。Simulator/AVD、固定 Mock、合成事件与自动化无障碍证据不能关闭这些门，Gate 1 与公开发布继续 `hold`。
