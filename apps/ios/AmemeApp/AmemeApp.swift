@@ -2216,9 +2216,28 @@ private struct EventRowView: View {
     }
 
     private var statusText: some View {
-        Text(event.factStatus.label)
+        Text(compactStatusLabel)
             .font(.caption.weight(.medium))
             .foregroundStyle(statusColor)
+    }
+
+    private var compactStatusLabel: String {
+        switch event.factStatus {
+        case .confirmed:
+            "已记录"
+        case .userAsserted:
+            "陈述"
+        case .planned:
+            "计划"
+        case .inferred:
+            "推测"
+        case .needsReview:
+            "待核验"
+        case .conflict:
+            "冲突"
+        case .processing:
+            "整理中"
+        }
     }
 
     private var statusColor: Color {
