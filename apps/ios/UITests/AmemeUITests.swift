@@ -161,6 +161,7 @@ final class AmemeUITests: XCTestCase {
         attachScreenshot(named: "09-real-local-delete-complete")
         returnToday.tap()
 
+        XCTAssertTrue(app.navigationBars["删除影响与进度"].waitForNonExistence(timeout: 5))
         XCTAssertTrue(app.buttons["today.search"].waitForExistence(timeout: 5))
         app.buttons["today.search"].tap()
         let deletedSearch = app.searchFields["搜索历史记录"]

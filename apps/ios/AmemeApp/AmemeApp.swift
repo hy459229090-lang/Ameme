@@ -521,7 +521,7 @@ struct RootView: View {
                     DeleteView(eventID: id) {
                         // The action is labelled “返回今天”; clear the complete
                         // navigation path even when deletion started in Search.
-                        path.removeAll()
+                        path = []
                     }
                 }
             }
@@ -1554,7 +1554,12 @@ struct DeleteView: View {
                         .buttonStyle(.borderedProminent)
                         .frame(maxWidth: .infinity)
                 case .completed:
-                    Button("返回今天", action: onDeleted)
+                    Button("返回今天") {
+                        // Defer the NavigationStack reset until the button's own
+                        // state update has completed. Xcode 26 can otherwise
+                        // retain this destination after a successful deletion.
+                        DispatchQueue.main.async(execute: onDeleted)
+                    }
                         .buttonStyle(.borderedProminent)
                         .frame(maxWidth: .infinity)
                 default:
