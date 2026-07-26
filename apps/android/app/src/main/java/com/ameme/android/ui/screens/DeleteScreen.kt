@@ -5,6 +5,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -23,6 +25,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.ameme.android.domain.DeleteStep
@@ -75,7 +78,11 @@ fun DeleteScreen(
         },
     ) { padding ->
         Column(
-            modifier = Modifier.fillMaxSize().padding(padding).padding(20.dp),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .verticalScroll(rememberScrollState())
+                .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Text(event?.title ?: "事件已不存在", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
@@ -88,7 +95,7 @@ fun DeleteScreen(
                     Text("• 不会删除任何系统照片、文件或真实来源")
                 }
             }
-            ProgressCard(step)
+            ProgressCard(step, Modifier.testTag("delete-step-${step.name}"))
             when (step) {
                 DeleteStep.Queued -> Button(
                     onClick = ::startDeletion,
@@ -119,13 +126,13 @@ fun DeleteScreen(
 }
 
 @Composable
-private fun ProgressCard(step: DeleteStep) {
+private fun ProgressCard(step: DeleteStep, modifier: Modifier = Modifier) {
     val icon: ImageVector = when (step) {
         DeleteStep.Completed -> AmemeSymbols.CheckCircle
         DeleteStep.PartialFailed -> AmemeSymbols.Error
         else -> AmemeSymbols.HourglassTop
     }
-    Card(Modifier.fillMaxWidth()) {
+    Card(modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
             Text(step.label, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)

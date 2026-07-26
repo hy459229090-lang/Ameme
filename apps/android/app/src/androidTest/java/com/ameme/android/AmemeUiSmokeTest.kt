@@ -272,13 +272,16 @@ class AmemeUiSmokeTest {
         composeRule.onNodeWithText("查看删除影响").performScrollTo().performClick()
         composeRule.onNodeWithText("删除影响与进度").assertIsDisplayed()
         composeRule.onNodeWithText("影响范围").assertIsDisplayed()
-        composeRule.onNodeWithText("确认删除").performClick()
+        composeRule.onNodeWithText("确认删除")
+            .performScrollTo()
+            .assertIsDisplayed()
+            .assertIsEnabled()
+            .performClick()
         composeRule.waitUntil(timeoutMillis = 30_000) {
             composeRule.onAllNodesWithText("返回今天").fetchSemanticsNodes().isNotEmpty() ||
                 composeRule.onAllNodesWithText("重试删除").fetchSemanticsNodes().isNotEmpty()
         }
-        composeRule.onNodeWithText("返回今天").assertIsDisplayed()
-        composeRule.onNodeWithText("返回今天").performClick()
+        composeRule.onNodeWithText("返回今天").performScrollTo().assertIsDisplayed().performClick()
         composeRule.onNodeWithContentDescription("搜索历史记录").performClick()
         composeRule.onNodeWithTag("search-query").performTextInput(title)
         composeRule.waitUntil(timeoutMillis = 10_000) {
