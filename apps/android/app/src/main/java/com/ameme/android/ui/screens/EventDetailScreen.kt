@@ -7,9 +7,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -31,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.ameme.android.domain.MemoryEvent
+import com.ameme.android.ui.icons.AmemeSymbols
 import com.ameme.android.domain.FactStatus
 import com.ameme.android.ui.displayDate
 import kotlinx.coroutines.launch
@@ -57,7 +55,7 @@ fun EventDetailScreen(
                 title = { Text("事件详情") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "返回")
+                        Icon(AmemeSymbols.ArrowBack, contentDescription = "返回")
                     }
                 },
             )
@@ -168,7 +166,7 @@ fun EventDetailScreen(
                     Text("未授予任何 Agent 或跨设备内容访问。")
                 }
                 Button(onClick = { onDelete(event.id) }, modifier = Modifier.fillMaxWidth()) {
-                    Icon(Icons.Outlined.DeleteOutline, contentDescription = null)
+                    Icon(AmemeSymbols.Delete, contentDescription = null)
                     Text("查看删除影响", modifier = Modifier.padding(start = 8.dp))
                 }
             }

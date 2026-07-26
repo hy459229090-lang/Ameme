@@ -14,9 +14,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -53,6 +50,7 @@ import com.ameme.android.data.transport.PairingExperienceFailure
 import com.ameme.android.data.transport.PairingExperienceMethod
 import com.ameme.android.domain.ExperienceMode
 import com.ameme.android.ui.components.PairingQrCode
+import com.ameme.android.ui.icons.AmemeSymbols
 import java.time.Instant
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -134,7 +132,7 @@ fun SettingsScreen(
                 title = { Text("设置") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "返回")
+                        Icon(AmemeSymbols.ArrowBack, contentDescription = "返回")
                     }
                 },
             )
@@ -688,7 +686,7 @@ private fun PairingMethodRow(title: String, detail: String, tag: String, onClick
             Text(title, fontWeight = FontWeight.Medium)
             Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Icon(Icons.Outlined.ChevronRight, contentDescription = null)
+        Icon(AmemeSymbols.ChevronRight, contentDescription = null)
     }
 }
 

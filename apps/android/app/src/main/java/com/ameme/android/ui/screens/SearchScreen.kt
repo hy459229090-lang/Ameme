@@ -8,12 +8,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.outlined.CalendarMonth
-import androidx.compose.material.icons.outlined.Clear
-import androidx.compose.material.icons.outlined.MoreVert
-import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DatePickerState
@@ -51,6 +45,7 @@ import com.ameme.android.ui.components.DemoModeNotice
 import com.ameme.android.ui.components.EventRow
 import com.ameme.android.ui.components.StateNotice
 import com.ameme.android.ui.displayDate
+import com.ameme.android.ui.icons.AmemeSymbols
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
@@ -154,7 +149,7 @@ fun SearchScreen(
                 title = { Text("搜索") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "返回今天")
+                        Icon(AmemeSymbols.ArrowBack, contentDescription = "返回今天")
                     }
                 },
                 actions = {
@@ -162,7 +157,7 @@ fun SearchScreen(
                         onClick = onSettings,
                         modifier = Modifier.semantics { contentDescription = "打开设置" },
                     ) {
-                        Icon(Icons.Outlined.MoreVert, contentDescription = null)
+                        Icon(AmemeSymbols.MoreVert, contentDescription = null)
                     }
                 },
             )
@@ -184,14 +179,14 @@ fun SearchScreen(
                 },
                 modifier = Modifier.fillMaxWidth(),
                 label = { Text("搜索历史记录") },
-                leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
+                leadingIcon = { Icon(AmemeSymbols.Search, contentDescription = null) },
                 trailingIcon = {
                     if (query.isNotEmpty()) {
                         IconButton(onClick = {
                             query = ""
                             invalidateFor(SearchRequestIdentity(repository, "", selectedStartDate, selectedEndDate))
                         }) {
-                            Icon(Icons.Outlined.Clear, contentDescription = "清除搜索词")
+                            Icon(AmemeSymbols.Close, contentDescription = "清除搜索词")
                         }
                     }
                 },
@@ -202,7 +197,7 @@ fun SearchScreen(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 OutlinedButton(onClick = { calendarEndpoint = CalendarEndpoint.Start }) {
-                    Icon(Icons.Outlined.CalendarMonth, contentDescription = null)
+                    Icon(AmemeSymbols.CalendarMonth, contentDescription = null)
                     Text(
                         selectedStartDate?.displayDate() ?: "开始日期",
                         modifier = Modifier.padding(start = 8.dp),

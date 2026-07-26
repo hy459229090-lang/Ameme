@@ -5,12 +5,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.outlined.CheckCircle
-import androidx.compose.material.icons.outlined.DeleteForever
-import androidx.compose.material.icons.outlined.ErrorOutline
-import androidx.compose.material.icons.outlined.HourglassTop
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -33,6 +27,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.ameme.android.domain.DeleteStep
 import com.ameme.android.domain.MemoryEvent
+import com.ameme.android.ui.icons.AmemeSymbols
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -65,7 +60,7 @@ fun DeleteScreen(
                 title = { Text("删除影响与进度") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "返回")
+                        Icon(AmemeSymbols.ArrowBack, contentDescription = "返回")
                     }
                 },
             )
@@ -92,7 +87,7 @@ fun DeleteScreen(
                     modifier = Modifier.fillMaxWidth(),
                     enabled = event != null && !deleteInFlight,
                 ) {
-                    Icon(Icons.Outlined.DeleteForever, contentDescription = null)
+                    Icon(AmemeSymbols.DeleteForever, contentDescription = null)
                     Text("确认删除", modifier = Modifier.padding(start = 8.dp))
                 }
                 DeleteStep.LocalDeleting,
@@ -118,9 +113,9 @@ fun DeleteScreen(
 @Composable
 private fun ProgressCard(step: DeleteStep) {
     val icon: ImageVector = when (step) {
-        DeleteStep.Completed -> Icons.Outlined.CheckCircle
-        DeleteStep.PartialFailed -> Icons.Outlined.ErrorOutline
-        else -> Icons.Outlined.HourglassTop
+        DeleteStep.Completed -> AmemeSymbols.CheckCircle
+        DeleteStep.PartialFailed -> AmemeSymbols.Error
+        else -> AmemeSymbols.HourglassTop
     }
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {

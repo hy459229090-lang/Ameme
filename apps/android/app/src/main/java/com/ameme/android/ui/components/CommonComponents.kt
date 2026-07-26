@@ -7,13 +7,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.CloudOff
-import androidx.compose.material.icons.outlined.ErrorOutline
-import androidx.compose.material.icons.outlined.HourglassTop
-import androidx.compose.material.icons.outlined.Lock
-import androidx.compose.material.icons.outlined.PlayCircleOutline
-import androidx.compose.material.icons.outlined.SyncProblem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -37,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import com.ameme.android.domain.ExperienceMode
 import com.ameme.android.domain.FactStatus
 import com.ameme.android.domain.MemoryEvent
+import com.ameme.android.ui.icons.AmemeSymbols
 import java.time.format.DateTimeFormatter
 
 @Composable
@@ -47,11 +41,11 @@ fun StateNotice(
 ) {
     if (mode == ExperienceMode.Ready || mode == ExperienceMode.Sparse || mode == ExperienceMode.Empty) return
     val icon: ImageVector = when (mode) {
-        ExperienceMode.Loading -> Icons.Outlined.HourglassTop
-        ExperienceMode.Partial -> Icons.Outlined.SyncProblem
-        ExperienceMode.Offline -> Icons.Outlined.CloudOff
-        ExperienceMode.RecoverableError -> Icons.Outlined.ErrorOutline
-        ExperienceMode.PermissionLimited -> Icons.Outlined.Lock
+        ExperienceMode.Loading -> AmemeSymbols.HourglassTop
+        ExperienceMode.Partial -> AmemeSymbols.SyncProblem
+        ExperienceMode.Offline -> AmemeSymbols.CloudOff
+        ExperienceMode.RecoverableError -> AmemeSymbols.Error
+        ExperienceMode.PermissionLimited -> AmemeSymbols.Lock
     }
     Surface(
         color = MaterialTheme.colorScheme.secondaryContainer,
@@ -95,7 +89,7 @@ fun DemoModeNotice(modifier: Modifier = Modifier) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
-            Icons.Outlined.PlayCircleOutline,
+            AmemeSymbols.PlayCircle,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.primary,
         )

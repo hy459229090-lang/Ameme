@@ -14,15 +14,6 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Description
-import androidx.compose.material.icons.outlined.CalendarMonth
-import androidx.compose.material.icons.outlined.EditNote
-import androidx.compose.material.icons.outlined.MicNone
-import androidx.compose.material.icons.outlined.PhotoCamera
-import androidx.compose.material.icons.outlined.Search
-import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material3.Button
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -74,6 +65,7 @@ import com.ameme.android.ui.components.DemoModeNotice
 import com.ameme.android.ui.components.EventRow
 import com.ameme.android.ui.components.StateNotice
 import com.ameme.android.ui.displayDate
+import com.ameme.android.ui.icons.AmemeSymbols
 import java.time.LocalDate
 import kotlinx.coroutines.launch
 
@@ -139,7 +131,7 @@ fun TodayScreen(
                                 onClick = onSearch,
                                 modifier = Modifier.semantics { contentDescription = "搜索历史记录" },
                             ) {
-                                Icon(Icons.Outlined.Search, contentDescription = null)
+                                Icon(AmemeSymbols.Search, contentDescription = null)
                             }
                             VerticalDivider(
                                 modifier = Modifier.height(24.dp),
@@ -149,7 +141,7 @@ fun TodayScreen(
                                 onClick = onSettings,
                                 modifier = Modifier.semantics { contentDescription = "打开设置" },
                             ) {
-                                Icon(Icons.Outlined.Settings, contentDescription = null)
+                                Icon(AmemeSymbols.Settings, contentDescription = null)
                             }
                         }
                     }
@@ -163,7 +155,7 @@ fun TodayScreen(
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = { if (captureReady) showCapture = true },
-                icon = { Icon(Icons.Rounded.Add, contentDescription = null) },
+                icon = { Icon(AmemeSymbols.Add, contentDescription = null) },
                 text = { Text("记录") },
                 containerColor = if (captureReady) {
                     MaterialTheme.colorScheme.primary
@@ -447,27 +439,27 @@ private fun CaptureBottomSheet(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             if (selectedKind == null) {
-                CaptureChoice(Icons.Outlined.EditNote, CaptureKind.Text, "输入一句话") { selectedKind = it }
+                CaptureChoice(AmemeSymbols.EditNote, CaptureKind.Text, "输入一句话") { selectedKind = it }
                 CaptureChoice(
-                    Icons.Outlined.MicNone,
+                    AmemeSymbols.MicNone,
                     CaptureKind.Voice,
                     "调用系统录音，或选择已有音频",
                 ) { selectedKind = it }
                 CaptureChoice(
-                    Icons.Outlined.PhotoCamera,
+                    AmemeSymbols.PhotoCamera,
                     CaptureKind.Photo,
                     "从系统照片选择器选择一张",
                     modifier = Modifier.testTag("capture-photo"),
                 ) {
                     onRequestPhoto()
                 }
-                CaptureChoice(Icons.Outlined.CalendarMonth, CaptureKind.Import, "选择日历和最多 31 天的日期范围") {
+                CaptureChoice(AmemeSymbols.CalendarMonth, CaptureKind.Import, "选择日历和最多 31 天的日期范围") {
                     onRequestCalendar()
                 }
             } else {
                 val kind = requireNotNull(selectedKind)
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Outlined.Description, contentDescription = null)
+                    Icon(AmemeSymbols.Description, contentDescription = null)
                     Text(kind.label, modifier = Modifier.padding(start = 10.dp), style = MaterialTheme.typography.titleMedium)
                 }
                 if (kind == CaptureKind.Voice) {
