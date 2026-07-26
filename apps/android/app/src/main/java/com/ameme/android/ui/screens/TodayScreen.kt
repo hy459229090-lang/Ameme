@@ -45,6 +45,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
@@ -96,7 +97,10 @@ fun TodayScreen(
     var showSummaryConsent by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val today = LocalDate.now()
-    val useAccessibilityHeader = LocalDensity.current.fontScale >= 1.5f
+    val fontScale = LocalDensity.current.fontScale
+    val useAccessibilityHeader = fontScale >= 1.5f
+    val useCompactCapture = useAccessibilityHeader ||
+        (fontScale >= 1.3f && LocalConfiguration.current.screenWidthDp <= 360)
     val captureReady = experienceMode != ExperienceMode.Loading && experienceMode != ExperienceMode.RecoverableError
     val allToday = events.filter { it.localDate == today }.sortedBy { it.time }
     val visibleToday = when (experienceMode) {
@@ -185,7 +189,7 @@ fun TodayScreen(
             } else {
                 MaterialTheme.colorScheme.onSurfaceVariant
             }
-            if (useAccessibilityHeader) {
+            if (useCompactCapture) {
                 FloatingActionButton(
                     onClick = { if (captureReady) showCapture = true },
                     containerColor = captureContainerColor,
