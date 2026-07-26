@@ -1555,28 +1555,36 @@ struct DeleteView: View {
                     Text("• 不会删除系统照片、文件或其他来源原件")
                 }
                 DeleteProgressView(step: step)
-                switch step {
-                case .queued:
-                    Button("确认删除") { delete() }
+                Group {
+                    switch step {
+                    case .queued:
+                        Button("确认删除") { delete() }
+                            .buttonStyle(.borderedProminent)
+                            .tint(.red)
+                            .disabled(event == nil || isDeleting)
+                            .frame(maxWidth: .infinity)
+                    case .partialFailed:
+                        Button("重试删除") { delete() }
+                            .buttonStyle(.borderedProminent)
+                            .frame(maxWidth: .infinity)
+                    case .completed:
+                        Button(action: onDeleted) {
+                            Text("返回今天")
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                                .contentShape(Rectangle())
+                        }
                         .buttonStyle(.borderedProminent)
-                        .tint(.red)
-                        .disabled(event == nil || isDeleting)
-                        .frame(maxWidth: .infinity)
-                case .partialFailed:
-                    Button("重试删除") { delete() }
-                        .buttonStyle(.borderedProminent)
-                        .frame(maxWidth: .infinity)
-                case .completed:
-                    Button(action: onDeleted) {
-                        Text("返回今天")
+                        .disabled(false)
+                        .accessibilityIdentifier("delete.returnToday")
+                    default:
+                        ProgressView("正在更新本机状态…")
                             .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .accessibilityIdentifier("delete.returnToday")
-                default:
-                    ProgressView("正在更新本机状态…")
-                        .frame(maxWidth: .infinity)
                 }
+                // The queued action is conditionally disabled. Give every step
+                // a fresh identity so that state cannot leak into the completed
+                // return action when SwiftUI reconciles this switch in place.
+                .id(step)
                 Text("离开此页后，已创建的删除任务仍会保留本机状态。")
                     .font(.footnote)
                     .foregroundStyle(AmemeStyle.secondaryText)
