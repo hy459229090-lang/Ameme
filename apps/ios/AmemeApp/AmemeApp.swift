@@ -760,6 +760,8 @@ struct TodayView: View {
 
 struct SearchView: View {
     @EnvironmentObject private var model: AppModel
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
     let onSettings: () -> Void
     let onEvent: (UUID) -> Void
     @State private var query = ""
@@ -809,7 +811,7 @@ struct SearchView: View {
                 }
             }
             .padding(.horizontal, 20)
-            .padding(.bottom, 24)
+            .padding(.bottom, searchContentBottomPadding)
         }
         .accessibilityIdentifier("search.results")
         .navigationTitle("搜索")
@@ -880,6 +882,10 @@ struct SearchView: View {
             }
             .presentationDetents([.medium])
         }
+    }
+
+    private var searchContentBottomPadding: CGFloat {
+        dynamicTypeSize.isAccessibilitySize && verticalSizeClass == .compact ? 240 : 24
     }
 
     private var rangeDescription: String {
