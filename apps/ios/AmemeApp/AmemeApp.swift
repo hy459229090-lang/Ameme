@@ -679,7 +679,7 @@ struct TodayView: View {
     let onSettings: () -> Void
     let onEvent: (UUID) -> Void
     @State private var showingCapture = false
-    @State private var summaryExpanded = true
+    @State private var summaryExpanded = false
 
     private var today: Date { .now }
     private var todayEvents: [MemoryEvent] { model.store.events(on: today) }
@@ -2357,22 +2357,19 @@ private struct StateNoticeView: View {
 
 private struct DemoModeNotice: View {
     var body: some View {
-        Label {
-            VStack(alignment: .leading, spacing: 3) {
-                Text("演示数据")
-                    .font(.subheadline.weight(.semibold))
-                Text("固定示例仅用于体验，不会写入真实本机记录。")
-                    .font(.footnote)
-                    .foregroundStyle(AmemeStyle.secondaryText)
-            }
-        } icon: {
+        HStack(spacing: 6) {
             Image(systemName: "play.rectangle")
                 .foregroundStyle(AmemeStyle.teal)
+                .accessibilityHidden(true)
+            Text("演示数据")
+                .font(.footnote.weight(.semibold))
+            Text("· 不写入本机")
+                .font(.footnote)
+                .foregroundStyle(AmemeStyle.secondaryText)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 2)
+        .padding(.vertical, 4)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(AmemeStyle.teal.opacity(0.08), in: RoundedRectangle(cornerRadius: 14))
         .accessibilityElement(children: .combine)
         .accessibilityLabel("演示数据。固定示例仅用于体验，不会写入真实本机记录。")
     }

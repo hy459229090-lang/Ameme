@@ -84,35 +84,30 @@ fun StateNotice(
 
 @Composable
 fun DemoModeNotice(modifier: Modifier = Modifier) {
-    Surface(
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        shape = MaterialTheme.shapes.medium,
-        modifier = modifier.fillMaxWidth().semantics {
-            contentDescription = "演示数据。固定示例仅用于体验，不会写入真实本机记录。"
-        },
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 4.dp, vertical = 4.dp)
+            .semantics {
+                contentDescription = "演示数据。固定示例仅用于体验，不会写入真实本机记录。"
+            },
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                Icons.Outlined.PlayCircleOutline,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-            )
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(
-                    "演示数据",
-                    style = MaterialTheme.typography.titleSmall,
-                )
-                Text(
-                    "固定示例仅用于体验，不会写入真实本机记录。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
+        Icon(
+            Icons.Outlined.PlayCircleOutline,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+        )
+        Text(
+            "演示数据",
+            style = MaterialTheme.typography.labelLarge,
+        )
+        Text(
+            "· 不写入本机",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
