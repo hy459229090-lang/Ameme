@@ -131,7 +131,7 @@ jobs:
           test "$(adb shell getconf PAGE_SIZE | tr -d '\r')" = "16384"
           adb shell settings put system font_scale 1.3
           timeout 30m ./gradlew --no-daemon --console=plain connectedDebugAndroidTest
-          screenshot_path="/sdcard/Android/data/com.ameme.android/files/test-evidence/android-today-demo-font130.png"
+          screenshot_path="/sdcard/Pictures/AmemeTestEvidence/android-today-demo-font130.png"
           adb shell test -s "$screenshot_path"
           mkdir -p "$RUNNER_TEMP/AmemeAndroidScreenshots"
           adb pull "$screenshot_path" "$RUNNER_TEMP/AmemeAndroidScreenshots/"

@@ -1,6 +1,9 @@
 package com.ameme.android
 
+import android.content.ContentValues
 import android.graphics.Bitmap
+import android.os.Environment
+import android.provider.MediaStore
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.hasContentDescription
@@ -28,8 +31,6 @@ import com.ameme.android.domain.LocatorPermissionState
 import com.ameme.android.domain.Sensitivity
 import com.ameme.android.domain.SourceCaptureRequest
 import com.ameme.android.domain.SourceKind
-import java.io.File
-import java.io.FileOutputStream
 import java.time.LocalDate
 import java.time.LocalTime
 import kotlin.math.roundToInt
@@ -331,21 +332,46 @@ class AmemeUiSmokeTest {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val fontScale = instrumentation.targetContext.resources.configuration.fontScale
         val scaleLabel = (fontScale * 100).roundToInt()
-        val evidenceDirectory = checkNotNull(
-            instrumentation.targetContext.getExternalFilesDir("test-evidence"),
+        val resolver = instrumentation.targetContext.contentResolver
+        val displayName = "android-today-demo-font$scaleLabel.png"
+        val relativePath = "${Environment.DIRECTORY_PICTURES}/AmemeTestEvidence/"
+        resolver.delete(
+            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+            "${MediaStore.Images.Media.DISPLAY_NAME} = ? AND " +
+                "${MediaStore.Images.Media.RELATIVE_PATH} = ?",
+            arrayOf(displayName, relativePath),
         )
-        val screenshot = File(
-            evidenceDirectory,
-            "android-today-demo-font$scaleLabel.png",
-        )
-        FileOutputStream(screenshot).use { output ->
-            assertTrue(
-                "UIAutomation could not encode the current Today screenshot",
-                instrumentation.uiAutomation.takeScreenshot()
-                    .compress(Bitmap.CompressFormat.PNG, 100, output),
+        val screenshot = checkNotNull(
+            resolver.insert(
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                ContentValues().apply {
+                    put(MediaStore.Images.Media.DISPLAY_NAME, displayName)
+                    put(MediaStore.Images.Media.MIME_TYPE, "image/png")
+                    put(MediaStore.Images.Media.RELATIVE_PATH, relativePath)
+                    put(MediaStore.Images.Media.IS_PENDING, 1)
+                },
+            ),
+        ) { "MediaStore could not create the Today screenshot entry" }
+        try {
+            checkNotNull(resolver.openOutputStream(screenshot)).use { output ->
+                assertTrue(
+                    "UIAutomation could not encode the current Today screenshot",
+                    instrumentation.uiAutomation.takeScreenshot()
+                        .compress(Bitmap.CompressFormat.PNG, 100, output),
+                )
+            }
+            resolver.update(
+                screenshot,
+                ContentValues().apply {
+                    put(MediaStore.Images.Media.IS_PENDING, 0)
+                },
+                null,
+                null,
             )
+        } catch (error: Throwable) {
+            resolver.delete(screenshot, null, null)
+            throw error
         }
-        assertTrue("Today screenshot is empty", screenshot.length() > 0)
     }
 
     @Test
