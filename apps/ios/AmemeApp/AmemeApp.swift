@@ -1024,16 +1024,20 @@ struct CaptureSheet: View {
                         CaptureChoiceButton(icon: "square.and.pencil", title: "文字", detail: "输入一句话，立即保存") {
                             self.selectedKind = .text
                         }
+                        .accessibilityIdentifier("capture.text")
                         CaptureChoiceButton(icon: "mic", title: "语音", detail: "录制或选择音频；完成后保存来源引用") {
                             self.selectedKind = .voice
                         }
+                        .accessibilityIdentifier("capture.voice")
                         PhotosPicker(selection: $photoItem, matching: .images) {
                             CaptureChoiceLabel(icon: "photo", title: "照片", detail: "使用系统照片选择器选择当前对象")
                         }
                         .buttonStyle(.plain)
+                        .accessibilityIdentifier("capture.photo")
                         CaptureChoiceButton(icon: "doc.badge.plus", title: "导入", detail: "文本文件、音频或你主动选择的日历计划") {
                             self.selectedKind = .importFile
                         }
+                        .accessibilityIdentifier("capture.import")
                     }
                 }
                 .padding(24)

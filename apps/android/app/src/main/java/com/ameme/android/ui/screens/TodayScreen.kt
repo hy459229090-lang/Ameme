@@ -20,6 +20,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -44,6 +45,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.Role
@@ -94,6 +96,7 @@ fun TodayScreen(
     var showSummaryConsent by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val today = LocalDate.now()
+    val useAccessibilityHeader = LocalDensity.current.fontScale >= 1.5f
     val captureReady = experienceMode != ExperienceMode.Loading && experienceMode != ExperienceMode.RecoverableError
     val allToday = events.filter { it.localDate == today }.sortedBy { it.time }
     val visibleToday = when (experienceMode) {
@@ -105,18 +108,25 @@ fun TodayScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                expandedHeight = 96.dp,
+                expandedHeight = if (useAccessibilityHeader) 64.dp else 96.dp,
                 title = {
-                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    if (useAccessibilityHeader) {
                         Text(
                             "今天",
                             style = MaterialTheme.typography.headlineMedium,
                         )
-                        Text(
-                            today.displayDate(),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(
+                                "今天",
+                                style = MaterialTheme.typography.headlineMedium,
+                            )
+                            Text(
+                                today.displayDate(),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
                 },
                 actions = {
@@ -153,34 +163,49 @@ fun TodayScreen(
             )
         },
         floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = { if (captureReady) showCapture = true },
-                icon = { Icon(AmemeSymbols.Add, contentDescription = null) },
-                text = { Text("记录") },
-                containerColor = if (captureReady) {
-                    MaterialTheme.colorScheme.primary
+            val captureSemantics = Modifier.clearAndSetSemantics {
+                contentDescription = "记录一件事"
+                role = Role.Button
+                if (!captureReady) {
+                    disabled()
                 } else {
-                    MaterialTheme.colorScheme.surfaceVariant
-                },
-                contentColor = if (captureReady) {
-                    MaterialTheme.colorScheme.onPrimary
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
-                shape = MaterialTheme.shapes.large,
-                modifier = Modifier.clearAndSetSemantics {
-                    contentDescription = "记录一件事"
-                    role = Role.Button
-                    if (!captureReady) {
-                        disabled()
-                    } else {
-                        semanticsOnClick {
-                            showCapture = true
-                            true
-                        }
+                    semanticsOnClick {
+                        showCapture = true
+                        true
                     }
-                },
-            )
+                }
+            }
+            val captureContainerColor = if (captureReady) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.surfaceVariant
+            }
+            val captureContentColor = if (captureReady) {
+                MaterialTheme.colorScheme.onPrimary
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            }
+            if (useAccessibilityHeader) {
+                FloatingActionButton(
+                    onClick = { if (captureReady) showCapture = true },
+                    containerColor = captureContainerColor,
+                    contentColor = captureContentColor,
+                    shape = MaterialTheme.shapes.large,
+                    modifier = captureSemantics,
+                ) {
+                    Icon(AmemeSymbols.Add, contentDescription = null)
+                }
+            } else {
+                ExtendedFloatingActionButton(
+                    onClick = { if (captureReady) showCapture = true },
+                    icon = { Icon(AmemeSymbols.Add, contentDescription = null) },
+                    text = { Text("记录") },
+                    containerColor = captureContainerColor,
+                    contentColor = captureContentColor,
+                    shape = MaterialTheme.shapes.large,
+                    modifier = captureSemantics,
+                )
+            }
         },
         containerColor = MaterialTheme.colorScheme.background,
     ) { padding ->
@@ -195,6 +220,16 @@ fun TodayScreen(
                 bottom = 96.dp,
             ),
         ) {
+            if (useAccessibilityHeader) {
+                item {
+                    Text(
+                        today.displayDate(),
+                        modifier = Modifier.padding(top = 12.dp, bottom = 4.dp),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
             item {
                 val readyCount = visibleToday.count { it.factStatus != FactStatus.Processing }
                 Text(

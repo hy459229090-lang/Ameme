@@ -93,7 +93,7 @@ final class AmemeUITests: XCTestCase {
         XCTAssertTrue(app.buttons["记录一件事"].waitForExistence(timeout: 5))
 
         app.buttons["记录一件事"].tap()
-        let textChoice = app.buttons["文字"]
+        let textChoice = app.buttons["capture.text"]
         XCTAssertTrue(textChoice.waitForExistence(timeout: 5))
         textChoice.tap()
         let editor = app.textViews["写下一句话"]

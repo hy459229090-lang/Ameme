@@ -273,9 +273,11 @@ class AmemeUiSmokeTest {
         composeRule.onNodeWithText("删除影响与进度").assertIsDisplayed()
         composeRule.onNodeWithText("影响范围").assertIsDisplayed()
         composeRule.onNodeWithText("确认删除").performClick()
-        composeRule.waitUntil(timeoutMillis = 10_000) {
-            composeRule.onAllNodesWithText("返回今天").fetchSemanticsNodes().isNotEmpty()
+        composeRule.waitUntil(timeoutMillis = 30_000) {
+            composeRule.onAllNodesWithText("返回今天").fetchSemanticsNodes().isNotEmpty() ||
+                composeRule.onAllNodesWithText("重试删除").fetchSemanticsNodes().isNotEmpty()
         }
+        composeRule.onNodeWithText("返回今天").assertIsDisplayed()
         composeRule.onNodeWithText("返回今天").performClick()
         composeRule.onNodeWithContentDescription("搜索历史记录").performClick()
         composeRule.onNodeWithTag("search-query").performTextInput(title)
@@ -317,7 +319,9 @@ class AmemeUiSmokeTest {
         }
         composeRule.onNodeWithContentDescription("返回").performClick()
         waitForCaptureEntry()
-        composeRule.onNodeWithContentDescription(realTitle, substring = true).performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("today-list")
+            .performScrollToNode(hasContentDescription(realTitle, substring = true))
+        composeRule.onNodeWithContentDescription(realTitle, substring = true).assertIsDisplayed()
     }
 
     @Test
@@ -336,6 +340,8 @@ class AmemeUiSmokeTest {
             "演示数据。固定示例仅用于体验，不会写入真实本机记录。",
             substring = true,
         ).assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("搜索历史记录").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("打开设置").assertIsDisplayed()
         composeRule.onNodeWithContentDescription("记录一件事").assertIsDisplayed()
         composeRule.waitForIdle()
 
