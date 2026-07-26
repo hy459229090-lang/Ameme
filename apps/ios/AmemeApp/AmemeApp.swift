@@ -487,6 +487,7 @@ enum AppDestination: Hashable {
 @MainActor
 private final class AppRouter: ObservableObject {
     @Published var path: [AppDestination] = []
+    @Published private(set) var rootIdentity = UUID()
 
     func push(_ destination: AppDestination) {
         path.append(destination)
@@ -494,6 +495,10 @@ private final class AppRouter: ObservableObject {
 
     func returnToToday() {
         path.removeAll()
+        // Rebuild the stack as well as clearing its data. This closes the
+        // deep Search → Event → Delete route even if iOS is still reconciling
+        // the destination that initiated the reset.
+        rootIdentity = UUID()
     }
 }
 
@@ -539,6 +544,7 @@ struct RootView: View {
                 }
             }
         }
+        .id(router.rootIdentity)
         .tint(AmemeStyle.teal)
         .alert("提示", isPresented: Binding(
             get: { model.notice != nil },
