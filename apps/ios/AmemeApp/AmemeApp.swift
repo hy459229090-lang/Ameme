@@ -2375,6 +2375,7 @@ private struct DemoModeNotice: View {
         .padding(.vertical, 4)
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("today.demoNotice")
         .accessibilityLabel("演示数据。固定示例仅用于体验，不会写入真实本机记录。")
     }
 }

@@ -35,7 +35,8 @@ final class AmemeUITests: XCTestCase {
         dismissNotice.tap()
 
         app.navigationBars["设置"].buttons.firstMatch.tap()
-        XCTAssertTrue(app.staticTexts["演示数据"].waitForExistence(timeout: 5))
+        let demoNotice = app.descendants(matching: .any)["today.demoNotice"]
+        XCTAssertTrue(demoNotice.waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["today.search"].isHittable)
         XCTAssertTrue(app.buttons["today.settings"].isHittable)
         attachScreenshot(named: "02-today-demo-overview")
