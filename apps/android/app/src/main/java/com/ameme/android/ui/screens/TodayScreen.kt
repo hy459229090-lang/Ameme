@@ -412,7 +412,12 @@ private fun CaptureBottomSheet(
                     CaptureKind.Voice,
                     "调用系统录音，或选择已有音频",
                 ) { selectedKind = it }
-                CaptureChoice(Icons.Outlined.PhotoCamera, CaptureKind.Photo, "从系统照片选择器选择一张") {
+                CaptureChoice(
+                    Icons.Outlined.PhotoCamera,
+                    CaptureKind.Photo,
+                    "从系统照片选择器选择一张",
+                    modifier = Modifier.testTag("capture-photo"),
+                ) {
                     onRequestPhoto()
                 }
                 CaptureChoice(Icons.Outlined.CalendarMonth, CaptureKind.Import, "选择日历和最多 31 天的日期范围") {
@@ -504,13 +509,14 @@ private fun CaptureChoice(
     icon: ImageVector,
     kind: CaptureKind,
     detail: String,
+    modifier: Modifier = Modifier,
     onClick: (CaptureKind) -> Unit,
 ) {
     ListItem(
         headlineContent = { Text(kind.label) },
         supportingContent = { Text(detail) },
         leadingContent = { Icon(icon, contentDescription = null) },
-        modifier = Modifier
+        modifier = modifier
             .clickable(role = Role.Button) { onClick(kind) }
             .semantics { contentDescription = "${kind.label}：$detail" },
     )

@@ -16,6 +16,8 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeUp
 import androidx.test.platform.app.InstrumentationRegistry
 import com.ameme.android.data.local.AndroidKeystorePendingActionStore
 import com.ameme.android.data.local.PendingActionSnapshot
@@ -91,8 +93,8 @@ class AmemeUiSmokeTest {
         composeRule.onNodeWithContentDescription("记录一件事").performClick()
         composeRule.onNodeWithText("文字").assertIsDisplayed()
         composeRule.onNodeWithText("语音").assertIsDisplayed()
-        composeRule.onNodeWithTag("capture-options").performScrollToNode(hasText("照片"))
-        composeRule.onNodeWithText("照片").assertIsDisplayed()
+        composeRule.onNodeWithTag("capture-options").performTouchInput { swipeUp() }
+        composeRule.onNodeWithTag("capture-photo").assertIsDisplayed()
     }
 
     @Test
