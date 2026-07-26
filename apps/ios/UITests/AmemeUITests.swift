@@ -77,13 +77,18 @@ final class AmemeUITests: XCTestCase {
         scrollContainer: XCUIElement? = nil
     ) -> Bool {
         let scroller = scrollContainer ?? app
-        for _ in 0..<8 {
-            if element.exists && element.isHittable { return true }
-            scroller.swipeUp()
-        }
-        for _ in 0..<8 {
-            if element.exists && element.isHittable { return true }
-            scroller.swipeDown()
+        for _ in 0..<16 {
+            guard element.exists else {
+                scroller.swipeUp()
+                continue
+            }
+            if element.isHittable { return true }
+
+            if element.frame.midY > scroller.frame.midY {
+                scroller.swipeUp()
+            } else {
+                scroller.swipeDown()
+            }
         }
         return element.exists && element.isHittable
     }
