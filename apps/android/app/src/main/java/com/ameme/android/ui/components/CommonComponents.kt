@@ -6,11 +6,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.HourglassTop
 import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.PlayCircleOutline
 import androidx.compose.material.icons.outlined.SyncProblem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -20,7 +22,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -28,6 +32,7 @@ import androidx.compose.ui.semantics.onClick as semanticsOnClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.ameme.android.domain.ExperienceMode
 import com.ameme.android.domain.FactStatus
@@ -80,18 +85,33 @@ fun StateNotice(
 @Composable
 fun DemoModeNotice(modifier: Modifier = Modifier) {
     Surface(
-        color = MaterialTheme.colorScheme.primaryContainer,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
         shape = MaterialTheme.shapes.medium,
         modifier = modifier.fillMaxWidth().semantics {
             contentDescription = "演示数据。固定示例仅用于体验，不会写入真实本机记录。"
         },
     ) {
-        Column(Modifier.padding(12.dp)) {
-            Text("演示数据", fontWeight = FontWeight.SemiBold)
-            Text(
-                "固定示例仅用于体验，不会写入真实本机记录。",
-                style = MaterialTheme.typography.bodySmall,
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                Icons.Outlined.PlayCircleOutline,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
             )
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    "演示数据",
+                    style = MaterialTheme.typography.titleSmall,
+                )
+                Text(
+                    "固定示例仅用于体验，不会写入真实本机记录。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }
@@ -102,62 +122,129 @@ fun EventRow(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(vertical = 14.dp, horizontal = 4.dp)
-            .clearAndSetSemantics {
-                contentDescription = buildString {
-                    append(event.time?.format(DateTimeFormatter.ofPattern("HH:mm")) ?: "时间待确认")
-                    append("，${event.title}，${event.factStatus.label}")
-                    if (event.isLocalOnly) append("，仅本机")
-                }
-                role = Role.Button
-                semanticsOnClick {
-                    onClick()
-                    true
-                }
-            },
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
-        verticalAlignment = Alignment.Top,
-    ) {
-        Text(
-            event.time?.format(DateTimeFormatter.ofPattern("HH:mm")) ?: "待定",
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-            Text(event.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
-            Text(event.detail, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                StatusChip(event.factStatus)
-                if (event.isLocalOnly) {
+    val useStackedLayout = LocalDensity.current.fontScale >= 1.5f
+    val rowModifier = modifier
+        .fillMaxWidth()
+        .clickable(onClick = onClick)
+        .padding(vertical = 16.dp, horizontal = 4.dp)
+        .clearAndSetSemantics {
+            contentDescription = buildString {
+                append(event.time?.format(DateTimeFormatter.ofPattern("HH:mm")) ?: "时间待确认")
+                append("，${event.title}，${event.factStatus.label}")
+                if (event.isLocalOnly) append("，仅本机")
+            }
+            role = Role.Button
+            semanticsOnClick {
+                onClick()
+                true
+            }
+        }
+
+    if (useStackedLayout) {
+        Column(
+            modifier = rowModifier,
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                EventTime(event)
+                EventStatus(event)
+            }
+            Text(
+                event.title,
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Text(
+                event.detail,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    } else {
+        Row(
+            modifier = rowModifier,
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalAlignment = Alignment.Top,
+        ) {
+            EventTime(event, modifier = Modifier.width(64.dp))
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(5.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.Top,
+                ) {
                     Text(
-                        "仅本机",
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 7.dp),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        event.title,
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
                     )
+                    EventStatus(event)
                 }
+                Text(
+                    event.detail,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
     }
-    HorizontalDivider()
+    HorizontalDivider(
+        modifier = Modifier.padding(start = if (useStackedLayout) 0.dp else 80.dp),
+        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f),
+    )
 }
 
 @Composable
-private fun StatusChip(status: FactStatus) {
-    Surface(
-        color = MaterialTheme.colorScheme.secondaryContainer,
-        shape = MaterialTheme.shapes.small,
+private fun EventTime(
+    event: MemoryEvent,
+    modifier: Modifier = Modifier,
+) {
+    Text(
+        event.time?.format(DateTimeFormatter.ofPattern("HH:mm")) ?: "待定",
+        modifier = modifier,
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.primary,
     )
-    {
-        Text(
-            status.label,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 7.dp),
-            style = MaterialTheme.typography.labelLarge,
-        )
+}
+
+@Composable
+private fun EventStatus(event: MemoryEvent) {
+    Text(
+        buildString {
+            append(event.factStatus.compactLabel)
+            if (event.isLocalOnly) append(" · 仅本机")
+        },
+        style = MaterialTheme.typography.labelMedium,
+        color = statusColor(event.factStatus),
+    )
+}
+
+private val FactStatus.compactLabel: String
+    get() = when (this) {
+        FactStatus.Confirmed, FactStatus.UserAsserted -> "已记录"
+        FactStatus.Planned -> "计划"
+        FactStatus.Inferred -> "推测"
+        FactStatus.NeedsReview -> "待核验"
+        FactStatus.Conflict -> "冲突"
+        FactStatus.Processing -> "整理中"
+    }
+
+@Composable
+private fun statusColor(status: FactStatus): Color {
+    return when (status) {
+        FactStatus.Confirmed, FactStatus.UserAsserted -> MaterialTheme.colorScheme.primary
+        FactStatus.NeedsReview, FactStatus.Conflict -> MaterialTheme.colorScheme.tertiary
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
 }
 

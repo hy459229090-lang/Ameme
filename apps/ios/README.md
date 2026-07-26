@@ -5,6 +5,7 @@ Ameme 的 iOS 原生 MVP，使用 SwiftUI、iOS 18+ 原生控件和本地优先�
 ## 当前实现
 
 - SwiftUI 原生导航壳：首次引导、今天、历史搜索、事件详情、设置和删除进度
+- “今天”页采用内容优先的单列时间流：搜索与设置合并为一个克制的顶部控制面，状态改为安静文字而非标签墙，记录入口保持单一且贴近拇指区。iOS 26+ 使用原生 Liquid Glass 交互材质；iOS 18–25 使用系统 Material 降级，不用手绘玻璃或把内容卡片玻璃化
 - 单一悬浮“记录”入口：文字、照片、语音、文本/音频文件和主动日历导入
 - 文本/音频文件导入先进入确认预览；取消不会创建事件，确认前不写入本机事件链。真实 iOS Share Extension 已接入可复现的 Xcode App/Extension target；系统 Share Sheet 的最终签名与真机证据仍作为发布门禁，不会把文件选择器冒充为系统分享扩展
 - iOS App 已提供安全的 incoming-share handoff：Share Extension 可将受控 JSON/文件写入 App Group 后打开只含 UUID 的 `ameme://incoming-share/<id>` URL，App 再展示同一确认页；正文和文件不会放进 URL。App 启动还会扫描共享目录中未完成的 UUID，在 URL 交接后被系统终止时恢复同一确认页；损坏 handoff fail closed，不触碰本机事件。App/Extension 已共享同一 App Group entitlement 并由 `Ameme.xcodeproj` 嵌入；签名团队和真机 Share Sheet 仍需发布设备验收
@@ -33,7 +34,7 @@ Ameme 的 iOS 原生 MVP，使用 SwiftUI、iOS 18+ 原生控件和本地优先�
 
 ## 打开与运行
 
-在安装完整 Xcode 16.4+ / iOS 18.5 SDK 的 Mac 上打开已生成的工程，选择共享 `Ameme` scheme 运行或测试：
+在安装完整 Xcode 26.6 / iOS 26.5 SDK 的 Mac 上打开已生成的工程，选择共享 `Ameme` scheme 运行或测试：
 
 ```text
 apps/ios/Ameme.xcodeproj
@@ -60,7 +61,7 @@ xcodebuild \
   build
 ```
 
-仓库的 iOS GitHub Actions 会在 iOS 18.5 Simulator、深色模式和无障碍超大字体下执行单元/UI 测试，把当前运行截图同时保存在 `.xcresult` 并导出为可直接复核的 artifact 附件。本地环境若只有 Command Line Tools，仍不能把 Shared Smoke 当作完整 Xcode、Simulator、签名或真机证据。
+仓库的 iOS GitHub Actions 会在 Xcode 26.6 / iOS 26.5 Simulator 上分别执行浅色默认大字体的完整测试，以及深色无障碍超大字体的 UI 测试；两组运行都把截图保存在独立 `.xcresult` 并导出为可直接复核的 artifact 附件。本地环境若只有 Command Line Tools，仍不能把 Shared Smoke 当作完整 Xcode、Simulator、Liquid Glass 渲染、签名或真机证据。
 
 在没有完整 XCTest runtime 的当前环境，可先运行共享核心 smoke gate：
 

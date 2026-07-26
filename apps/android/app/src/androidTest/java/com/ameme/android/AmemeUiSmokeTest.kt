@@ -1,5 +1,6 @@
 package com.ameme.android
 
+import android.graphics.Bitmap
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.hasContentDescription
@@ -27,8 +28,11 @@ import com.ameme.android.domain.LocatorPermissionState
 import com.ameme.android.domain.Sensitivity
 import com.ameme.android.domain.SourceCaptureRequest
 import com.ameme.android.domain.SourceKind
+import java.io.File
+import java.io.FileOutputStream
 import java.time.LocalDate
 import java.time.LocalTime
+import kotlin.math.roundToInt
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -303,6 +307,45 @@ class AmemeUiSmokeTest {
         composeRule.onNodeWithContentDescription("返回").performClick()
         waitForCaptureEntry()
         composeRule.onNodeWithContentDescription(realTitle, substring = true).performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    fun visualEvidence_demoTodayUsesCurrentPlatformDesign() {
+        composeRule.onNodeWithText("查看今天").performClick()
+        waitForCaptureEntry()
+        composeRule.onNodeWithContentDescription("打开设置").performClick()
+        composeRule.onNodeWithTag("settings-list")
+            .performScrollToNode(hasTestTag("load-demo-button"))
+        composeRule.onNodeWithTag("load-demo-button").performClick()
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            composeRule.onAllNodesWithText("当前正在查看演示数据").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithContentDescription("返回").performClick()
+        composeRule.onNodeWithContentDescription(
+            "演示数据。固定示例仅用于体验，不会写入真实本机记录。",
+            substring = true,
+        ).assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("记录一件事").assertIsDisplayed()
+        composeRule.waitForIdle()
+
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val fontScale = instrumentation.targetContext.resources.configuration.fontScale
+        val scaleLabel = (fontScale * 100).roundToInt()
+        val evidenceDirectory = checkNotNull(
+            instrumentation.targetContext.getExternalFilesDir("test-evidence"),
+        )
+        val screenshot = File(
+            evidenceDirectory,
+            "android-today-demo-font$scaleLabel.png",
+        )
+        FileOutputStream(screenshot).use { output ->
+            assertTrue(
+                "UIAutomation could not encode the current Today screenshot",
+                instrumentation.uiAutomation.takeScreenshot()
+                    .compress(Bitmap.CompressFormat.PNG, 100, output),
+            )
+        }
+        assertTrue("Today screenshot is empty", screenshot.length() > 0)
     }
 
     @Test

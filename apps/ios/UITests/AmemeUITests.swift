@@ -36,11 +36,14 @@ final class AmemeUITests: XCTestCase {
 
         app.navigationBars["设置"].buttons.firstMatch.tap()
         XCTAssertTrue(app.staticTexts["演示数据"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["today.search"].isHittable)
+        XCTAssertTrue(app.buttons["today.settings"].isHittable)
+        attachScreenshot(named: "02-today-demo-overview")
         let todayDemoEvent = app.staticTexts["整理今天的产品问题"]
         XCTAssertTrue(scrollToElement(todayDemoEvent, in: app))
         app.swipeUp()
         XCTAssertTrue(todayDemoEvent.waitForExistence(timeout: 5))
-        attachScreenshot(named: "02-today-demo")
+        attachScreenshot(named: "03-today-demo-events")
 
         app.swipeDown()
         let search = app.buttons["搜索历史记录"]
@@ -49,7 +52,7 @@ final class AmemeUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["搜索"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.searchFields["搜索历史记录"].waitForExistence(timeout: 5))
         XCTAssertTrue(scrollToElement(app.staticTexts["记录一段晚间想法"], in: app))
-        attachScreenshot(named: "03-search-demo")
+        attachScreenshot(named: "04-search-demo")
 
         XCUIDevice.shared.orientation = .landscapeLeft
         XCTAssertTrue(app.navigationBars["搜索"].waitForExistence(timeout: 5))
@@ -66,7 +69,7 @@ final class AmemeUITests: XCTestCase {
         let landscapeSettings = app.buttons["search.settings"]
         XCTAssertTrue(landscapeSettings.waitForExistence(timeout: 5))
         XCTAssertTrue(landscapeSettings.isHittable)
-        attachScreenshot(named: "04-search-demo-landscape")
+        attachScreenshot(named: "05-search-demo-landscape")
         XCUIDevice.shared.orientation = .portrait
     }
 

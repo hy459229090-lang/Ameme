@@ -131,6 +131,10 @@ jobs:
           test "$(adb shell getconf PAGE_SIZE | tr -d '\r')" = "16384"
           adb shell settings put system font_scale 1.3
           timeout 30m ./gradlew --no-daemon --console=plain connectedDebugAndroidTest
+          screenshot_path="/sdcard/Android/data/com.ameme.android/files/test-evidence/android-today-demo-font130.png"
+          adb shell test -s "$screenshot_path"
+          mkdir -p "$RUNNER_TEMP/AmemeAndroidScreenshots"
+          adb pull "$screenshot_path" "$RUNNER_TEMP/AmemeAndroidScreenshots/"
       - name: Upload Android device evidence
         if: always()
         uses: actions/upload-artifact@v4.6.2
@@ -139,5 +143,6 @@ jobs:
           path: |
             apps/android/app/build/reports/androidTests/connected/debug/
             ${{ runner.temp }}/ameme-emulator.log
+            ${{ runner.temp }}/AmemeAndroidScreenshots/
           if-no-files-found: warn
           retention-days: 14

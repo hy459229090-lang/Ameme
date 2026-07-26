@@ -18,10 +18,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.EditNote
-import androidx.compose.material.icons.outlined.Menu
 import androidx.compose.material.icons.outlined.MicNone
 import androidx.compose.material.icons.outlined.PhotoCamera
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material3.Button
 import androidx.compose.material3.AlertDialog
@@ -38,8 +38,11 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -110,26 +113,51 @@ fun TodayScreen(
     Scaffold(
         topBar = {
             TopAppBar(
+                expandedHeight = 96.dp,
                 title = {
-                    Column {
-                        Text("今天", fontWeight = FontWeight.SemiBold)
-                        Text(today.displayDate(), style = MaterialTheme.typography.labelMedium)
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            "今天",
+                            style = MaterialTheme.typography.headlineMedium,
+                        )
+                        Text(
+                            today.displayDate(),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                 },
                 actions = {
-                    IconButton(
-                        onClick = onSearch,
-                        modifier = Modifier.semantics { contentDescription = "搜索历史记录" },
+                    Surface(
+                        shape = MaterialTheme.shapes.extraLarge,
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
                     ) {
-                        Icon(Icons.Outlined.Search, contentDescription = null)
-                    }
-                    IconButton(
-                        onClick = onSettings,
-                        modifier = Modifier.semantics { contentDescription = "打开设置" },
-                    ) {
-                        Icon(Icons.Outlined.Menu, contentDescription = null)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            IconButton(
+                                onClick = onSearch,
+                                modifier = Modifier.semantics { contentDescription = "搜索历史记录" },
+                            ) {
+                                Icon(Icons.Outlined.Search, contentDescription = null)
+                            }
+                            VerticalDivider(
+                                modifier = Modifier.height(24.dp),
+                                color = MaterialTheme.colorScheme.outlineVariant,
+                            )
+                            IconButton(
+                                onClick = onSettings,
+                                modifier = Modifier.semantics { contentDescription = "打开设置" },
+                            ) {
+                                Icon(Icons.Outlined.Settings, contentDescription = null)
+                            }
+                        }
                     }
                 },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background,
+                    scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+                ),
             )
         },
         floatingActionButton = {
@@ -138,15 +166,16 @@ fun TodayScreen(
                 icon = { Icon(Icons.Rounded.Add, contentDescription = null) },
                 text = { Text("记录") },
                 containerColor = if (captureReady) {
-                    MaterialTheme.colorScheme.primaryContainer
+                    MaterialTheme.colorScheme.primary
                 } else {
                     MaterialTheme.colorScheme.surfaceVariant
                 },
                 contentColor = if (captureReady) {
-                    MaterialTheme.colorScheme.onPrimaryContainer
+                    MaterialTheme.colorScheme.onPrimary
                 } else {
                     MaterialTheme.colorScheme.onSurfaceVariant
                 },
+                shape = MaterialTheme.shapes.large,
                 modifier = Modifier.clearAndSetSemantics {
                     contentDescription = "记录一件事"
                     role = Role.Button
@@ -161,22 +190,32 @@ fun TodayScreen(
                 },
             )
         },
+        containerColor = MaterialTheme.colorScheme.background,
     ) { padding ->
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .testTag("today-list")
                 .padding(padding),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 20.dp, end = 20.dp, bottom = 96.dp),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                start = 20.dp,
+                end = 20.dp,
+                bottom = 96.dp,
+            ),
         ) {
             item {
+                val readyCount = visibleToday.count { it.factStatus != FactStatus.Processing }
                 Text(
-                    when {
-                        experienceMode == ExperienceMode.Empty -> "当前可见范围内还没有记录"
-                        experienceMode == ExperienceMode.Sparse -> "当前只有少量获准记录"
-                        else -> "已整理 ${visibleToday.count { it.factStatus != FactStatus.Processing }} 件事"
-                    },
-                    modifier = Modifier.padding(top = 8.dp, bottom = 12.dp),
+                    "$readyCount 件事",
+                    modifier = Modifier
+                        .padding(top = 12.dp, bottom = 16.dp)
+                        .semantics {
+                            contentDescription = when {
+                                experienceMode == ExperienceMode.Empty -> "当前可见范围内还没有记录"
+                                experienceMode == ExperienceMode.Sparse -> "当前只有少量获准记录"
+                                else -> "已整理 $readyCount 件事"
+                            }
+                        },
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

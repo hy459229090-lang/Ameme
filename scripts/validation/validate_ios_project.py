@@ -188,7 +188,12 @@ def main() -> int:
         ("git diff --exit-code -- Ameme.xcodeproj", "CI rejects generated-project drift"),
         ("CODE_SIGNING_ALLOWED=NO", "CI builds the Simulator app without signing"),
         ("xcodebuild", "CI invokes the real Xcode build system"),
-        ("AmemeTests.xcresult", "CI persists XCTest evidence"),
+        ("Xcode_26.6.app", "CI selects the current stable Xcode SDK that renders native Liquid Glass"),
+        ("AmemeTests-Normal.xcresult", "CI persists normal appearance XCTest evidence"),
+        (
+            "AmemeTests-Accessibility.xcresult",
+            "CI persists dark large-text XCTest evidence separately",
+        ),
         ("actions/upload-artifact@v4.6.2", "CI uploads device evidence"),
     ):
         require(needle in workflow_text, description, checks)

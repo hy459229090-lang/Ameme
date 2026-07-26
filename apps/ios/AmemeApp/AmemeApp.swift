@@ -5,6 +5,7 @@ import EventKit
 import Photos
 import PhotosUI
 import SwiftUI
+import UIKit
 import UniformTypeIdentifiers
 
 import AmemeShared
@@ -604,6 +605,15 @@ private struct IncomingShareReviewSheet: View {
 enum AmemeStyle {
     static let teal = Color(red: 0.051, green: 0.420, blue: 0.357)
     static let secondaryText = Color.secondary
+    static let canvas = Color(
+        uiColor: UIColor { traits in
+            if traits.userInterfaceStyle == .dark {
+                return UIColor(red: 0.047, green: 0.051, blue: 0.049, alpha: 1)
+            }
+            return UIColor(red: 0.988, green: 0.978, blue: 0.961, alpha: 1)
+        }
+    )
+    static let divider = Color.primary.opacity(0.10)
 }
 
 struct OnboardingView: View {
@@ -664,6 +674,7 @@ private struct OnboardingSourceRow: View {
 
 struct TodayView: View {
     @EnvironmentObject private var model: AppModel
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let onSearch: () -> Void
     let onSettings: () -> Void
     let onEvent: (UUID) -> Void
@@ -673,19 +684,18 @@ struct TodayView: View {
     private var today: Date { .now }
     private var todayEvents: [MemoryEvent] { model.store.events(on: today) }
     private var summary: DaySummary { model.store.summary(for: today) }
+    private var readyCount: Int { todayEvents.filter { $0.factStatus != .processing }.count }
 
     var body: some View {
         let canCapture = model.store.storageState == .ready
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
-                Text(Date.now.formatted(.dateTime.year().month().day().weekday(.wide)))
-                    .font(.subheadline)
-                    .foregroundStyle(AmemeStyle.secondaryText)
-                    .padding(.bottom, 14)
+                todayHeader
+                    .padding(.bottom, dynamicTypeSize.isAccessibilitySize ? 20 : 30)
                 StateNoticeView(mode: model.store.mode, onAction: model.store.retryLoad)
                 if model.store.isDemoMode {
                     DemoModeNotice()
-                        .padding(.bottom, 12)
+                        .padding(.bottom, 16)
                 }
                 if todayEvents.isEmpty {
                     EmptyMessageView(
@@ -693,11 +703,6 @@ struct TodayView: View {
                         detail: "点击右下角“记录”，文字、语音、照片和导入都会先保存到本机。"
                     )
                 } else {
-                    let readyCount = todayEvents.filter { $0.factStatus != .processing }.count
-                    Text("已整理 \(readyCount) 件事")
-                        .font(.subheadline)
-                        .foregroundStyle(AmemeStyle.secondaryText)
-                        .padding(.bottom, 8)
                     ForEach(todayEvents) { event in
                         EventRowView(event: event) { onEvent(event.id) }
                     }
@@ -706,55 +711,99 @@ struct TodayView: View {
                     .padding(.top, 22)
             }
             .padding(.horizontal, 20)
-            .padding(.top, 8)
+            .padding(.top, dynamicTypeSize.isAccessibilitySize ? 12 : 22)
             .padding(.bottom, 96)
         }
-        .navigationTitle("今天")
-        .navigationBarTitleDisplayMode(.large)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button(action: onSearch) {
-                    Image(systemName: "magnifyingglass")
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
-                }
-                .accessibilityLabel("搜索历史记录")
-                .accessibilityIdentifier("today.search")
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                Button(action: onSettings) {
-                    Image(systemName: "gearshape")
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
-                }
-                .accessibilityLabel("打开设置")
-                .accessibilityIdentifier("today.settings")
-            }
-        }
+        .background(AmemeStyle.canvas.ignoresSafeArea())
+        .toolbar(.hidden, for: .navigationBar)
         .safeAreaInset(edge: .bottom, spacing: 0) {
             HStack {
                 Spacer()
-                Button { showingCapture = true } label: {
-                    Label("记录", systemImage: "plus")
-                        .labelStyle(.titleAndIcon)
-                        .font(.headline)
-                        .padding(.horizontal, 18)
-                        .padding(.vertical, 13)
-                }
-                .buttonStyle(.borderedProminent)
-                .clipShape(Capsule())
-                .accessibilityLabel("记录一件事")
-                .accessibilityHint(canCapture ? "打开记录方式" : "本机存储恢复后可用")
-                .disabled(!canCapture)
+                captureButton(canCapture: canCapture)
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 12)
-            .background(.ultraThinMaterial)
         }
         .sheet(isPresented: $showingCapture) {
             CaptureSheet()
                 .environmentObject(model)
         }
+    }
+
+    private var todayHeader: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .top, spacing: 24) {
+                todayTitle
+                Spacer(minLength: 12)
+                todayActions
+            }
+            VStack(alignment: .leading, spacing: 18) {
+                todayTitle
+                HStack {
+                    Spacer()
+                    todayActions
+                }
+            }
+        }
+    }
+
+    private var todayTitle: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("今天")
+                .font(.largeTitle.weight(.semibold))
+                .accessibilityAddTraits(.isHeader)
+            Text(
+                "\(today.formatted(.dateTime.month().day())) · \(today.formatted(.dateTime.weekday(.wide)))"
+            )
+            .font(.subheadline)
+            .foregroundStyle(AmemeStyle.secondaryText)
+            Text("\(readyCount) 件事")
+                .font(.subheadline)
+                .foregroundStyle(AmemeStyle.secondaryText)
+                .accessibilityLabel("已整理 \(readyCount) 件事")
+        }
+    }
+
+    private var todayActions: some View {
+        HStack(spacing: 0) {
+            Button(action: onSearch) {
+                Image(systemName: "magnifyingglass")
+                    .font(.body.weight(.medium))
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityLabel("搜索历史记录")
+            .accessibilityIdentifier("today.search")
+            Divider()
+                .frame(height: 22)
+                .accessibilityHidden(true)
+            Button(action: onSettings) {
+                Image(systemName: "gearshape")
+                    .font(.body.weight(.medium))
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityLabel("打开设置")
+            .accessibilityIdentifier("today.settings")
+        }
+        .foregroundStyle(AmemeStyle.teal)
+        .padding(.horizontal, 4)
+        .amemeGlassControlSurface()
+    }
+
+    @ViewBuilder
+    private func captureButton(canCapture: Bool) -> some View {
+        Button { showingCapture = true } label: {
+            Label("记录", systemImage: "plus")
+                .labelStyle(.titleAndIcon)
+                .font(.headline)
+                .padding(.horizontal, 18)
+                .frame(minHeight: 54)
+        }
+        .amemeProminentGlassButton()
+        .accessibilityLabel("记录一件事")
+        .accessibilityHint(canCapture ? "打开记录方式" : "本机存储恢复后可用")
+        .disabled(!canCapture)
     }
 }
 
@@ -2105,7 +2154,11 @@ private struct EventRowView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .overlay(alignment: .bottom) { Divider() }
+        .overlay(alignment: .bottom) {
+            Divider()
+                .overlay(AmemeStyle.divider)
+                .padding(.leading, dynamicTypeSize.isAccessibilitySize ? 0 : 72)
+        }
         .accessibilityIdentifier("event.\(event.id.uuidString.lowercased())")
         .accessibilityElement(children: .combine)
         .accessibilityLabel(
@@ -2116,25 +2169,23 @@ private struct EventRowView: View {
     private var compactLayout: some View {
         HStack(alignment: .top, spacing: 14) {
             Text(eventTime)
-                .font(.subheadline.monospacedDigit())
-                .foregroundStyle(AmemeStyle.secondaryText)
+                .font(.subheadline.weight(.medium).monospacedDigit())
+                .foregroundStyle(AmemeStyle.teal)
                 .frame(width: 58, alignment: .leading)
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .firstTextBaseline) {
-                    Text(event.title).font(.headline).foregroundStyle(.primary)
+                    Text(event.title)
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(2)
                     Spacer(minLength: 8)
                     statusText
                 }
                 Text(event.detail)
-                    .font(.body)
+                    .font(.subheadline)
                     .foregroundStyle(AmemeStyle.secondaryText)
                     .multilineTextAlignment(.leading)
-                HStack(spacing: 8) {
-                    Text(event.sourceLabel)
-                    if event.isLocalOnly { Text("仅本机") }
-                }
-                .font(.caption)
-                .foregroundStyle(AmemeStyle.secondaryText)
+                    .lineLimit(2)
             }
         }
     }
@@ -2143,8 +2194,8 @@ private struct EventRowView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline, spacing: 12) {
                 Text(event.time?.formatted(date: .omitted, time: .shortened) ?? "待定")
-                    .font(.subheadline.monospacedDigit())
-                    .foregroundStyle(AmemeStyle.secondaryText)
+                    .font(.subheadline.weight(.medium).monospacedDigit())
+                    .foregroundStyle(AmemeStyle.teal)
                 Spacer(minLength: 8)
                 statusText
             }
@@ -2166,8 +2217,19 @@ private struct EventRowView: View {
 
     private var statusText: some View {
         Text(event.factStatus.label)
-            .font(.caption)
-            .foregroundStyle(event.factStatus == .needsReview ? AmemeStyle.teal : AmemeStyle.secondaryText)
+            .font(.caption.weight(.medium))
+            .foregroundStyle(statusColor)
+    }
+
+    private var statusColor: Color {
+        switch event.factStatus {
+        case .confirmed, .userAsserted:
+            AmemeStyle.teal
+        case .needsReview:
+            Color.orange
+        default:
+            AmemeStyle.secondaryText
+        }
     }
 
     private var eventTime: String {
@@ -2277,20 +2339,90 @@ private struct StateNoticeView: View {
 private struct DemoModeNotice: View {
     var body: some View {
         Label {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text("演示数据")
-                    .font(.headline)
+                    .font(.subheadline.weight(.semibold))
                 Text("固定示例仅用于体验，不会写入真实本机记录。")
                     .font(.footnote)
+                    .foregroundStyle(AmemeStyle.secondaryText)
             }
         } icon: {
             Image(systemName: "play.rectangle")
+                .foregroundStyle(AmemeStyle.teal)
         }
-        .padding(12)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(AmemeStyle.teal.opacity(0.12), in: RoundedRectangle(cornerRadius: 14))
+        .background(AmemeStyle.teal.opacity(0.08), in: RoundedRectangle(cornerRadius: 14))
         .accessibilityElement(children: .combine)
         .accessibilityLabel("演示数据。固定示例仅用于体验，不会写入真实本机记录。")
+    }
+}
+
+private struct AmemeGlassFallbackButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let prominent: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(prominent ? AmemeStyle.teal : Color.primary)
+            .opacity(isEnabled ? 1 : 0.46)
+            .background(.ultraThinMaterial, in: Capsule())
+            .overlay {
+                Capsule()
+                    .stroke(Color.white.opacity(0.48), lineWidth: 0.75)
+            }
+            .shadow(
+                color: Color.black.opacity(configuration.isPressed ? 0.06 : 0.10),
+                radius: configuration.isPressed ? 3 : 8,
+                y: configuration.isPressed ? 1 : 4
+            )
+            .scaleEffect(configuration.isPressed ? 0.98 : 1)
+            .animation(
+                reduceMotion ? nil : .snappy(duration: 0.20),
+                value: configuration.isPressed
+            )
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func amemeGlassControlSurface() -> some View {
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, *) {
+            self.glassEffect(.regular.interactive(true), in: .capsule)
+        } else {
+            self.amemeFallbackGlassControlSurface()
+        }
+        #else
+        self.amemeFallbackGlassControlSurface()
+        #endif
+    }
+
+    @ViewBuilder
+    func amemeProminentGlassButton() -> some View {
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, *) {
+            self
+                .buttonStyle(.glassProminent)
+                .tint(AmemeStyle.teal)
+        } else {
+            self.buttonStyle(AmemeGlassFallbackButtonStyle(prominent: true))
+        }
+        #else
+        self.buttonStyle(AmemeGlassFallbackButtonStyle(prominent: true))
+        #endif
+    }
+
+    private func amemeFallbackGlassControlSurface() -> some View {
+        self
+            .background(.ultraThinMaterial, in: Capsule())
+            .overlay {
+                Capsule()
+                    .stroke(Color.white.opacity(0.48), lineWidth: 0.75)
+            }
+            .shadow(color: Color.black.opacity(0.08), radius: 8, y: 4)
     }
 }
 
