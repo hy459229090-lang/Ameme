@@ -484,19 +484,32 @@ enum AppDestination: Hashable {
     case delete(UUID)
 }
 
+@MainActor
+private final class AppRouter: ObservableObject {
+    @Published var path: [AppDestination] = []
+
+    func push(_ destination: AppDestination) {
+        path.append(destination)
+    }
+
+    func returnToToday() {
+        path.removeAll()
+    }
+}
+
 struct RootView: View {
     @EnvironmentObject private var model: AppModel
     @AppStorage("ameme.onboarding.completed") private var onboardingCompleted = false
-    @State private var path: [AppDestination] = []
+    @StateObject private var router = AppRouter()
 
     var body: some View {
-        NavigationStack(path: $path) {
+        NavigationStack(path: $router.path) {
             Group {
                 if onboardingCompleted {
                     TodayView(
-                        onSearch: { path.append(.search) },
-                        onSettings: { path.append(.settings) },
-                        onEvent: { path.append(.event($0)) }
+                        onSearch: { router.push(.search) },
+                        onSettings: { router.push(.settings) },
+                        onEvent: { router.push(.event($0)) }
                     )
                 } else {
                     OnboardingView {
@@ -508,20 +521,20 @@ struct RootView: View {
                 switch destination {
                 case .search:
                     SearchView(
-                        onSettings: { path.append(.settings) },
-                        onEvent: { path.append(.event($0)) }
+                        onSettings: { router.push(.settings) },
+                        onEvent: { router.push(.event($0)) }
                     )
                 case .settings:
                     SettingsView()
                 case let .event(id):
                     EventDetailView(eventID: id) {
-                        path.append(.delete(id))
+                        router.push(.delete(id))
                     }
                 case let .delete(id):
                     DeleteView(eventID: id) {
                         // The action is labelled “返回今天”; clear the complete
                         // navigation path even when deletion started in Search.
-                        path = []
+                        router.returnToToday()
                     }
                 }
             }
