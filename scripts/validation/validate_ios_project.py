@@ -207,6 +207,7 @@ def main() -> int:
             "UI test verifies the real local core flow and demo isolation",
         ),
         ("capture.text", "real-flow UI test uses the stable text-capture identifier"),
+        ("delete.returnToday", "real-flow UI test uses the stable full-width return identifier"),
         ("Personal 空间 · Revision 2", "UI test verifies a durable real-event revision"),
         ("确认删除", "UI test verifies explicit local deletion"),
         ("当前条件没有结果", "UI test verifies deleted events leave local search"),

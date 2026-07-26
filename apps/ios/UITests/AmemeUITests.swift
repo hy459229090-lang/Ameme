@@ -156,10 +156,13 @@ final class AmemeUITests: XCTestCase {
         let confirmDelete = app.buttons["确认删除"]
         XCTAssertTrue(scrollToElement(confirmDelete, in: app))
         confirmDelete.tap()
-        let returnToday = app.buttons["返回今天"]
+        let returnToday = app.buttons["delete.returnToday"]
         XCTAssertTrue(returnToday.waitForExistence(timeout: 5))
+        XCTAssertTrue(returnToday.isHittable)
         attachScreenshot(named: "09-real-local-delete-complete")
-        returnToday.tap()
+        app.buttons["delete.returnToday"]
+            .coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            .tap()
 
         XCTAssertTrue(app.navigationBars["删除影响与进度"].waitForNonExistence(timeout: 5))
         XCTAssertTrue(app.buttons["today.search"].waitForExistence(timeout: 5))

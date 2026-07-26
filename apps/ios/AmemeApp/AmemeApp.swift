@@ -1554,14 +1554,12 @@ struct DeleteView: View {
                         .buttonStyle(.borderedProminent)
                         .frame(maxWidth: .infinity)
                 case .completed:
-                    Button("返回今天") {
-                        // Defer the NavigationStack reset until the button's own
-                        // state update has completed. Xcode 26 can otherwise
-                        // retain this destination after a successful deletion.
-                        DispatchQueue.main.async(execute: onDeleted)
+                    Button(action: onDeleted) {
+                        Text("返回今天")
+                            .frame(maxWidth: .infinity)
                     }
-                        .buttonStyle(.borderedProminent)
-                        .frame(maxWidth: .infinity)
+                    .buttonStyle(.borderedProminent)
+                    .accessibilityIdentifier("delete.returnToday")
                 default:
                     ProgressView("正在更新本机状态…")
                         .frame(maxWidth: .infinity)
