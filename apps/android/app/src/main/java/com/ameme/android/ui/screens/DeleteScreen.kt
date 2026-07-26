@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import com.ameme.android.domain.DeleteStep
 import com.ameme.android.domain.MemoryEvent
 import com.ameme.android.ui.icons.AmemeSymbols
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -48,9 +49,16 @@ fun DeleteScreen(
         deleteInFlight = true
         stepName = DeleteStep.LocalDeleting.name
         scope.launch {
-            val deleted = onDeleteLocally()
-            stepName = if (deleted) DeleteStep.Completed.name else DeleteStep.PartialFailed.name
-            deleteInFlight = false
+            try {
+                val deleted = onDeleteLocally()
+                stepName = if (deleted) DeleteStep.Completed.name else DeleteStep.PartialFailed.name
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) {
+                stepName = DeleteStep.PartialFailed.name
+            } finally {
+                deleteInFlight = false
+            }
         }
     }
 

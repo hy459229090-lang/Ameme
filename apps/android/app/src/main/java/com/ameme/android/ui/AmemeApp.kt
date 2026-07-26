@@ -905,18 +905,30 @@ fun AmemeApp(
                     }
                     if (deleted) {
                         events.removeAll { it.id == eventId }
-                        daySummary = ioExecutor.loadDaySummary(requireNotNull(readyRepository), LocalDate.now())
-                        persistenceError = runCatchingCancellable {
-                            ioExecutor.retrySourceGrantCleanup(grantCleanupCoordinator)
+                        val summaryRefresh = runCatchingCancellable {
+                            ioExecutor.loadDaySummary(requireNotNull(readyRepository), LocalDate.now())
                         }
-                            .fold(
-                                onSuccess = { cleanup ->
-                                    if (cleanup.remaining == 0) null else {
-                                        "事件已删除；仍有 ${cleanup.remaining} 个系统来源授权等待释放，稍后会重试。"
+                        summaryRefresh.onSuccess { daySummary = it }
+                        if (summaryRefresh.isFailure) {
+                            persistenceError = "事件已删除；日流与小结将在稍后重新载入。"
+                        }
+                        scope.launch {
+                            runCatchingCancellable {
+                                ioExecutor.retrySourceGrantCleanup(grantCleanupCoordinator)
+                            }
+                                .onSuccess { cleanup ->
+                                    persistenceError = when {
+                                        cleanup.remaining > 0 ->
+                                            "事件已删除；仍有 ${cleanup.remaining} 个系统来源授权等待释放，稍后会重试。"
+                                        summaryRefresh.isFailure ->
+                                            "事件已删除；日流与小结将在稍后重新载入。"
+                                        else -> null
                                     }
-                                },
-                                onFailure = { "事件已删除；系统来源授权清理待稍后重试。" },
-                            )
+                                }
+                                .onFailure {
+                                    persistenceError = "事件已删除；系统来源授权清理待稍后重试。"
+                                }
+                        }
                     } else {
                         persistenceError = "删除尚未持久化；本机事件仍保持可见。"
                     }
