@@ -105,8 +105,10 @@ def main() -> int:
         checks,
     )
     require(
-        ".dynamicTypeSize(.large ... .accessibility1)" in today_view,
-        "Today bounds persistent capture chrome while retaining its full accessibility label",
+        "if dynamicTypeSize.isAccessibilitySize" in today_view
+        and ".frame(width: 56, height: 56)" in today_view
+        and '.accessibilityLabel("记录一件事")' in today_view,
+        "Today replaces persistent capture chrome with a compact accessible action at accessibility sizes",
         checks,
     )
     require(
