@@ -815,15 +815,19 @@ struct TodayView: View {
     @ViewBuilder
     private func captureButton(canCapture: Bool) -> some View {
         Button { showingCapture = true } label: {
-            Label("记录", systemImage: "plus")
-                .labelStyle(.titleAndIcon)
-                .font(.headline)
-                // Keep the persistent control compact at accessibility sizes so
-                // it does not cover the large event text it is meant to support.
-                // The full spoken label and 54 pt target remain unchanged.
-                .dynamicTypeSize(.large ... .accessibility1)
-                .padding(.horizontal, 18)
-                .frame(minHeight: 54)
+            if dynamicTypeSize.isAccessibilitySize {
+                Image(systemName: "plus")
+                    .font(.headline)
+                    .frame(width: 56, height: 56)
+                    .contentShape(Circle())
+                    .accessibilityHidden(true)
+            } else {
+                Label("记录", systemImage: "plus")
+                    .labelStyle(.titleAndIcon)
+                    .font(.headline)
+                    .padding(.horizontal, 18)
+                    .frame(minHeight: 54)
+            }
         }
         .amemeProminentGlassButton()
         .accessibilityLabel("记录一件事")
