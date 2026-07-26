@@ -768,7 +768,7 @@ struct TodayView: View {
         HStack(spacing: 0) {
             Button(action: onSearch) {
                 Image(systemName: "magnifyingglass")
-                    .font(.body.weight(.medium))
+                    .font(.system(size: 18, weight: .medium))
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
             }
@@ -779,7 +779,7 @@ struct TodayView: View {
                 .accessibilityHidden(true)
             Button(action: onSettings) {
                 Image(systemName: "gearshape")
-                    .font(.body.weight(.medium))
+                    .font(.system(size: 18, weight: .medium))
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
             }
@@ -2357,15 +2357,19 @@ private struct StateNoticeView: View {
 
 private struct DemoModeNotice: View {
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
             Image(systemName: "play.rectangle")
+                .font(.system(size: 15, weight: .medium))
                 .foregroundStyle(AmemeStyle.teal)
                 .accessibilityHidden(true)
-            Text("演示数据")
-                .font(.footnote.weight(.semibold))
-            Text("· 不写入本机")
+            (
+                Text("演示数据")
+                    .fontWeight(.semibold)
+                + Text(" · 不写入本机")
+                    .foregroundColor(AmemeStyle.secondaryText)
+            )
                 .font(.footnote)
-                .foregroundStyle(AmemeStyle.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.horizontal, 2)
         .padding(.vertical, 4)
