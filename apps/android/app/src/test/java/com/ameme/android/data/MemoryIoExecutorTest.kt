@@ -7,7 +7,10 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -18,6 +21,32 @@ import org.junit.Assert.fail
 import org.junit.Test
 
 class MemoryIoExecutorTest {
+    @Test
+    fun defaultExecutorsSerializeRepositoryIoAcrossLifecycleInstances() {
+        val active = AtomicInteger(0)
+        val maximumActive = AtomicInteger(0)
+
+        runBlocking {
+            coroutineScope {
+                List(3) {
+                    async {
+                        MemoryIoExecutor().runSourceIo {
+                            val nowActive = active.incrementAndGet()
+                            maximumActive.updateAndGet { current -> maxOf(current, nowActive) }
+                            try {
+                                Thread.sleep(30)
+                            } finally {
+                                active.decrementAndGet()
+                            }
+                        }
+                    }
+                }.awaitAll()
+            }
+        }
+
+        assertEquals(1, maximumActive.get())
+    }
+
     @Test
     fun repositoryWorkRunsOnInjectedIoDispatcher() {
         val executor = Executors.newSingleThreadExecutor { task -> Thread(task, "ameme-test-io") }

@@ -24,7 +24,7 @@ import kotlinx.coroutines.withContext
 
 /** Single UI boundary for repository and platform-source I/O. Repository APIs stay synchronous for non-UI callers. */
 class MemoryIoExecutor(
-    private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val dispatcher: CoroutineDispatcher = serializedRepositoryDispatcher,
 ) {
     private val closeScope = CoroutineScope(SupervisorJob() + dispatcher)
 
@@ -133,6 +133,13 @@ class MemoryIoExecutor(
     }
 
     private suspend fun <T> onIo(block: () -> T): T = withContext(dispatcher) { block() }
+
+    private companion object {
+        // The production repository is one synchronous SQLCipher node. Share a
+        // single-lane dispatcher across Activity lifecycles so an old close,
+        // startup cleanup, and a new user write cannot contend on that node.
+        val serializedRepositoryDispatcher = Dispatchers.IO.limitedParallelism(1)
+    }
 }
 
 internal suspend fun <T> runCatchingCancellable(block: suspend () -> T): Result<T> = try {
