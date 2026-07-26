@@ -905,17 +905,16 @@ fun AmemeApp(
                     }
                     if (deleted) {
                         events.removeAll { it.id == eventId }
-                        val summaryRefresh = runCatchingCancellable {
-                            ioExecutor.loadDaySummary(requireNotNull(readyRepository), LocalDate.now())
-                        }
-                        summaryRefresh.onSuccess { daySummary = it }
-                        if (summaryRefresh.isFailure) {
-                            persistenceError = "事件已删除；日流与小结将在稍后重新载入。"
-                        }
+                        val refreshRepository = requireNotNull(readyRepository)
                         scope.launch {
-                            runCatchingCancellable {
+                            val summaryRefresh = runCatchingCancellable {
+                                ioExecutor.loadDaySummary(refreshRepository, LocalDate.now())
+                            }
+                            summaryRefresh.onSuccess { daySummary = it }
+                            val cleanupResult = runCatchingCancellable {
                                 ioExecutor.retrySourceGrantCleanup(grantCleanupCoordinator)
                             }
+                            cleanupResult
                                 .onSuccess { cleanup ->
                                     persistenceError = when {
                                         cleanup.remaining > 0 ->
@@ -926,7 +925,12 @@ fun AmemeApp(
                                     }
                                 }
                                 .onFailure {
-                                    persistenceError = "事件已删除；系统来源授权清理待稍后重试。"
+                                    persistenceError = when {
+                                        summaryRefresh.isFailure ->
+                                            "事件已删除；日流、小结与系统来源授权将在稍后重试。"
+                                        else ->
+                                            "事件已删除；系统来源授权清理待稍后重试。"
+                                    }
                                 }
                         }
                     } else {
