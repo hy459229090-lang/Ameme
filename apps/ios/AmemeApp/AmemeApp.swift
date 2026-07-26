@@ -519,7 +519,9 @@ struct RootView: View {
                     }
                 case let .delete(id):
                     DeleteView(eventID: id) {
-                        path.removeAll { $0 == .delete(id) || $0 == .event(id) }
+                        // The action is labelled “返回今天”; clear the complete
+                        // navigation path even when deletion started in Search.
+                        path.removeAll()
                     }
                 }
             }
@@ -797,6 +799,10 @@ struct TodayView: View {
             Label("记录", systemImage: "plus")
                 .labelStyle(.titleAndIcon)
                 .font(.headline)
+                // Keep the persistent control compact at accessibility sizes so
+                // it does not cover the large event text it is meant to support.
+                // The full spoken label and 54 pt target remain unchanged.
+                .dynamicTypeSize(.large ... .accessibility1)
                 .padding(.horizontal, 18)
                 .frame(minHeight: 54)
         }
@@ -829,8 +835,104 @@ struct SearchView: View {
     }
 
     var body: some View {
+        searchSurface
+            .navigationTitle("搜索")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { showingDateFilter = true } label: {
+                        Image(systemName: startDate != nil || endDate != nil ? "calendar.badge.checkmark" : "calendar")
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .accessibilityLabel("选择日期")
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(action: onSettings) {
+                        Image(systemName: "gearshape")
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .accessibilityLabel("打开设置")
+                    .accessibilityIdentifier("search.settings")
+                }
+            }
+            .sheet(isPresented: $showingDateFilter) {
+                NavigationStack {
+                    Form {
+                        Section("日期范围") {
+                            DatePicker(
+                                "开始日期",
+                                selection: Binding(
+                                    get: { startDate ?? .now },
+                                    set: { newValue in
+                                        startDate = newValue
+                                        if let endDate, endDate < newValue { self.endDate = newValue }
+                                    }
+                                ),
+                                displayedComponents: .date
+                            )
+                            DatePicker(
+                                "结束日期",
+                                selection: Binding(
+                                    get: { endDate ?? startDate ?? .now },
+                                    set: { newValue in
+                                        if let startDate, newValue < startDate {
+                                            self.startDate = newValue
+                                        }
+                                        endDate = newValue
+                                    }
+                                ),
+                                displayedComponents: .date
+                            )
+                        }
+                        if startDate != nil || endDate != nil {
+                            Button("清除日期") {
+                                startDate = nil
+                                endDate = nil
+                                showingDateFilter = false
+                            }
+                        }
+                    }
+                    .navigationTitle("日期范围")
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("完成") { showingDateFilter = false }
+                        }
+                    }
+                }
+                .presentationDetents([.medium])
+            }
+    }
+
+    @ViewBuilder
+    private var searchSurface: some View {
+        if usesCompactAccessibilitySearch {
+            searchContent
+        } else {
+            searchContent
+                .searchable(
+                    text: $query,
+                    placement: .navigationBarDrawer(displayMode: .always),
+                    prompt: "搜索历史记录"
+                )
+        }
+    }
+
+    private var searchContent: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
+                if usesCompactAccessibilitySearch {
+                    TextField("搜索历史记录", text: $query)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.body)
+                        // Native navigation search consumes almost the entire
+                        // compact-height screen at XXXL. Keep only this chrome
+                        // control bounded while result content remains XXXL.
+                        .dynamicTypeSize(.large ... .accessibility1)
+                        .accessibilityLabel("搜索历史记录")
+                        .padding(.bottom, 12)
+                }
                 Text(rangeDescription)
                     .font(.footnote)
                     .foregroundStyle(AmemeStyle.secondaryText)
@@ -863,78 +965,14 @@ struct SearchView: View {
             .padding(.bottom, searchContentBottomPadding)
         }
         .accessibilityIdentifier("search.results")
-        .navigationTitle("搜索")
-        .navigationBarTitleDisplayMode(.inline)
-        .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "搜索历史记录")
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button { showingDateFilter = true } label: {
-                    Image(systemName: startDate != nil || endDate != nil ? "calendar.badge.checkmark" : "calendar")
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
-                }
-                .accessibilityLabel("选择日期")
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                Button(action: onSettings) {
-                    Image(systemName: "gearshape")
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
-                }
-                .accessibilityLabel("打开设置")
-                .accessibilityIdentifier("search.settings")
-            }
-        }
-        .sheet(isPresented: $showingDateFilter) {
-            NavigationStack {
-                Form {
-                    Section("日期范围") {
-                        DatePicker(
-                            "开始日期",
-                            selection: Binding(
-                                get: { startDate ?? .now },
-                                set: { newValue in
-                                    startDate = newValue
-                                    if let endDate, endDate < newValue { self.endDate = newValue }
-                                }
-                            ),
-                            displayedComponents: .date
-                        )
-                        DatePicker(
-                            "结束日期",
-                            selection: Binding(
-                                get: { endDate ?? startDate ?? .now },
-                                set: { newValue in
-                                    if let startDate, newValue < startDate {
-                                        self.startDate = newValue
-                                    }
-                                    endDate = newValue
-                                }
-                            ),
-                            displayedComponents: .date
-                        )
-                    }
-                    if startDate != nil || endDate != nil {
-                        Button("清除日期") {
-                            startDate = nil
-                            endDate = nil
-                            showingDateFilter = false
-                        }
-                    }
-                }
-                .navigationTitle("日期范围")
-                .toolbar {
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("完成") { showingDateFilter = false }
-                    }
-                }
-            }
-            .presentationDetents([.medium])
-        }
     }
 
     private var searchContentBottomPadding: CGFloat {
         dynamicTypeSize.isAccessibilitySize && verticalSizeClass == .compact ? 240 : 24
+    }
+
+    private var usesCompactAccessibilitySearch: Bool {
+        dynamicTypeSize.isAccessibilitySize && verticalSizeClass == .compact
     }
 
     private var rangeDescription: String {

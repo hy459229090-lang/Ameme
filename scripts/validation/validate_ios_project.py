@@ -202,6 +202,13 @@ def main() -> int:
     for needle, description in (
         ("载入演示数据", "UI test enters explicit mock mode"),
         ("整理今天的产品问题", "UI test verifies the mock Today flow"),
+        (
+            "testRealLocalExperienceCoversCaptureSearchRevisionDeleteAndDemoIsolation",
+            "UI test verifies the real local core flow and demo isolation",
+        ),
+        ("Personal 空间 · Revision 2", "UI test verifies a durable real-event revision"),
+        ("确认删除", "UI test verifies explicit local deletion"),
+        ("当前条件没有结果", "UI test verifies deleted events leave local search"),
         ("搜索历史记录", "UI test verifies search"),
         ("XCUIDevice.shared.orientation", "UI test verifies orientation changes"),
         ("XCTAttachment", "UI test captures current-run screenshots"),

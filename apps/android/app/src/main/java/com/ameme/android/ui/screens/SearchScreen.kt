@@ -31,6 +31,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -177,7 +178,7 @@ fun SearchScreen(
                         invalidateFor(SearchRequestIdentity(repository, updated, selectedStartDate, selectedEndDate))
                     }
                 },
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().testTag("search-query"),
                 label = { Text("搜索历史记录") },
                 leadingIcon = { Icon(AmemeSymbols.Search, contentDescription = null) },
                 trailingIcon = {

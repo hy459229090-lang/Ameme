@@ -104,6 +104,17 @@ def main() -> int:
         "Today reserves safe-area space for capture instead of covering timeline content",
         checks,
     )
+    require(
+        ".dynamicTypeSize(.large ... .accessibility1)" in today_view,
+        "Today bounds persistent capture chrome while retaining its full accessibility label",
+        checks,
+    )
+    require(
+        "usesCompactAccessibilitySearch" in search_view
+        and 'TextField("搜索历史记录", text: $query)' in search_view,
+        "Search replaces oversized navigation search chrome in compact accessibility layouts",
+        checks,
+    )
     delete_progress = section(source, "private struct DeleteProgressView")
     require(
         ".accessibilityValue(" in delete_progress,

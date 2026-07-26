@@ -75,6 +75,102 @@ final class AmemeUITests: XCTestCase {
     }
 
     @MainActor
+    func testRealLocalExperienceCoversCaptureSearchRevisionDeleteAndDemoIsolation() throws {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "-AppleLanguages", "(zh-Hans)",
+            "-AppleLocale", "zh_CN",
+        ]
+        app.launchEnvironment["AMEME_UI_TEST_RESET_ONBOARDING"] = "1"
+        app.launch()
+
+        let realTitle = "real-local-\(UUID().uuidString.prefix(8))"
+        let addendum = "revision-\(UUID().uuidString.prefix(8))"
+
+        let onboardingContinue = app.buttons["查看今天"]
+        XCTAssertTrue(onboardingContinue.waitForExistence(timeout: 10))
+        onboardingContinue.tap()
+        XCTAssertTrue(app.buttons["记录一件事"].waitForExistence(timeout: 5))
+
+        app.buttons["记录一件事"].tap()
+        let textChoice = app.buttons["文字"]
+        XCTAssertTrue(textChoice.waitForExistence(timeout: 5))
+        textChoice.tap()
+        let editor = app.textViews["写下一句话"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 5))
+        editor.tap()
+        editor.typeText(realTitle)
+        let save = app.buttons["保存到本机"]
+        XCTAssertTrue(save.isEnabled)
+        save.tap()
+        dismissNotice(in: app)
+
+        let realEvent = eventButton(containing: realTitle, in: app)
+        XCTAssertTrue(scrollToElement(realEvent, in: app))
+        attachScreenshot(named: "06-real-local-captured")
+
+        app.buttons["today.settings"].tap()
+        XCTAssertTrue(app.navigationBars["设置"].waitForExistence(timeout: 5))
+        let loadDemo = app.buttons["载入演示数据"]
+        XCTAssertTrue(scrollToElement(loadDemo, in: app))
+        loadDemo.tap()
+        dismissNotice(in: app)
+        app.navigationBars["设置"].buttons.firstMatch.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["today.demoNotice"].waitForExistence(timeout: 5))
+        XCTAssertFalse(eventButton(containing: realTitle, in: app).exists)
+        attachScreenshot(named: "07-demo-isolates-real-local-event")
+
+        app.buttons["today.settings"].tap()
+        let exitDemo = app.buttons["退出演示数据"]
+        XCTAssertTrue(scrollToElement(exitDemo, in: app))
+        exitDemo.tap()
+        dismissNotice(in: app)
+        app.navigationBars["设置"].buttons.firstMatch.tap()
+        XCTAssertTrue(scrollToElement(eventButton(containing: realTitle, in: app), in: app))
+
+        app.buttons["today.search"].tap()
+        let searchField = app.searchFields["搜索历史记录"]
+        XCTAssertTrue(searchField.waitForExistence(timeout: 5))
+        searchField.tap()
+        searchField.typeText(realTitle)
+        let searchResult = eventButton(containing: realTitle, in: app)
+        XCTAssertTrue(scrollToElement(searchResult, in: app))
+        searchResult.tap()
+        XCTAssertTrue(app.navigationBars["事件详情"].waitForExistence(timeout: 5))
+
+        let addendumField = app.textFields["补充一句原话或说明"]
+        XCTAssertTrue(scrollToElement(addendumField, in: app))
+        addendumField.tap()
+        addendumField.typeText(addendum)
+        let saveAddendum = app.buttons["保存补充"]
+        XCTAssertTrue(scrollToElement(saveAddendum, in: app))
+        saveAddendum.tap()
+        dismissNotice(in: app)
+        XCTAssertTrue(scrollToElement(app.staticTexts["Personal 空间 · Revision 2"], in: app))
+        attachScreenshot(named: "08-real-local-revision")
+
+        let deleteImpact = app.buttons["查看删除影响"]
+        XCTAssertTrue(scrollToElement(deleteImpact, in: app))
+        deleteImpact.tap()
+        XCTAssertTrue(app.navigationBars["删除影响与进度"].waitForExistence(timeout: 5))
+        let confirmDelete = app.buttons["确认删除"]
+        XCTAssertTrue(scrollToElement(confirmDelete, in: app))
+        confirmDelete.tap()
+        let returnToday = app.buttons["返回今天"]
+        XCTAssertTrue(returnToday.waitForExistence(timeout: 5))
+        attachScreenshot(named: "09-real-local-delete-complete")
+        returnToday.tap()
+
+        XCTAssertTrue(app.buttons["today.search"].waitForExistence(timeout: 5))
+        app.buttons["today.search"].tap()
+        let deletedSearch = app.searchFields["搜索历史记录"]
+        XCTAssertTrue(deletedSearch.waitForExistence(timeout: 5))
+        deletedSearch.tap()
+        deletedSearch.typeText(realTitle)
+        XCTAssertTrue(app.staticTexts["当前条件没有结果"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
     private func scrollToElement(
         _ element: XCUIElement,
         in app: XCUIApplication,
@@ -86,6 +182,20 @@ final class AmemeUITests: XCTestCase {
             scroller.swipeUp()
         }
         return element.exists && element.isHittable
+    }
+
+    @MainActor
+    private func dismissNotice(in app: XCUIApplication) {
+        let dismissNotice = app.alerts["提示"].buttons["知道了"]
+        XCTAssertTrue(dismissNotice.waitForExistence(timeout: 5))
+        dismissNotice.tap()
+    }
+
+    @MainActor
+    private func eventButton(containing text: String, in app: XCUIApplication) -> XCUIElement {
+        app.buttons
+            .matching(NSPredicate(format: "label CONTAINS %@", text))
+            .firstMatch
     }
 
     @MainActor
