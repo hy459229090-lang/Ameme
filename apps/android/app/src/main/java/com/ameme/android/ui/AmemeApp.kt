@@ -358,27 +358,26 @@ fun AmemeApp(
             agentPairingMaterial = null
             return@LaunchedEffect
         }
-        val activeAndFactory = ioExecutor.runSourceIo {
+        val materialAndFactory = ioExecutor.runSourceIo {
             val active = pairingManager.loadActive() ?: return@runSourceIo null
             try {
-                active to pairingManager.sslServerSocketFactory()
-            } catch (failure: Throwable) {
+                active.material to pairingManager.sslServerSocketFactory()
+            } finally {
                 active.close()
-                throw failure
             }
         }
-        if (activeAndFactory == null) {
+        if (materialAndFactory == null) {
             agentPairingMaterial = null
             return@LaunchedEffect
         }
-        val (active, socketFactory) = activeAndFactory
-        agentPairingMaterial = active.material
+        val (material, socketFactory) = materialAndFactory
+        agentPairingMaterial = material
         agentRuntime = try {
             AgentLocalNodeRuntime.launch(
                 repository = localRepository,
-                pairing = active,
-                accessGrantPolicy = active.accessGrantPolicy,
+                pairingManager = pairingManager,
                 sslServerSocketFactory = socketFactory,
+                allowDeveloperCredential = com.ameme.android.BuildConfig.DEBUG,
                 onStateChanged = { state -> scope.launch { agentRuntimeState = state } },
                 onEventPersisted = {
                     scope.launch {
@@ -390,7 +389,6 @@ fun AmemeApp(
                 },
             )
         } catch (failure: Throwable) {
-            active.close()
             agentRuntimeState = AgentLocalNodeRuntimeState.RecoverableError
             persistenceError = "Agent 配对已保存，但本机监听暂时无法启动。"
             null
@@ -845,7 +843,7 @@ fun AmemeApp(
                 developerPairingQrPayload = createdAgentPairingQrPayload,
                 developerPairingQrExpiresAt = createdAgentPairingQrExpiresAt,
                 developerPairingJson = createdAgentPairing?.pairingJson(),
-                developerPairingSecret = createdAgentPairing?.oneTimeSecret,
+                developerPairingSecret = createdAgentPairing?.developerChannelSecret,
                 onCreateDeveloperAgentPairing = {
                     if (!pairingInFlight) {
                         pairingInFlight = true
@@ -853,13 +851,11 @@ fun AmemeApp(
                             runCatchingCancellable {
                                 ioExecutor.runSourceIo { pairingManager.create() }
                             }.onSuccess { created ->
-                                val qrCreatedAt = Instant.now()
-                                runCatching { created.pairingQrPayload(qrCreatedAt) }
+                                runCatching { created.pairingQrPayload() }
                                     .onSuccess { qrPayload ->
                                         createdAgentPairing = created
                                         createdAgentPairingQrPayload = qrPayload
-                                        createdAgentPairingQrExpiresAt =
-                                            minOf(created.expiresAt, qrCreatedAt.plus(Duration.ofMinutes(5)))
+                                        createdAgentPairingQrExpiresAt = created.bootstrapExpiresAt
                                         agentPairingMaterial = created.material
                                         pairingGeneration += 1
                                         persistenceError = null

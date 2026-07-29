@@ -122,6 +122,9 @@ fun SettingsScreen(
                 !developerPairingQrExpiresAt.isAfter(Instant.now()),
         )
     }
+    var showDeveloperPairingMaterials by remember(developerPairingQrPayload) {
+        mutableStateOf(false)
+    }
 
     LaunchedEffect(developerPairingQrPayload, developerPairingQrExpiresAt) {
         val expiresAt = developerPairingQrExpiresAt ?: return@LaunchedEffect
@@ -191,7 +194,10 @@ fun SettingsScreen(
                     SettingRow("Personal 空间", "本机 SQLCipher 加密存储")
                     HorizontalDivider()
                     SettingRow("设备同步", "云端未启用 · 可在下方按次授权另一台 Ameme 设备写入")
-                    HorizontalDivider()
+                }
+            }
+            item {
+                Card(Modifier.fillMaxWidth()) {
                     if (pairingExperienceConnection == null) {
                         Column(
                             modifier = Modifier.fillMaxWidth().padding(16.dp),
@@ -268,12 +274,16 @@ fun SettingsScreen(
                             }
                         }
                     }
-                    HorizontalDivider()
+                }
+            }
+            item {
+                Card(
+                    Modifier
+                        .fillMaxWidth()
+                        .testTag("receive-device-connection-card"),
+                ) {
                     Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp)
-                            .testTag("receive-device-connection-card"),
+                        modifier = Modifier.fillMaxWidth().padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(9.dp),
                     ) {
                         Text("让另一台 Ameme 设备连接", fontWeight = FontWeight.Medium)
@@ -283,7 +293,7 @@ fun SettingsScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         Text(
-                            "二维码只用于短时交换安全配对材料。对方扫描并确认后，只能在 Personal 空间读取获准的结构化事件、写入 event/revision，并在 10 分钟内撤销自己的最近写入。",
+                            "二维码 5 分钟内有效；扫描后仍需确认。授权仅限 Personal 空间中的结构化事件，以及 event/revision 写入与 10 分钟撤销。",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -730,21 +740,20 @@ fun SettingsScreen(
         )
     }
 
-    if (
-        developerPairingQrPayload != null &&
-        developerPairingJson != null &&
-        developerPairingSecret != null
-    ) {
+    if (developerPairingQrPayload != null) {
         AlertDialog(
             modifier = Modifier.testTag("pairing-qr-dialog"),
-            onDismissRequest = onDismissDeveloperPairingSecret,
+            onDismissRequest = {
+                showDeveloperPairingMaterials = false
+                onDismissDeveloperPairingSecret()
+            },
             title = { Text("设备配对二维码") },
             text = {
                 Column(
                     modifier = Modifier.verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    Text("请让另一台设备在 5 分钟内扫描。扫描后，对方仍需确认授权。")
+                    Text("请在 5 分钟内用另一台设备扫描；授权前会再次确认。")
                     if (pairingQrExpired) {
                         Text(
                             "此配对码已过期。请关闭窗口并重新生成。",
@@ -777,52 +786,75 @@ fun SettingsScreen(
                         Text("复制配对码")
                     }
                     Text(
-                        "配对码包含短时密钥；请只发送给你信任的设备，完成后关闭此窗口。",
+                        "二维码含短时凭据，仅分享给可信设备。",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     if (showDeveloperPairingControls) {
-                        SelectionContainer {
-                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Text("开发者调试材料", fontWeight = FontWeight.SemiBold)
-                                Text("密钥", fontWeight = FontWeight.SemiBold)
-                                Text(developerPairingSecret, style = MaterialTheme.typography.bodySmall)
-                                TextButton(onClick = {
-                                    scope.launch {
-                                        clipboard.setClipEntry(
-                                            ClipEntry(
-                                                ClipData.newPlainText(
-                                                    "Ameme 开发者配对密钥",
-                                                    developerPairingSecret,
-                                                ),
-                                            ),
-                                        )
+                        TextButton(
+                            onClick = {
+                                showDeveloperPairingMaterials = !showDeveloperPairingMaterials
+                            },
+                            modifier = Modifier.testTag("toggle-developer-pairing-materials"),
+                        ) {
+                            Text(if (showDeveloperPairingMaterials) "隐藏开发者材料" else "显示开发者材料")
+                        }
+                        if (showDeveloperPairingMaterials) {
+                            SelectionContainer {
+                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text("开发者调试材料", fontWeight = FontWeight.SemiBold)
+                                    developerPairingSecret?.let { secret ->
+                                        Text("密钥", fontWeight = FontWeight.SemiBold)
+                                        Text(secret, style = MaterialTheme.typography.bodySmall)
+                                        TextButton(onClick = {
+                                            scope.launch {
+                                                clipboard.setClipEntry(
+                                                    ClipEntry(
+                                                        ClipData.newPlainText(
+                                                            "Ameme 开发者配对密钥",
+                                                            secret,
+                                                        ),
+                                                    ),
+                                                )
+                                            }
+                                        }) {
+                                            Text("复制密钥")
+                                        }
                                     }
-                                }) {
-                                    Text("复制密钥")
-                                }
-                                Text("配对 JSON", fontWeight = FontWeight.SemiBold)
-                                Text(developerPairingJson, style = MaterialTheme.typography.bodySmall)
-                                TextButton(onClick = {
-                                    scope.launch {
-                                        clipboard.setClipEntry(
-                                            ClipEntry(
-                                                ClipData.newPlainText(
-                                                    "Ameme 开发者配对 JSON",
-                                                    developerPairingJson,
-                                                ),
-                                            ),
-                                        )
+                                    developerPairingJson?.let { pairingJson ->
+                                        Text("配对 JSON", fontWeight = FontWeight.SemiBold)
+                                        Text(pairingJson, style = MaterialTheme.typography.bodySmall)
+                                        TextButton(onClick = {
+                                            scope.launch {
+                                                clipboard.setClipEntry(
+                                                    ClipEntry(
+                                                        ClipData.newPlainText(
+                                                            "Ameme 开发者配对 JSON",
+                                                            pairingJson,
+                                                        ),
+                                                    ),
+                                                )
+                                            }
+                                        }) {
+                                            Text("复制配对 JSON")
+                                        }
                                     }
-                                }) {
-                                    Text("复制配对 JSON")
                                 }
                             }
                         }
                     }
                 }
             },
-            confirmButton = { TextButton(onClick = onDismissDeveloperPairingSecret) { Text("完成") } },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDeveloperPairingMaterials = false
+                        onDismissDeveloperPairingSecret()
+                    },
+                ) {
+                    Text("完成")
+                }
+            },
         )
     }
 }

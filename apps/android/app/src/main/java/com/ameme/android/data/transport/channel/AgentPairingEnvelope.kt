@@ -5,40 +5,47 @@ import java.time.Instant
 import java.util.Base64
 
 /**
- * Canonical, short-lived QR/deep-link pairing payload. The secret is carried
- * only by the user-mediated envelope and is never written to the pairing file.
+ * Canonical, short-lived QR/deep-link bootstrap payload.
+ *
+ * The bootstrap secret can only provision a separately generated channel credential; it is never
+ * accepted by the application channel. The server persists a wrapped copy solely to enforce
+ * expiry, atomic consumption, and same-device retry.
  */
 object AgentPairingEnvelope {
-    const val PREFIX = "ameme-pairing-v1:"
+    const val PREFIX = "ameme-pairing-v2:"
     const val MAX_PAYLOAD_CHARACTERS = 16_384
     private val maxLifetime = Duration.ofMinutes(10)
     private val maxPairingLifetime = Duration.ofDays(31)
 
     class Parsed(
         val pairing: AndroidLocalNodePairingMaterial,
-        val secret: ByteArray,
+        val bootstrapId: String,
+        val bootstrapSecret: ByteArray,
         val expiresAt: Instant,
         val pairingExpiresAt: Instant,
     ) : AutoCloseable {
-        override fun close() = secret.fill(0)
+        override fun close() = bootstrapSecret.fill(0)
     }
 
     fun encode(
         pairing: AndroidLocalNodePairingMaterial,
-        oneTimeSecret: String,
+        bootstrapId: String,
+        bootstrapSecret: String,
         expiresAt: Instant,
         pairingExpiresAt: Instant,
     ): String {
-        val secret = decodeSecret(oneTimeSecret)
+        require(bootstrapId.matches(Regex("boot_[0-9a-f]{32}")))
+        val secret = decodeSecret(bootstrapSecret)
         try {
             require(expiresAt.toEpochMilli() > 0)
             require(pairingExpiresAt >= expiresAt)
             val value = StrictCanonicalJson.obj(
-                "envelope_version" to StrictCanonicalJson.integer(1),
+                "bootstrap_id" to StrictCanonicalJson.string(bootstrapId),
+                "bootstrap_secret" to StrictCanonicalJson.string(bootstrapSecret),
+                "envelope_version" to StrictCanonicalJson.integer(2),
                 "expires_at_ms" to StrictCanonicalJson.string(expiresAt.toEpochMilli().toString()),
                 "pairing" to pairing.document(),
                 "pairing_expires_at_ms" to StrictCanonicalJson.string(pairingExpiresAt.toEpochMilli().toString()),
-                "secret" to StrictCanonicalJson.string(oneTimeSecret),
             )
             val payload = PREFIX + Base64.getUrlEncoder().withoutPadding()
                 .encodeToString(StrictCanonicalJson.canonicalBytes(value))
@@ -63,9 +70,18 @@ object AgentPairingEnvelope {
         val objectValue = root as? CanonicalJsonObject ?: invalid()
         require(
             objectValue.values.keys ==
-                setOf("envelope_version", "expires_at_ms", "pairing", "pairing_expires_at_ms", "secret"),
+                setOf(
+                    "bootstrap_id",
+                    "bootstrap_secret",
+                    "envelope_version",
+                    "expires_at_ms",
+                    "pairing",
+                    "pairing_expires_at_ms",
+                ),
         )
-        require((objectValue.values["envelope_version"] as? CanonicalJsonInteger)?.value?.toInt() == 1)
+        require((objectValue.values["envelope_version"] as? CanonicalJsonInteger)?.value?.toInt() == 2)
+        val bootstrapId = (objectValue.values["bootstrap_id"] as? CanonicalJsonString)?.value ?: invalid()
+        require(bootstrapId.matches(Regex("boot_[0-9a-f]{32}")))
         val expiryText = (objectValue.values["expires_at_ms"] as? CanonicalJsonString)?.value ?: invalid()
         require(expiryText.isNotEmpty() && expiryText.all { it in '0'..'9' })
         val expiryMillis = expiryText.toLongOrNull() ?: invalid()
@@ -73,7 +89,7 @@ object AgentPairingEnvelope {
             (objectValue.values["pairing_expires_at_ms"] as? CanonicalJsonString)?.value ?: invalid()
         require(pairingExpiryText.isNotEmpty() && pairingExpiryText.all { it in '0'..'9' })
         val pairingExpiryMillis = pairingExpiryText.toLongOrNull() ?: invalid()
-        val secretText = (objectValue.values["secret"] as? CanonicalJsonString)?.value ?: invalid()
+        val secretText = (objectValue.values["bootstrap_secret"] as? CanonicalJsonString)?.value ?: invalid()
         val secret = decodeSecret(secretText)
         val pairingValue = objectValue.values["pairing"] as? CanonicalJsonObject ?: run {
             secret.fill(0)
@@ -100,7 +116,7 @@ object AgentPairingEnvelope {
             secret.fill(0)
             throw IllegalArgumentException("invalid_pairing_expiry")
         }
-        return Parsed(pairing, secret, expiresAt, pairingExpiresAt)
+        return Parsed(pairing, bootstrapId, secret, expiresAt, pairingExpiresAt)
     }
 
     private fun decodeSecret(value: String): ByteArray {

@@ -11,7 +11,7 @@
 | Android 16 KB 与 UI 验收 | `Android-16KB-UI验收-20260718.md` | conditional_pass；16 KB AVD、64 项总测试中 57 项可执行回归、外部分享/导出恢复与清理、当前深层页面稳定帧和语义树复核通过，物理设备/完整无障碍待补 |
 | iOS Shared Core 验证 | `iOS-Shared-Core验证-20260718.md` | conditional_pass；加密本机闭环、媒体边界、录音启动/清理、SwiftUI accessibility contract、来源搜索、跨端导出 wire value、加密导出恢复/清理、Bonjour 发现与真实/演示连接边界、AccessGrant policy、批量导入回滚/幂等、Share Extension target 输入和 Smoke 通过；完整 Xcode/iOS UI/真机/无障碍待补 |
 | 双端体验状态矩阵 | `双端体验状态矩阵-20260718.md` | conditional_pass；共同状态规则、逐页恢复动作、本机/Mock 证据和 AccessGrant 本地 scope 门禁已登记；设备级状态、真实来源、完整无障碍待补 |
-| M23 配对与连接生命周期验证 | `M23-配对与连接生命周期验证-20260718.md` | conditional_pass；iOS duplicate-key pairing 拒绝、双端 disconnect 契约、既有 Swift→Android AVD 真实传输子门通过；QR/account/reconnect/设备级门禁待补 |
+| M23 配对与连接生命周期验证（历史基线） | `M23-配对与连接生命周期验证-20260718.md` | conditional_pass；记录当时的 duplicate-key/disconnect 与 Swift→Android AVD 子门；QR/reconnect 已由 2026-07-29 v2 报告更新，account/共享 Grant/设备级门禁仍待补 |
 | M24 双端真实构建与设备交付验证 | `M24-双端真实构建与设备交付验证-20260726.md` | 仓库工程候选 pass；双端真实/Mock 核心闭环、QR→Android TLS/HMAC/Grant、Android 16 KB 大字号设备回归、iOS Xcode/XCUITest 截图和仓库门禁通过；物理设备/读屏/签名与商店发布仍为保留门 |
 | M25 双端平台视觉升级与设备复验 | `M25-双端平台视觉升级与设备复验-20260726.md` | 仓库工程候选 pass；iOS 26 Liquid Glass、Android 当前稳定 Material 3、双端字号/语义/同屏视觉与 Simulator/16 KB AVD 全绿；物理设备/真实读屏/签名与商店继续 hold |
 | P0 上下文覆盖与长期记忆闭环 | `P0-上下文覆盖与长期记忆闭环验证-20260726.md` | conditional_pass；覆盖/编译/删除/恢复/Agent 边界/复用的合成本地闭环通过，真实用户、规模、生产恢复与物理设备 hold |
@@ -31,6 +31,8 @@
 | P0 Android 生产 Agent 最小读取 | `P0-Android生产Agent-最小读取验证-20260726.md` | conditional_pass；bounded `visible_events`、SQLCipher current projection、scope/sensitivity/time/query/delete、正文截断、Host Recall/Context injection/budget 与 TLS 通过；真实 Host/设备/共享 Grant/发布 hold |
 | P0 iOS 生产 Agent 四操作客户端与响应校验 | `P0-iOS生产Agent-四操作客户端与响应校验-20260729.md` | conditional_pass；iOS 四项 Android 生产 v1 operation 已有最小 Grant builder、握手 capability、typed result、canonical/result-digest/error-shape fail-closed，并在 API 36 / 16 KB AVD 完成 Swift→Android 四操作纵向 Smoke；普通用户默认仍 event-only，物理设备、共享 Grant 与发布 hold |
 | P0 Android 生产 Agent 访问审计与只读投影 | `P0-Android生产Agent-访问审计与只读投影-20260729.md` | conditional_pass；SQLCipher schema v14 增加 STARTED/COMPLETED content-free access audit、180 天保留、append-only/提前删除保护、审计故障失败关闭、幂等重试和设置页最近 20 条；同安装恢复单调保全未过期账本，相关 instrumentation 已在 API 36 / 16 KB AVD 全量 100/93/7/0 执行；iOS Host/账户审计、真实用户/物理设备 hold |
+| P0 QR 配对一次性凭据安全审计（历史） | `P0-QR配对一次性凭据安全审计-20260729.md` | 历史 hold；记录 v1 QR 与 30 天 channel 共用 bearer 的发现，当前实现以后一项 v2 报告为准 |
+| P0 QR 一次性 Bootstrap 与设备凭据轮换 | `P0-QR一次性Bootstrap与设备凭据轮换验证-20260729.md` | conditional_pass；Android server 原子消费、P-256 签发绑定、独立 credential、Release 无 developer bearer与 iOS device-only pending/active 恢复已实现；Android scanner client、共享 Grant、最终 head XCTest、物理扫码/LAN hold |
 
 ## 当前正本
 
@@ -96,3 +98,5 @@
 | 2026-07-29 | 新增/验证 | P0 Android Agent 访问审计：schema v14 为四项生产 operation 增加 repository 前 STARTED 与完成态 COMPLETED、180 天单点保留、数量桶、append-only/提前删除保护、失败关闭和设置页只读投影；JVM 与 androidTest 编译通过，新增 instrumentation 未争用并行 AVD，iOS Host/账户审计、真实用户/物理设备 hold |
 | 2026-07-29 | 更新/验证 | Android 同安装恢复不再回退安全账本：PREPARED journal 前移覆盖 staging/merge 崩溃窗口，未过期 Agent audit 按 exact ID/trace-phase 单调 union，冲突/50,000 容量溢出 fail closed，并以账本与合并 SQLCipher 双摘要绑定原子换库；JVM 103/103、非设备构建、audit 143、recovery 138 与 workspace 28/28 通过，新增 instrumentation 仅编译 |
 | 2026-07-29 | 更新/验证 | Android Agent 审计与恢复账本设备复验：API 36 / 16 KB、320dp、130% 字号 AVD 全量 100/93/7/0，恢复 5/5、审计持久化 2/2、生产端点 3/3、完整 UI 13/13；这是后续设备补证，不把 AVD 扩写为物理设备 |
+| 2026-07-29 | 审计/Gate | QR 配对安全复核确认 5 分钟 envelope 只由 parser/UI 限时，Android server 在 30 天 pairing 内复用同一 secret，iOS 仅本进程消费；QR 静态门扩为 34 项并机器可读保持 server-enforced one-time、credential rotation、Android scanner、共享 Grant 与物理设备 claim 为 false，安全闭环 hold |
+| 2026-07-29 | 新增/验证 | 以 `ameme.agent-pairing-bootstrap.v2` 收敛前项审计：Android 原子消费 5 分钟 bootstrap、验证 P-256 key possession、签发独立 30 天 credential、同 key 有界响应恢复，Release 无 developer bearer；iOS device-only Keychain 保存 pending/active 并实际认证后恢复。QR Gate 54/54、Android manager AVD 7/7、Swift→Android v2 与独立 Debug Host smoke、workspace 28/28 通过；Android scanner client、共享 Grant、最终 head XCTest、物理设备/LAN hold |

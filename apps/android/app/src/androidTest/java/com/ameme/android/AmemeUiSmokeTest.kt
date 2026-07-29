@@ -351,6 +351,8 @@ class AmemeUiSmokeTest {
         composeRule.waitUntil(timeoutMillis = 10_000) {
             composeRule.onAllNodesWithText("当前正在查看演示数据").fetchSemanticsNodes().isNotEmpty()
         }
+        composeRule.onNodeWithTag("settings-list")
+            .performScrollToNode(hasText("当前正在查看演示数据"))
         composeRule.onNodeWithText("当前正在查看演示数据").assertIsDisplayed()
         composeRule.onNodeWithContentDescription("返回").performClick()
         composeRule.onNodeWithContentDescription("演示数据。固定示例仅用于体验，不会写入真实本机记录。", substring = true)
@@ -461,11 +463,12 @@ class AmemeUiSmokeTest {
         composeRule.waitUntil(timeoutMillis = 15_000) {
             composeRule.onAllNodesWithText("设备配对二维码").fetchSemanticsNodes().isNotEmpty()
         }
-        composeRule.onNodeWithText("请让另一台设备在 5 分钟内扫描。扫描后，对方仍需确认授权。")
+        composeRule.onNodeWithText("请在 5 分钟内用另一台设备扫描；授权前会再次确认。")
             .assertIsDisplayed()
         composeRule.onNodeWithContentDescription("设备配对二维码，五分钟内有效")
             .assertIsDisplayed()
         composeRule.onNodeWithTag("copy-pairing-code-button").assertIsEnabled()
+        composeRule.onNodeWithText("开发者调试材料").assertDoesNotExist()
         composeRule.onNodeWithText("完成").performClick()
         composeRule.onNodeWithTag("revoke-pairing-button").performScrollTo().performClick()
         composeRule.waitUntil(timeoutMillis = 10_000) {

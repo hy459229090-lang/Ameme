@@ -1147,19 +1147,26 @@ struct AmemeSharedSmoke {
         let envelopeNow = Date(timeIntervalSince1970: 1_800_000_000)
         let envelope = try! AgentPairingEnvelope(
             pairing: channelPairing,
-            secret: Data(repeating: 0x42, count: 32),
+            bootstrapID: "boot_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            bootstrapSecret: Data(repeating: 0x42, count: 32),
             expiresAt: envelopeNow.addingTimeInterval(300),
             pairingExpiresAt: envelopeNow.addingTimeInterval(30 * 24 * 60 * 60)
         )
         let envelopePayload = try! envelope.encodedPayload()
-        let envelopeGolden = "ameme-pairing-v1:eyJlbnZlbG9wZV92ZXJzaW9uIjoxLCJleHBpcmVzX2F0X21zIjoiMTgwMDAwMDMwMDAwMCIsInBhaXJpbmciOnsiY2hhbm5lbF9wcm90b2NvbCI6ImFtZW1lLmFnZW50LWxvY2FsLW5vZGUuY2hhbm5lbC52MSIsImNyZWRlbnRpYWxfcmVmIjoiY3JlZGVudGlhbC1yZWY6ZW52L1NZTlRIRVRJQ19TRUNSRVQiLCJlbmRwb2ludF9yZWYiOiJlbmRwb2ludC1yZWY6c3ludGhldGljL2FuZHJvaWQiLCJleHBlY3RlZF9kZXZpY2VfaWQiOiJkZXZpY2Vfc3ludGhldGljXzAwMSIsImhvc3QiOiIxMjcuMC4wLjEiLCJwYWlyaW5nX2lkIjoicGFpcl9zeW50aGV0aWNfMDAxIiwicG9ydCI6NDQzMjEsInNlc3Npb25fYmluZGluZ19yZWYiOiJzZXNzaW9uLWJpbmRpbmctcmVmOnN5bnRoZXRpYy9zZXNzaW9uIiwidGxzX2NlcnRpZmljYXRlX3NoYTI1NiI6InNoYTI1Nl9hYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhIn0sInBhaXJpbmdfZXhwaXJlc19hdF9tcyI6IjE4MDI1OTIwMDAwMDAiLCJzZWNyZXQiOiJRa0pDUWtKQ1FrSkNRa0pDUWtKQ1FrSkNRa0pDUWtKQ1FrSkNRa0pDUWtJIn0"
+        let envelopeGolden = "ameme-pairing-v2:eyJib290c3RyYXBfaWQiOiJib290X2JiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiIiwiYm9vdHN0cmFwX3NlY3JldCI6IlFrSkNRa0pDUWtKQ1FrSkNRa0pDUWtKQ1FrSkNRa0pDUWtKQ1FrSkNRa0kiLCJlbnZlbG9wZV92ZXJzaW9uIjoyLCJleHBpcmVzX2F0X21zIjoiMTgwMDAwMDMwMDAwMCIsInBhaXJpbmciOnsiY2hhbm5lbF9wcm90b2NvbCI6ImFtZW1lLmFnZW50LWxvY2FsLW5vZGUuY2hhbm5lbC52MSIsImNyZWRlbnRpYWxfcmVmIjoiY3JlZGVudGlhbC1yZWY6ZW52L1NZTlRIRVRJQ19TRUNSRVQiLCJlbmRwb2ludF9yZWYiOiJlbmRwb2ludC1yZWY6c3ludGhldGljL2FuZHJvaWQiLCJleHBlY3RlZF9kZXZpY2VfaWQiOiJkZXZpY2Vfc3ludGhldGljXzAwMSIsImhvc3QiOiIxMjcuMC4wLjEiLCJwYWlyaW5nX2lkIjoicGFpcl9zeW50aGV0aWNfMDAxIiwicG9ydCI6NDQzMjEsInNlc3Npb25fYmluZGluZ19yZWYiOiJzZXNzaW9uLWJpbmRpbmctcmVmOnN5bnRoZXRpYy9zZXNzaW9uIiwidGxzX2NlcnRpZmljYXRlX3NoYTI1NiI6InNoYTI1Nl9hYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhIn0sInBhaXJpbmdfZXhwaXJlc19hdF9tcyI6IjE4MDI1OTIwMDAwMDAifQ"
         precondition(envelopePayload == envelopeGolden, "iOS pairing envelope diverged from the Android golden")
         let parsedEnvelope = try! AgentPairingEnvelope.parse(envelopePayload, now: envelopeNow)
-        precondition(parsedEnvelope.pairing == channelPairing && parsedEnvelope.secret == envelope.secret, "iOS pairing envelope did not round-trip")
+        precondition(
+            parsedEnvelope.pairing == channelPairing
+                && parsedEnvelope.bootstrapID == envelope.bootstrapID
+                && parsedEnvelope.bootstrapSecret == envelope.bootstrapSecret,
+            "iOS pairing envelope did not round-trip"
+        )
         precondition((try? AgentPairingEnvelope.parse(envelopePayload, now: envelopeNow.addingTimeInterval(301))) == nil, "iOS pairing envelope accepted an expired secret")
         let oversizedEnvelope = try! AgentPairingEnvelope(
             pairing: channelPairing,
-            secret: envelope.secret,
+            bootstrapID: envelope.bootstrapID,
+            bootstrapSecret: envelope.bootstrapSecret,
             expiresAt: envelopeNow.addingTimeInterval(601),
             pairingExpiresAt: envelope.pairingExpiresAt
         ).encodedPayload()
@@ -1181,6 +1188,84 @@ struct AmemeSharedSmoke {
         let envelopeJSONString = String(decoding: envelopeJSON, as: UTF8.self)
         precondition((try? AgentPairingEnvelope.parse(rawEnvelope(" " + envelopeJSONString), now: envelopeNow)) == nil, "iOS pairing envelope accepted non-canonical JSON")
         precondition((try? AgentPairingEnvelope.parse(rawEnvelope(envelopeJSONString.replacingOccurrences(of: "{", with: "{\"envelope_version\":1,", options: [], range: envelopeJSONString.startIndex..<envelopeJSONString.index(after: envelopeJSONString.startIndex))), now: envelopeNow)) == nil, "iOS pairing envelope accepted duplicate fields")
+        let bootstrapPrivateKey = P256.Signing.PrivateKey()
+        let bootstrapHello = try! AgentPairingBootstrapV2Codec.buildClientHello(
+            envelope: envelope,
+            clientPrivateKey: bootstrapPrivateKey,
+            clientNonce: "nonce_" + String(repeating: "7", count: 64)
+        )
+        let verifiedBootstrapHello = try! AgentPairingBootstrapV2Codec.verifyClientHello(
+            bootstrapHello.line,
+            envelope: envelope
+        )
+        precondition(
+            verifiedBootstrapHello.clientKeyThumbprint ==
+                AgentLocalNodeChannelCodec.digest(
+                    bootstrapPrivateKey.publicKey.x963Representation
+                ),
+            "iOS bootstrap did not bind possession of the P-256 client key"
+        )
+        var tamperedBootstrapHello = bootstrapHello.line
+        tamperedBootstrapHello[tamperedBootstrapHello.index(before: tamperedBootstrapHello.endIndex)] ^= 1
+        precondition(
+            (try? AgentPairingBootstrapV2Codec.verifyClientHello(
+                tamperedBootstrapHello,
+                envelope: envelope
+            )) == nil,
+            "iOS bootstrap accepted a tampered signed hello"
+        )
+        let credentialStore = AgentPairingCredentialStore(
+            service: "com.ameme.ios.smoke.agent-pairing.\(UUID().uuidString)",
+            account: "current"
+        )
+        try! credentialStore.clearAndVerify()
+        let bootstrapThumbprint = AgentLocalNodeChannelCodec.digest(
+            bootstrapPrivateKey.publicKey.x963Representation
+        )
+        try! credentialStore.savePending(
+            envelope: envelope,
+            clientPrivateKeyRaw: bootstrapPrivateKey.rawRepresentation,
+            clientKeyThumbprint: bootstrapThumbprint
+        )
+        let pendingBootstrap = try! credentialStore.loadPending(
+            pairingID: envelope.pairing.pairingID,
+            now: Date()
+        )
+        let restartPendingBootstrap = try! credentialStore.loadPending(
+            now: Date()
+        )
+        precondition(
+            pendingBootstrap?.envelope == envelope &&
+                pendingBootstrap?.clientKeyThumbprint == bootstrapThumbprint &&
+                restartPendingBootstrap == pendingBootstrap,
+            "iOS device-only credential store did not restore pending bootstrap state"
+        )
+        let storedCredential = AgentPairingIssuedCredential(
+            pairing: envelope.pairing,
+            bootstrapID: envelope.bootstrapID,
+            credentialID: "cred_qr_" + String(repeating: "d", count: 32),
+            channelSecret: channelSecret,
+            clientKeyThumbprint: bootstrapThumbprint,
+            expiresAt: envelope.pairingExpiresAt
+        )
+        try! credentialStore.saveActive(
+            issued: storedCredential,
+            clientPrivateKeyRaw: bootstrapPrivateKey.rawRepresentation
+        )
+        let restoredCredential = try! credentialStore.loadActive(now: Date())
+        precondition(
+            restoredCredential?.credentialID == storedCredential.credentialID &&
+                restoredCredential?.channelSecret == storedCredential.channelSecret &&
+                restoredCredential?.clientKeyThumbprint == bootstrapThumbprint,
+            "iOS device-only credential store did not atomically activate the issued credential"
+        )
+        precondition(
+            (try! credentialStore.loadActive(
+                now: envelope.pairingExpiresAt.addingTimeInterval(1)
+            )) == nil,
+            "iOS device-only credential store retained an expired credential"
+        )
+        try! credentialStore.clearAndVerify()
         let channelClientLine = try! AgentLocalNodeChannelCodec.buildClientHello(
             pairing: channelPairing,
             secret: channelSecret,
@@ -1673,7 +1758,7 @@ struct AmemeSharedSmoke {
             "local-space deletion watermark did not survive encrypted reload"
         )
 
-        print("AmemeSharedSmoke passed: encrypted local capture/reload, atomic batch import rollback, range/query surface, revision, summary, app-owned Raw-only/external-original boundary/source cascade watermark, encrypted Coverage persistence/explicit candidate acceptance/delete non-resurrection, exact-revision multi-source field evidence/recompute/reload, complete user-confirmation retention/partial-confirmation fail-closed/reload, explicit long-term Memory confirmation/revision invalidation/no resurrection, four bounded reuse journeys/content-free telemetry/revision revalidation, authenticated same-install recovery candidate/deletion-watermark/nonempty-target fail-closed/exact-confirmation activation, local-space root freeze/app-owned Raw cleanup/old-backup rejection/local Agent and pending-payload convergence, encrypted export recovery, structured agent experience state, delete, demo isolation, opaque incoming-share handoff, and Android/Python Local Node channel golden")
+        print("AmemeSharedSmoke passed: encrypted local capture/reload, atomic batch import rollback, range/query surface, revision, summary, app-owned Raw-only/external-original boundary/source cascade watermark, encrypted Coverage persistence/explicit candidate acceptance/delete non-resurrection, exact-revision multi-source field evidence/recompute/reload, complete user-confirmation retention/partial-confirmation fail-closed/reload, explicit long-term Memory confirmation/revision invalidation/no resurrection, four bounded reuse journeys/content-free telemetry/revision revalidation, authenticated same-install recovery candidate/deletion-watermark/nonempty-target fail-closed/exact-confirmation activation, local-space root freeze/app-owned Raw cleanup/old-backup rejection/local Agent and pending-payload convergence, encrypted export recovery, structured agent experience state, QR v2 signed bootstrap/device-only pending-to-active credential/expiry cleanup, delete, demo isolation, opaque incoming-share handoff, and Android/Python Local Node channel golden")
     }
 }
 

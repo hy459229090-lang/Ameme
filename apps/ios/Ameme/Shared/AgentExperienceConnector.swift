@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 /// Application boundary for the three ordinary-user connection methods.
@@ -16,6 +17,10 @@ public protocol AgentExperienceConnector: Sendable {
     func connect(candidate: AgentExperienceCandidate) async throws -> AgentExperienceConnection
 
     func disconnect(connection: AgentExperienceConnection) async
+
+    func restoreConnection() async throws -> AgentExperienceConnection?
+
+    func clearLocalCredentials() throws
 }
 
 public enum AgentExperienceConnectorError: Error, Equatable {
@@ -33,6 +38,12 @@ public extension AgentExperienceConnector {
     func resolve(pairingPayload: String) async throws -> AgentExperienceCandidate {
         throw AgentExperienceConnectorError.qrScannerUnavailable
     }
+
+    func restoreConnection() async throws -> AgentExperienceConnection? {
+        nil
+    }
+
+    func clearLocalCredentials() throws {}
 }
 
 public typealias AgentExperienceAuthenticatedClientFactory = @Sendable (
@@ -47,6 +58,8 @@ public final class BonjourAgentExperienceConnector: @unchecked Sendable, AgentEx
 
     private let discovery: BonjourAgentExperienceDiscovery
     private let authenticatedClientFactory: AgentExperienceAuthenticatedClientFactory?
+    private let credentialStore: any AgentPairingCredentialStoring
+    private let bootstrapProvisioner: any AgentPairingBootstrapProvisioning
     private let now: @Sendable () -> Date
     private let activeClients = ActiveAgentClientRegistry()
     private let pendingPairings = PendingAgentPairingRegistry()
@@ -54,10 +67,16 @@ public final class BonjourAgentExperienceConnector: @unchecked Sendable, AgentEx
     public init(
         discovery: BonjourAgentExperienceDiscovery = BonjourAgentExperienceDiscovery(),
         authenticatedClientFactory: AgentExperienceAuthenticatedClientFactory? = nil,
+        credentialStore: any AgentPairingCredentialStoring =
+            AgentPairingCredentialStore(),
+        bootstrapProvisioner: any AgentPairingBootstrapProvisioning =
+            AgentPairingBootstrapNetworkClient(),
         now: @escaping @Sendable () -> Date = { .now }
     ) {
         self.discovery = discovery
         self.authenticatedClientFactory = authenticatedClientFactory
+        self.credentialStore = credentialStore
+        self.bootstrapProvisioner = bootstrapProvisioner
         self.now = now
     }
 
@@ -108,24 +127,62 @@ public final class BonjourAgentExperienceConnector: @unchecked Sendable, AgentEx
                 throw AgentExperienceConnectorError.authorizationRequired
             }
         case .qrCode:
-            guard let envelope = pendingPairings.take(candidate.id, now: now()) else {
-                throw AgentExperienceConnectorError.candidateUnavailable
+            let pending: PendingAgentPairingBootstrap
+            if let envelope = pendingPairings.take(candidate.id, now: now()) {
+                let privateKey = P256.Signing.PrivateKey()
+                let thumbprint = AgentLocalNodeChannelCodec.digest(
+                    privateKey.publicKey.x963Representation
+                )
+                do {
+                    try credentialStore.savePending(
+                        envelope: envelope,
+                        clientPrivateKeyRaw: privateKey.rawRepresentation,
+                        clientKeyThumbprint: thumbprint
+                    )
+                } catch {
+                    throw AgentExperienceConnectorError.authorizationRequired
+                }
+                pending = PendingAgentPairingBootstrap(
+                    envelope: envelope,
+                    clientPrivateKeyRaw: privateKey.rawRepresentation,
+                    clientKeyThumbprint: thumbprint
+                )
+            } else {
+                do {
+                    guard let restored = try credentialStore.loadPending(
+                        pairingID: candidate.id,
+                        now: now()
+                    ) else {
+                        throw AgentExperienceConnectorError.candidateUnavailable
+                    }
+                    pending = restored
+                } catch let connectorError as AgentExperienceConnectorError {
+                    throw connectorError
+                } catch {
+                    throw AgentExperienceConnectorError.candidateUnavailable
+                }
             }
             let createdAt = now()
-            guard envelope.pairingExpiresAt > createdAt else {
+            guard pending.envelope.pairingExpiresAt > createdAt else {
                 throw AgentExperienceConnectorError.candidateUnavailable
+            }
+            let issued: AgentPairingIssuedCredential
+            do {
+                issued = try await provisionPending(pending)
+            } catch {
+                throw AgentExperienceConnectorError.connectionFailed
             }
             let grant = AgentAccessGrantPolicy.default(
                 createdAt: createdAt,
-                expiresAt: envelope.pairingExpiresAt
+                expiresAt: issued.expiresAt
             ).bind(
                 callerID: "ameme_ios",
                 grantID: "grt_" + UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
             )
             do {
-                client = try AgentLocalNodeNetworkClient(
-                    pairing: envelope.pairing,
-                    secret: envelope.channelSecret,
+                client = try await makeConnectedClientWithRetry(
+                    pairing: issued.pairing,
+                    secret: issued.channelSecret,
                     accessGrant: grant
                 )
             } catch {
@@ -162,8 +219,139 @@ public final class BonjourAgentExperienceConnector: @unchecked Sendable, AgentEx
     }
 
     public func disconnect(connection: AgentExperienceConnection) async {
-        guard let client = activeClients.remove(connection.id) else { return }
-        await client.close()
+        if let client = activeClients.remove(connection.id) {
+            await client.close()
+        }
+        try? credentialStore.clearAndVerify()
+    }
+
+    public func restoreConnection() async throws -> AgentExperienceConnection? {
+        var stored = try credentialStore.loadActive(now: now())
+        if stored == nil, let pending = try credentialStore.loadPending(now: now()) {
+            let issued: AgentPairingIssuedCredential
+            do {
+                issued = try await provisionPending(pending)
+            } catch {
+                throw AgentExperienceConnectorError.connectionFailed
+            }
+            stored = StoredAgentPairingCredential(
+                pairing: issued.pairing,
+                credentialID: issued.credentialID,
+                channelSecret: issued.channelSecret,
+                clientPrivateKeyRaw: pending.clientPrivateKeyRaw,
+                clientKeyThumbprint: issued.clientKeyThumbprint,
+                expiresAt: issued.expiresAt
+            )
+        }
+        guard let stored else { return nil }
+        let connectedAt = now()
+        let grant = AgentAccessGrantPolicy.default(
+            createdAt: connectedAt,
+            expiresAt: stored.expiresAt
+        ).bind(
+            callerID: "ameme_ios",
+            grantID: "grt_" + UUID().uuidString
+                .replacingOccurrences(of: "-", with: "")
+                .lowercased()
+        )
+        let client = try await makeConnectedClientWithRetry(
+            pairing: stored.pairing,
+            secret: stored.channelSecret,
+            accessGrant: grant
+        )
+        do {
+            try await client.connect()
+            guard await client.supportedOperations().contains(
+                AgentLocalNodeChannelCodec.operationCreateEvent
+            ) else {
+                throw AgentExperienceConnectorError.connectionFailed
+            }
+            if let previous = activeClients.insert(
+                client,
+                for: stored.pairing.pairingID
+            ) {
+                await previous.close()
+            }
+        } catch {
+            await client.close()
+            throw AgentExperienceConnectorError.connectionFailed
+        }
+        return AgentExperienceConnection(
+            id: stored.pairing.pairingID,
+            deviceName: "Ameme 设备",
+            agentName: "Ameme Local Node",
+            method: .qrCode,
+            capabilities: ["写入结构化工作记录"],
+            connectedAt: connectedAt,
+            expiresAt: stored.expiresAt,
+            simulated: false
+        )
+    }
+
+    public func clearLocalCredentials() throws {
+        try credentialStore.clearAndVerify()
+    }
+
+    private func provisionPending(
+        _ pending: PendingAgentPairingBootstrap
+    ) async throws -> AgentPairingIssuedCredential {
+        guard
+            pending.envelope.expiresAt > now(),
+            pending.envelope.pairingExpiresAt > now() else {
+            throw AgentExperienceConnectorError.candidateUnavailable
+        }
+        let privateKey: P256.Signing.PrivateKey
+        do {
+            privateKey = try P256.Signing.PrivateKey(
+                rawRepresentation: pending.clientPrivateKeyRaw
+            )
+        } catch {
+            throw AgentExperienceConnectorError.authorizationRequired
+        }
+        guard
+            AgentLocalNodeChannelCodec.digest(
+                privateKey.publicKey.x963Representation
+            ) == pending.clientKeyThumbprint else {
+            throw AgentExperienceConnectorError.authorizationRequired
+        }
+        let issued = try await bootstrapProvisioner.provision(
+            envelope: pending.envelope,
+            clientPrivateKey: privateKey
+        )
+        try credentialStore.saveActive(
+            issued: issued,
+            clientPrivateKeyRaw: pending.clientPrivateKeyRaw
+        )
+        return issued
+    }
+
+    private func makeConnectedClientWithRetry(
+        pairing: AgentLocalNodePairingMaterial,
+        secret: Data,
+        accessGrant: AgentAccessGrant
+    ) async throws -> AgentLocalNodeNetworkClient {
+        let retryDelays: [UInt64] = [100_000_000, 250_000_000, 500_000_000]
+        for attempt in 0...retryDelays.count {
+            let client = try AgentLocalNodeNetworkClient(
+                pairing: pairing,
+                secret: secret,
+                accessGrant: accessGrant
+            )
+            do {
+                try await client.connect()
+                return client
+            } catch let failure as AgentLocalNodeChannelError
+                where failure == .transportFailed &&
+                    attempt < retryDelays.count
+            {
+                await client.close()
+                try await Task.sleep(nanoseconds: retryDelays[attempt])
+            } catch {
+                await client.close()
+                throw error
+            }
+        }
+        throw AgentExperienceConnectorError.connectionFailed
     }
 
     private func resolveLanCandidate() async throws -> AgentExperienceCandidate {

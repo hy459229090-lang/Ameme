@@ -125,6 +125,45 @@ class SingleConnectionTlsLocalNodeListenerTest {
         assertFalse(handled)
     }
 
+    @Test
+    fun bootstrapHelloUsesDedicatedOneResponseRoute_withoutApplicationCredential() {
+        val bootstrapLine = (
+            """{"bootstrap_protocol":"ameme.agent-pairing-bootstrap.v2","message_type":"bootstrap_client_hello"}"""
+            ).encodeToByteArray()
+        val bootstrapResponse = """{"bootstrap":"provisioned"}""".encodeToByteArray()
+        val socket = FakeSslSocket(bootstrapLine + byteArrayOf('\n'.code.toByte()))
+        var applicationHandled = false
+        var bootstrapHandled = false
+        val listener = SingleConnectionTlsLocalNodeListener(
+            pairing = pairing,
+            pairingSecrets = emptyList(),
+            sslServerSocketFactory = FakeSslServerSocketFactory(
+                FakeSslServerSocket(socket),
+            ),
+            applicationRequestHandler = AndroidLocalNodeApplicationRequestHandler {
+                applicationHandled = true
+                byteArrayOf()
+            },
+            supportedOperations = setOf("create_event"),
+            bootstrapHandler = AndroidPairingBootstrapHandler { received ->
+                assertArrayEquals(bootstrapLine, received)
+                bootstrapHandled = true
+                bootstrapResponse.copyOf()
+            },
+        )
+
+        val result = listener.serveSingleConnection()
+
+        assertEquals(0, result.requestsHandled)
+        assertTrue(result.bootstrapProvisioned)
+        assertTrue(bootstrapHandled)
+        assertFalse(applicationHandled)
+        assertEquals(
+            String(bootstrapResponse, Charsets.UTF_8),
+            socket.output.toString(Charsets.UTF_8).trim(),
+        )
+    }
+
     private fun assertFailsState(block: () -> Unit) {
         try {
             block()

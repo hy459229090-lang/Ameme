@@ -146,7 +146,9 @@ def main() -> int:
     require_markers(
         texts["runtime"],
         (
-            "grantedMemoryTypes = accessGrantPolicy.dataTypes.intersect",
+            "val grantedMemoryTypes = grantedMemoryTypes(pairing.accessGrantPolicy)",
+            "private fun grantedMemoryTypes(",
+            "accessGrantPolicy.dataTypes.intersect(",
             "MEMORY_TYPE_REVISION in grantedMemoryTypes",
             "OPERATION_APPEND_REVISION",
             "supportedOperations = grantedOperations",

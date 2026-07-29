@@ -161,7 +161,8 @@ final class AgentExperienceTests: XCTestCase {
         )
         let envelope = try AgentPairingEnvelope(
             pairing: pairing,
-            secret: Data(repeating: 0x42, count: 32),
+            bootstrapID: "boot_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            bootstrapSecret: Data(repeating: 0x42, count: 32),
             expiresAt: now.addingTimeInterval(300),
             pairingExpiresAt: now.addingTimeInterval(30 * 24 * 60 * 60)
         )
@@ -171,8 +172,8 @@ final class AgentExperienceTests: XCTestCase {
         let candidate = try await connector.resolve(pairingPayload: payload)
 
         XCTAssertEqual(
-            envelope.channelSecret,
-            Data("QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI".utf8)
+            envelope.bootstrapSecret,
+            Data(repeating: 0x42, count: 32)
         )
         XCTAssertEqual(candidate.id, pairing.pairingID)
         XCTAssertEqual(candidate.method, .qrCode)

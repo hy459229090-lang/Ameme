@@ -1,7 +1,7 @@
 # Ameme MVP 安全需求与威胁模型 v0.2
 
 > 文档状态：已接受；资产、边界、威胁和控制为研发基线，SEC/SYNC/SKILL 实现证据待执行\
-> 更新日期：2026-07-14\
+> 更新日期：2026-07-29\
 > 方法：STRIDE + 隐私威胁；移动测试覆盖 OWASP MASVS Storage/Crypto/Auth/Network/Platform/Code/Privacy 类别\
 > 参考：[OWASP MASVS](https://mas.owasp.org/MASVS/)
 
@@ -42,7 +42,7 @@ flowchart LR
 |---|---|---|---|---|
 | T01 | 恶意 App/被盗设备读本地库/Raw | sandbox、系统 key store、space key、备份排除、重认证 | 静态/动态存储检查、锁屏/备份测试 | 取决于设备完整性 |
 | T02 | Root/jailbreak/调试导出 | 风险检测只作提示/收窄、secret 不落盘、短 token | Hook/backup/log 测试 | 无法完全防已控设备 |
-| T03 | Agent 冒充/配对码窃取 | 一次性 challenge、caller key binding、Mobile 审批、短 Grant | 重放/中间人/换 key 负向测试 | 宿主身份质量差异 |
+| T03 | Agent 冒充/配对码窃取 | 一次性 bootstrap、签发时 caller P-256 key possession、二维码 secret 与会话 credential 分离、Mobile 审批、短 Grant | 篡改/重放/MITM/并发扫描/换 key/同 key 响应重取负向测试 | 冻结应用通道 bearer 可复制；宿主身份质量差异 |
 | T04 | Confused deputy 跨 purpose/space | 每次交集校验、Repository space bound、资源存在性隐藏 | IDOR/跨 space/fuzz | 低，需持续回归 |
 | T05 | Grant 撤销后缓存继续用 | 在线/本地 revocation check、ContextPack expiry/caller binding | 撤销竞态、离线缓存测试 | 短离线窗口需策略 |
 | T06 | Sync replay/乱序/sequence gap | immutable envelope、device sequence、idempotency、签名/会话 | 重复/乱序/丢包测试 | HLC 待 Spike |
@@ -106,8 +106,10 @@ Android 官方建议敏感、仅 App 使用的数据存储在 app-specific inter
 | P1 Local Core | at-rest、backup、process kill、disk full、migration/rollback、Raw deletion |
 | P2 Mobile | permission downgrade、share/picker URI、deep link、screen/notification、root/jailbreak behavior |
 | P4 Sync | LAN 发现隐私、配对 MITM/replay/order/gap/conflict/device revoke/key rotate/旧 peer 隔离 |
-| P5 Agent | pairing MITM/replay、host impersonation、prompt injection、cross-space、expiry/revoke |
+| P5 Agent | pairing MITM/replay、并发扫码、key possession、同 key 响应重取、issued bearer 复制边界、host impersonation、prompt injection、cross-space、expiry/revoke |
 | Gate 5/6 | SAST/SCA/SBOM、secret scan、DAST/API auth、restore/deletion drill、incident tabletop |
+
+当前 QR Bootstrap v2 已在仓库内实现短时 HMAC envelope、P-256 持有证明、Android 原子一次性消费/同 key 重取和独立随机 credential；Release artifact 不含开发者 bearer，iOS pending/active 状态进入 device-only Keychain。该控制只把 credential 签发与首次 client key 绑定；冻结 v1 应用通道后续仍以 bearer 认证，没有每次重连 P-256 proof。Android 扫码客户端、共享账户 Grant registry、物理网络/设备、真实用户配对和 bearer 复制攻击验证仍为未关闭 Gate。
 
 ## 7. 未决但已收敛
 

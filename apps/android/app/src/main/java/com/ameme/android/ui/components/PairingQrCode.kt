@@ -44,7 +44,7 @@ fun PairingQrCode(
 }
 
 internal fun encodePairingQrCode(payload: String, size: Int = 768): Bitmap {
-    require(payload.startsWith("ameme-pairing-v1:"))
+    require(payload.startsWith("ameme-pairing-v2:"))
     require(payload.length <= 16_384)
     require(size in 256..1_024)
     val matrix = QRCodeWriter().encode(

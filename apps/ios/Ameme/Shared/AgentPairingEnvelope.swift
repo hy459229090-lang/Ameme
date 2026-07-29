@@ -1,10 +1,11 @@
 import Foundation
 
-/// A short-lived, user-mediated pairing payload for a future camera/deep-link
-/// importer. The one-time secret is intentionally inside the QR payload; it is
-/// never persisted by `AgentExperienceStore` or emitted in diagnostics.
+/// A short-lived, user-mediated bootstrap payload.
+///
+/// Its secret can only provision a separately generated channel credential. It is never accepted
+/// as an application-channel HMAC credential or emitted in diagnostics.
 public struct AgentPairingEnvelope: Equatable, Sendable {
-    public static let prefix = "ameme-pairing-v1:"
+    public static let prefix = "ameme-pairing-v2:"
     public static let maxPayloadCharacters = 16_384
     public static let maxLifetime: TimeInterval = 10 * 60
     public static let maxPairingLifetime: TimeInterval = 31 * 24 * 60 * 60
@@ -12,24 +13,28 @@ public struct AgentPairingEnvelope: Equatable, Sendable {
     private static let maxPairingLifetimeMilliseconds: Int64 = 31 * 24 * 60 * 60 * 1_000
 
     public let pairing: AgentLocalNodePairingMaterial
-    public let secret: Data
+    public let bootstrapID: String
+    public let bootstrapSecret: Data
     public let expiresAt: Date
     public let pairingExpiresAt: Date
 
-    /// Channel HMAC credentials use the same printable base64url value that
-    /// Android stores in Keystore and the developer Host receives by reference.
-    /// `secret` remains the decoded 32-byte entropy for validation/round-trip.
-    public var channelSecret: Data {
-        Data(Self.encodeBase64URL(secret).utf8)
-    }
-
     public init(
         pairing: AgentLocalNodePairingMaterial,
-        secret: Data,
+        bootstrapID: String,
+        bootstrapSecret: Data,
         expiresAt: Date,
         pairingExpiresAt: Date
     ) throws {
-        guard secret.count == 32 else { throw AgentPairingEnvelopeError.invalidSecret }
+        guard
+            bootstrapID.range(
+                of: "^boot_[0-9a-f]{32}$",
+                options: .regularExpression
+            ) != nil else {
+            throw AgentPairingEnvelopeError.invalidFormat
+        }
+        guard bootstrapSecret.count == 32 else {
+            throw AgentPairingEnvelopeError.invalidSecret
+        }
         guard
             expiresAt.timeIntervalSince1970.isFinite,
             expiresAt.timeIntervalSince1970 > 0,
@@ -38,7 +43,8 @@ public struct AgentPairingEnvelope: Equatable, Sendable {
             throw AgentPairingEnvelopeError.invalidFormat
         }
         self.pairing = pairing
-        self.secret = secret
+        self.bootstrapID = bootstrapID
+        self.bootstrapSecret = bootstrapSecret
         self.expiresAt = expiresAt
         self.pairingExpiresAt = pairingExpiresAt
     }
@@ -50,11 +56,12 @@ public struct AgentPairingEnvelope: Equatable, Sendable {
             throw AgentPairingEnvelopeError.invalidFormat
         }
         let object: [String: Any] = [
-            "envelope_version": 1,
+            "bootstrap_id": bootstrapID,
+            "bootstrap_secret": Self.encodeBase64URL(bootstrapSecret),
+            "envelope_version": 2,
             "expires_at_ms": String(expiresAtMilliseconds),
             "pairing": pairing.document(),
             "pairing_expires_at_ms": String(pairingExpiresAtMilliseconds),
-            "secret": Self.encodeBase64URL(secret),
         ]
         let data = try AgentLocalNodeChannelCodec.canonicalJSONData(object)
         let payload = Self.prefix + Self.encodeBase64URL(data)
@@ -72,9 +79,18 @@ public struct AgentPairingEnvelope: Equatable, Sendable {
         do { try scanner.validate() } catch { throw AgentPairingEnvelopeError.invalidFormat }
         guard
             let object = try? JSONSerialization.jsonObject(with: jsonData, options: [.fragmentsAllowed]) as? [String: Any],
-            Set(object.keys) == ["envelope_version", "expires_at_ms", "pairing", "pairing_expires_at_ms", "secret"],
+            Set(object.keys) == [
+                "bootstrap_id",
+                "bootstrap_secret",
+                "envelope_version",
+                "expires_at_ms",
+                "pairing",
+                "pairing_expires_at_ms",
+            ],
             let version = object["envelope_version"] as? Int,
-            version == 1,
+            version == 2,
+            let bootstrapID = object["bootstrap_id"] as? String,
+            bootstrapID.range(of: "^boot_[0-9a-f]{32}$", options: .regularExpression) != nil,
             let expiryText = object["expires_at_ms"] as? String,
             isUnsignedDecimal(expiryText),
             let expiryMilliseconds = Int64(expiryText),
@@ -82,9 +98,9 @@ public struct AgentPairingEnvelope: Equatable, Sendable {
             isUnsignedDecimal(pairingExpiryText),
             let pairingExpiryMilliseconds = Int64(pairingExpiryText),
             let pairingObject = object["pairing"] as? [String: Any],
-            let secretText = object["secret"] as? String,
-            let secret = decodeBase64URL(secretText),
-            secret.count == 32 else {
+            let secretText = object["bootstrap_secret"] as? String,
+            let bootstrapSecret = decodeBase64URL(secretText),
+            bootstrapSecret.count == 32 else {
             throw AgentPairingEnvelopeError.invalidFormat
         }
         guard
@@ -113,20 +129,21 @@ public struct AgentPairingEnvelope: Equatable, Sendable {
         }
         return try Self(
             pairing: pairing,
-            secret: secret,
+            bootstrapID: bootstrapID,
+            bootstrapSecret: bootstrapSecret,
             expiresAt: expiresAt,
             pairingExpiresAt: Date(timeIntervalSince1970: Double(pairingExpiryMilliseconds) / 1_000)
         )
     }
 
-    private static func encodeBase64URL(_ data: Data) -> String {
+    static func encodeBase64URL(_ data: Data) -> String {
         data.base64EncodedString()
             .replacingOccurrences(of: "+", with: "-")
             .replacingOccurrences(of: "/", with: "_")
             .replacingOccurrences(of: "=", with: "")
     }
 
-    private static func decodeBase64URL(_ value: String) -> Data? {
+    static func decodeBase64URL(_ value: String) -> Data? {
         guard !value.isEmpty,
               value.utf8.allSatisfy({ (0x41...0x5A).contains($0) || (0x61...0x7A).contains($0) || (0x30...0x39).contains($0) || $0 == 0x2D || $0 == 0x5F }),
               value.count % 4 != 1 else { return nil }

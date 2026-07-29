@@ -59,7 +59,10 @@ final class AppModel: ObservableObject {
             try? agentExperienceStore.clearAndVerify()
         } else {
             do {
-                agentExperienceConnection = try agentExperienceStore.load()
+                let restoredMetadata = try agentExperienceStore.load()
+                agentExperienceConnection = restoredMetadata?.simulated == true
+                    ? restoredMetadata
+                    : nil
             } catch {
                 agentExperienceConnection = nil
                 notice = "设备连接状态不可用；已安全断开体验连接。"
@@ -80,7 +83,27 @@ final class AppModel: ObservableObject {
                 _ = await self.deleteLocalSpace()
             } else {
                 self.restorePendingIncomingShare()
+                await self.restoreAgentExperienceConnection()
             }
+        }
+    }
+
+    private func restoreAgentExperienceConnection() async {
+        guard agentExperienceConnection == nil, !store.isLocalSpaceDeleted else {
+            return
+        }
+        do {
+            if let restored = try await agentExperienceConnector.restoreConnection() {
+                try agentExperienceStore.save(restored)
+                agentExperienceConnection = restored
+                notice = "已恢复设备绑定的授权连接。"
+            } else {
+                agentExperienceStore.clear()
+            }
+        } catch {
+            agentExperienceStore.clear()
+            agentExperienceConnection = nil
+            notice = "设备授权连接未能恢复；未回退为未认证连接，请重新扫码。"
         }
     }
 
@@ -473,6 +496,7 @@ final class AppModel: ObservableObject {
                 if let connection = agentExperienceConnection {
                     await agentExperienceConnector.disconnect(connection: connection)
                 }
+                try agentExperienceConnector.clearLocalCredentials()
             },
             deleteLocalSpace: { [store] at in
                 store.deleteLocalSpace(requestedAt: at)
@@ -2373,7 +2397,7 @@ private struct AgentQRCodeScannerSheet: View {
                     Text("无法使用相机时，也可以粘贴完整配对码。")
                         .font(.footnote)
                         .foregroundStyle(AmemeStyle.secondaryText)
-                    TextField("粘贴 ameme-pairing-v1 配对码", text: $manualPayload, axis: .vertical)
+                    TextField("粘贴 ameme-pairing-v2 配对码", text: $manualPayload, axis: .vertical)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .lineLimit(2...5)

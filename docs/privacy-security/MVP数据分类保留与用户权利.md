@@ -90,7 +90,8 @@ Gate 3/4 要为上述类别写入单一配置、迁移和到期测试；代码�
 source/locator/path、配对密钥、模型输入或自由异常。STARTED 在 repository 访问前持久化，失败则
 拒绝执行；COMPLETED 失败保留诚实的未完成 STARTED，并依靠写操作持久幂等安全重试。SQLCipher
 表禁止 UPDATE 和未到期 DELETE，最近读取/总容量有界；Android 设置页只读最近 20 条且不生成
-合成记录。新增 v13→v14 migration/runtime/UI instrumentation 本轮只编译，未占用并行 AVD。
+合成记录。v13→v14 migration/runtime/UI instrumentation 随后已进入 API 36 / 16 KB AVD 全量；
+QR v2 后的当前启动口径为 103 discovered / 96 passed / 7 外部门 skipped / 0 failed。
 同安装恢复激活现把旧 live 在激活时仍未过期的审计与候选账本做单调 union：精确重复去重，
 同 ID 或同 trace/phase 的不同内容、非法记录和 50,000 行容量溢出均在换库前失败关闭；retained
 ledger digest 与合并后 SQLCipher 文件 digest 在换库前后复核，PREPARED 崩溃回旧 live 并清理

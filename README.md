@@ -61,7 +61,7 @@ iOS 与 Android 均以“今天”为唯一默认主页，通过一个记录按�
 | 信息输入 | 双端文字、按次照片、显式 Share、语音结果/录音、范围化日历导入 | 不做后台全量采集；每种敏感来源都在用户主动操作时授权 |
 | Agent | `ameme-memory` Skill、本地 MCP Host、授权与风险评测 | 真实第三方宿主与共享账户 Grant 尚未完成 |
 | AI | 可替换推理网关、固定合成评测、用户确认后生成每日小结 | 真实模型、成本和生产安全证据仍待补齐 |
-| 连接/同步 | 跨端协议、确定性模拟器、QR 短时配对、TLS 1.3/pin/HMAC Local Node 子门 | 账户设备 registry、真机 P2P、共享 Grant 撤销传播与后台同步尚未完成 |
+| 连接/同步 | 跨端协议、确定性模拟器、服务端一次性 QR v2 bootstrap→独立凭据、TLS 1.3/pin/HMAC Local Node 子门 | Android 扫码客户端、账户设备 registry、真机 P2P、共享 Grant 撤销传播与后台同步尚未完成 |
 
 更完整的当前状态与证据边界见 [STATUS.md](STATUS.md)。
 

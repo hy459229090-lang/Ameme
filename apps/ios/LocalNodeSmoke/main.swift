@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import AmemeShared
 import Darwin
@@ -19,6 +20,27 @@ struct AmemeLocalNodeSmoke {
             }
 
             let envelope = try AgentPairingEnvelope.parse(pairingPayload)
+            let clientPrivateKey = P256.Signing.PrivateKey()
+            let issuedCredential: AgentPairingIssuedCredential
+            do {
+                issuedCredential = try await AgentPairingBootstrapNetworkClient()
+                    .provision(
+                        envelope: envelope,
+                        clientPrivateKey: clientPrivateKey
+                    )
+            } catch {
+                throw SmokeError.bootstrap(error)
+            }
+            guard
+                issuedCredential.bootstrapID == envelope.bootstrapID,
+                issuedCredential.pairing == envelope.pairing,
+                issuedCredential.clientKeyThumbprint ==
+                    AgentLocalNodeChannelCodec.digest(
+                        clientPrivateKey.publicKey.x963Representation
+                    ),
+                issuedCredential.expiresAt <= envelope.pairingExpiresAt else {
+                throw SmokeError.applicationRejected
+            }
             let grant = AgentAccessGrant(
                 grantID: "grant_ios_network_smoke",
                 ownerID: "owner_local",
@@ -27,18 +49,18 @@ struct AmemeLocalNodeSmoke {
                 spaces: ["space_personal"],
                 dataTypes: ["event", "revision"],
                 notBefore: now,
-                expiresAt: envelope.pairingExpiresAt,
+                expiresAt: issuedCredential.expiresAt,
                 status: .active,
                 createdAt: now,
                 revokedAt: nil
             )
-            let client = try AgentLocalNodeNetworkClient(
-                pairing: envelope.pairing,
-                secret: envelope.channelSecret,
-                accessGrant: grant
-            )
+            let client: AgentLocalNodeNetworkClient
             do {
-                try await client.connect()
+                client = try await connectApplicationClient(
+                    pairing: issuedCredential.pairing,
+                    secret: issuedCredential.channelSecret,
+                    accessGrant: grant
+                )
             } catch {
                 throw SmokeError.channelConnect(error)
             }
@@ -158,7 +180,7 @@ struct AmemeLocalNodeSmoke {
                 throw SmokeError.channelExchange(error)
             }
             await client.close()
-            print("{\"status\":\"passed\",\"transport\":\"ios-qr-envelope-to-android-local-node\",\"qr_user_path_connected\":true,\"grant_bound\":true,\"bounded_visible_events\":true,\"append_revision\":true,\"exact_event_and_revision_undo\":true,\"content_logged\":false}")
+            print("{\"status\":\"passed\",\"transport\":\"ios-qr-v2-bootstrap-to-android-local-node\",\"bootstrap_credential_separated\":true,\"bootstrap_issuance_client_key_bound\":true,\"qr_user_path_connected\":true,\"grant_bound\":true,\"bounded_visible_events\":true,\"append_revision\":true,\"exact_event_and_revision_undo\":true,\"content_logged\":false}")
         } catch {
             fputs("ameme_local_node_smoke_failed:\(error)\n", stderr)
             exit(1)
@@ -166,9 +188,39 @@ struct AmemeLocalNodeSmoke {
     }
 }
 
+private func connectApplicationClient(
+    pairing: AgentLocalNodePairingMaterial,
+    secret: Data,
+    accessGrant: AgentAccessGrant
+) async throws -> AgentLocalNodeNetworkClient {
+    let retryDelays: [UInt64] = [100_000_000, 250_000_000, 500_000_000]
+    for attempt in 0...retryDelays.count {
+        let client = try AgentLocalNodeNetworkClient(
+            pairing: pairing,
+            secret: secret,
+            accessGrant: accessGrant
+        )
+        do {
+            try await client.connect()
+            return client
+        } catch let failure as AgentLocalNodeChannelError
+            where failure == .transportFailed &&
+                attempt < retryDelays.count
+        {
+            await client.close()
+            try await Task.sleep(nanoseconds: retryDelays[attempt])
+        } catch {
+            await client.close()
+            throw error
+        }
+    }
+    throw AgentLocalNodeChannelError.transportFailed
+}
+
 private enum SmokeError: Error {
     case configurationMissing
     case applicationRejected
+    case bootstrap(Error)
     case channelConnect(Error)
     case channelExchange(Error)
 }

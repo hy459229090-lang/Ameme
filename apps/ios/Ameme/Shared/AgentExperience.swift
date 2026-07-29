@@ -171,13 +171,10 @@ public struct AgentExperienceStore {
                 clear()
                 return nil
             }
-            // This store contains display metadata only. A real channel/client is
-            // process-owned and its credential is deliberately not persisted here;
-            // never relaunch into a UI state that claims an active transport.
-            guard connection.simulated else {
-                clear()
-                return nil
-            }
+            // This remains display metadata only. A non-simulated record is returned
+            // as a reconnect hint, but the UI must not call it active until the
+            // device-only credential store has completed a fresh authenticated
+            // transport handshake.
             return connection
         } catch let error as AgentExperienceStoreError {
             throw error

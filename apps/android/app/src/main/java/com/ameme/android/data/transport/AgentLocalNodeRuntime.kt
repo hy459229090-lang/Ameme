@@ -4,6 +4,7 @@ import com.ameme.android.data.local.LocalEventDatabase
 import com.ameme.android.data.local.LocalMemoryRepository
 import com.ameme.android.data.transport.channel.AndroidLocalNodeApplicationRequest
 import com.ameme.android.data.transport.channel.AndroidLocalNodeApplicationRequestHandler
+import com.ameme.android.data.transport.channel.AndroidPairingBootstrapHandler
 import com.ameme.android.data.transport.channel.AndroidLocalNodePairingMaterial
 import com.ameme.android.data.transport.channel.SingleConnectionTlsLocalNodeListener
 import java.io.Closeable
@@ -32,9 +33,9 @@ enum class AgentLocalNodeRuntimeState {
  */
 class AgentLocalNodeRuntime private constructor(
     private val repository: LocalMemoryRepository,
-    private val pairing: ActiveAgentPairing,
-    private val accessGrantPolicy: AgentAccessGrantPolicy,
+    private val pairingManager: AgentPairingManager,
     private val sslServerSocketFactory: SSLServerSocketFactory,
+    private val allowDeveloperCredential: Boolean,
     private val clock: Clock,
     private val onStateChanged: (AgentLocalNodeRuntimeState) -> Unit,
     private val onEventPersisted: () -> Unit,
@@ -44,50 +45,6 @@ class AgentLocalNodeRuntime private constructor(
     private val executor = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "ameme-agent-local-node").apply { isDaemon = true }
     }
-    private val grantedMemoryTypes = accessGrantPolicy.dataTypes.intersect(
-        setOf(
-            MemoryRepositoryAgentLocalNodeEndpoint.MEMORY_TYPE_EVENT,
-            MemoryRepositoryAgentLocalNodeEndpoint.MEMORY_TYPE_REVISION,
-        ),
-    )
-    private val grantedOperations = buildSet {
-        if (
-            MemoryRepositoryAgentLocalNodeEndpoint.MEMORY_TYPE_EVENT in grantedMemoryTypes &&
-            MemoryRepositoryAgentLocalNodeEndpoint.OPERATION_CREATE_EVENT in accessGrantPolicy.operations
-        ) {
-            add(MemoryRepositoryAgentLocalNodeEndpoint.OPERATION_CREATE_EVENT)
-        }
-        if (
-            MemoryRepositoryAgentLocalNodeEndpoint.MEMORY_TYPE_REVISION in grantedMemoryTypes &&
-            MemoryRepositoryAgentLocalNodeEndpoint.OPERATION_APPEND_REVISION in accessGrantPolicy.operations
-        ) {
-            add(MemoryRepositoryAgentLocalNodeEndpoint.OPERATION_APPEND_REVISION)
-        }
-        if (
-            grantedMemoryTypes.isNotEmpty() &&
-            MemoryRepositoryAgentLocalNodeEndpoint.OPERATION_UNDO_CAPTURE in accessGrantPolicy.operations
-        ) {
-            add(MemoryRepositoryAgentLocalNodeEndpoint.OPERATION_UNDO_CAPTURE)
-        }
-        if (
-            MemoryRepositoryAgentLocalNodeEndpoint.MEMORY_TYPE_EVENT in grantedMemoryTypes &&
-            MemoryRepositoryAgentLocalNodeEndpoint.OPERATION_VISIBLE_EVENTS in accessGrantPolicy.operations
-        ) {
-            add(MemoryRepositoryAgentLocalNodeEndpoint.OPERATION_VISIBLE_EVENTS)
-        }
-    }
-
-    private val channelPairing = AndroidLocalNodePairingMaterial(
-        channelProtocol = pairing.material.channelProtocol,
-        endpointRef = pairing.material.endpointRef,
-        credentialRef = pairing.material.credentialRef,
-        expectedDeviceId = pairing.material.expectedDeviceId,
-        sessionBindingRef = pairing.material.sessionBindingRef,
-        pairingId = pairing.material.pairingId,
-        host = pairing.material.host,
-        port = pairing.material.port,
-        tlsCertificateSha256 = pairing.material.tlsCertificateSha256,
-    )
 
     private fun start() {
         onStateChanged(AgentLocalNodeRuntimeState.Starting)
@@ -95,43 +52,78 @@ class AgentLocalNodeRuntime private constructor(
     }
 
     private fun serveLoop() {
-        while (!closed.get() && pairing.expiresAt.isAfter(clock.instant())) {
-            val next = try {
-                SingleConnectionTlsLocalNodeListener(
-                    pairing = channelPairing,
-                    pairingSecret = pairing.secret,
-                    sslServerSocketFactory = sslServerSocketFactory,
-                    applicationRequestHandler = AndroidLocalNodeApplicationRequestHandler(::handleApplicationRequest),
-                    supportedOperations = grantedOperations,
-                )
-            } catch (_: Exception) {
-                signal(AgentLocalNodeRuntimeState.RecoverableError)
-                break
-            }
-            listener.set(next)
+        while (!closed.get()) {
+            val pairing = runCatching(pairingManager::loadActive).getOrNull() ?: break
             try {
-                signal(AgentLocalNodeRuntimeState.Listening)
-                next.serveSingleConnection()
-                if (!closed.get()) signal(AgentLocalNodeRuntimeState.ConnectionHandled)
-            } catch (_: Exception) {
-                if (!closed.get()) {
-                    signal(AgentLocalNodeRuntimeState.RecoverableError)
-                    try {
-                        Thread.sleep(RETRY_DELAY_MILLIS)
-                    } catch (_: InterruptedException) {
-                        Thread.currentThread().interrupt()
-                        break
+                if (!pairing.expiresAt.isAfter(clock.instant())) break
+                val grantedMemoryTypes = grantedMemoryTypes(pairing.accessGrantPolicy)
+                val grantedOperations = grantedOperations(
+                    pairing.accessGrantPolicy,
+                    grantedMemoryTypes,
+                )
+                val channelPairing = pairing.material.toChannelPairing()
+                val credentialSecrets = pairing.credentials
+                    .filter {
+                        allowDeveloperCredential ||
+                            it.kind == AgentPairingCredentialKind.DeviceBootstrapV2
                     }
+                    .map(ActiveAgentPairingCredential::secretCopy)
+                val next = try {
+                    SingleConnectionTlsLocalNodeListener(
+                        pairing = channelPairing,
+                        pairingSecrets = credentialSecrets,
+                        sslServerSocketFactory = sslServerSocketFactory,
+                        applicationRequestHandler = AndroidLocalNodeApplicationRequestHandler { request ->
+                            handleApplicationRequest(
+                                outer = request,
+                                pairing = pairing,
+                                grantedMemoryTypes = grantedMemoryTypes,
+                                grantedOperations = grantedOperations,
+                            )
+                        },
+                        supportedOperations = grantedOperations,
+                        bootstrapHandler = AndroidPairingBootstrapHandler(
+                            pairingManager::provisionBootstrap,
+                        ),
+                    )
+                } catch (_: Exception) {
+                    signal(AgentLocalNodeRuntimeState.RecoverableError)
+                    break
+                } finally {
+                    credentialSecrets.forEach { it.fill(0) }
+                }
+                listener.set(next)
+                try {
+                    signal(AgentLocalNodeRuntimeState.Listening)
+                    next.serveSingleConnection()
+                    if (!closed.get()) signal(AgentLocalNodeRuntimeState.ConnectionHandled)
+                } catch (_: Exception) {
+                    if (!closed.get()) {
+                        signal(AgentLocalNodeRuntimeState.RecoverableError)
+                        try {
+                            Thread.sleep(RETRY_DELAY_MILLIS)
+                        } catch (_: InterruptedException) {
+                            Thread.currentThread().interrupt()
+                            break
+                        }
+                    }
+                } finally {
+                    listener.compareAndSet(next, null)
+                    next.close()
                 }
             } finally {
-                listener.compareAndSet(next, null)
-                next.close()
+                pairing.close()
             }
         }
         signal(AgentLocalNodeRuntimeState.Stopped)
     }
 
-    private fun handleApplicationRequest(outer: AndroidLocalNodeApplicationRequest): ByteArray {
+    private fun handleApplicationRequest(
+        outer: AndroidLocalNodeApplicationRequest,
+        pairing: ActiveAgentPairing,
+        grantedMemoryTypes: Set<String>,
+        grantedOperations: Set<String>,
+    ): ByteArray {
         val applicationLine = outer.applicationLineCopy()
         val request = try {
             AgentLocalNodeApplicationCodec.decodeRequestEnvelope(applicationLine)
@@ -157,7 +149,7 @@ class AgentLocalNodeRuntime private constructor(
             allowedSensitivities = setOf("public", "personal", "confidential"),
             allowedDataClasses = setOf("structured"),
             expiresAt = pairing.expiresAt,
-            accessGrant = accessGrantPolicy.bind(
+            accessGrant = pairing.accessGrantPolicy.bind(
                 callerId = control.callerId,
                 grantId = control.grantId,
             ),
@@ -198,7 +190,6 @@ class AgentLocalNodeRuntime private constructor(
         if (!closed.compareAndSet(false, true)) return
         listener.getAndSet(null)?.close()
         executor.shutdownNow()
-        pairing.close()
         signal(AgentLocalNodeRuntimeState.Stopped)
     }
 
@@ -224,20 +215,72 @@ class AgentLocalNodeRuntime private constructor(
 
         fun launch(
             repository: LocalMemoryRepository,
-            pairing: ActiveAgentPairing,
-            accessGrantPolicy: AgentAccessGrantPolicy = pairing.accessGrantPolicy,
+            pairingManager: AgentPairingManager,
             sslServerSocketFactory: SSLServerSocketFactory,
+            allowDeveloperCredential: Boolean = false,
             clock: Clock = Clock.systemUTC(),
             onStateChanged: (AgentLocalNodeRuntimeState) -> Unit = {},
             onEventPersisted: () -> Unit = {},
         ): AgentLocalNodeRuntime = AgentLocalNodeRuntime(
             repository = repository,
-            pairing = pairing,
-            accessGrantPolicy = accessGrantPolicy,
+            pairingManager = pairingManager,
             sslServerSocketFactory = sslServerSocketFactory,
+            allowDeveloperCredential = allowDeveloperCredential,
             clock = clock,
             onStateChanged = onStateChanged,
             onEventPersisted = onEventPersisted,
         ).also(AgentLocalNodeRuntime::start)
     }
+
+    private fun grantedMemoryTypes(
+        accessGrantPolicy: AgentAccessGrantPolicy,
+    ): Set<String> = accessGrantPolicy.dataTypes.intersect(
+        setOf(
+            MemoryRepositoryAgentLocalNodeEndpoint.MEMORY_TYPE_EVENT,
+            MemoryRepositoryAgentLocalNodeEndpoint.MEMORY_TYPE_REVISION,
+        ),
+    )
+
+    private fun grantedOperations(
+        accessGrantPolicy: AgentAccessGrantPolicy,
+        grantedMemoryTypes: Set<String>,
+    ): Set<String> = buildSet {
+        if (
+            MemoryRepositoryAgentLocalNodeEndpoint.MEMORY_TYPE_EVENT in grantedMemoryTypes &&
+            MemoryRepositoryAgentLocalNodeEndpoint.OPERATION_CREATE_EVENT in accessGrantPolicy.operations
+        ) {
+            add(MemoryRepositoryAgentLocalNodeEndpoint.OPERATION_CREATE_EVENT)
+        }
+        if (
+            MemoryRepositoryAgentLocalNodeEndpoint.MEMORY_TYPE_REVISION in grantedMemoryTypes &&
+            MemoryRepositoryAgentLocalNodeEndpoint.OPERATION_APPEND_REVISION in accessGrantPolicy.operations
+        ) {
+            add(MemoryRepositoryAgentLocalNodeEndpoint.OPERATION_APPEND_REVISION)
+        }
+        if (
+            grantedMemoryTypes.isNotEmpty() &&
+            MemoryRepositoryAgentLocalNodeEndpoint.OPERATION_UNDO_CAPTURE in accessGrantPolicy.operations
+        ) {
+            add(MemoryRepositoryAgentLocalNodeEndpoint.OPERATION_UNDO_CAPTURE)
+        }
+        if (
+            MemoryRepositoryAgentLocalNodeEndpoint.MEMORY_TYPE_EVENT in grantedMemoryTypes &&
+            MemoryRepositoryAgentLocalNodeEndpoint.OPERATION_VISIBLE_EVENTS in accessGrantPolicy.operations
+        ) {
+            add(MemoryRepositoryAgentLocalNodeEndpoint.OPERATION_VISIBLE_EVENTS)
+        }
+    }
+
+    private fun AgentPairingMaterial.toChannelPairing(): AndroidLocalNodePairingMaterial =
+        AndroidLocalNodePairingMaterial(
+            channelProtocol = channelProtocol,
+            endpointRef = endpointRef,
+            credentialRef = credentialRef,
+            expectedDeviceId = expectedDeviceId,
+            sessionBindingRef = sessionBindingRef,
+            pairingId = pairingId,
+            host = host,
+            port = port,
+            tlsCertificateSha256 = tlsCertificateSha256,
+        )
 }

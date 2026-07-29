@@ -37,6 +37,10 @@
 		82FD5B19EEA2AB247DF24FC5 /* AmemeShared.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 136E3A12237D7A2B2C940AC7 /* AmemeShared.framework */; };
 		953140FEEAA2AE21B405C9C8 /* LocalSpaceDeletionConvergenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0AC4A879B3ABAB30B82184 /* LocalSpaceDeletionConvergenceTests.swift */; };
 		9EFACA2053F76573BFE9E21B /* LocalSpaceDeletionConvergence.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2D1466804395B9150998F33 /* LocalSpaceDeletionConvergence.swift */; };
+		B11000000000000000000001 /* AgentPairingBootstrapNetworkClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A11000000000000000000001 /* AgentPairingBootstrapNetworkClient.swift */; };
+		B11000000000000000000002 /* AgentPairingBootstrapV2.swift in Sources */ = {isa = PBXBuildFile; fileRef = A11000000000000000000002 /* AgentPairingBootstrapV2.swift */; };
+		B11000000000000000000003 /* AgentPairingCredentialStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A11000000000000000000003 /* AgentPairingCredentialStore.swift */; };
+		B11000000000000000000004 /* AgentPairingBootstrapTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A11000000000000000000004 /* AgentPairingBootstrapTests.swift */; };
 		B2098B3CA9D02DC18765698E /* SourceLineage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C4777302E77E5BD39AFFFB6 /* SourceLineage.swift */; };
 		BE64DB86C04A7DCB6DBE93EB /* AmemeShared.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 136E3A12237D7A2B2C940AC7 /* AmemeShared.framework */; };
 		CD42E77E687BDEFBB7277C2C /* AmemeShareExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = BB5DE2F5021CD570DD276759 /* AmemeShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -134,6 +138,10 @@
 		902763A74317F7A6DEDA7267 /* AmemeUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AmemeUITests.swift; sourceTree = "<group>"; };
 		A0AFCB33DA303FBD8715F6E4 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		A0FEAF71EF61749E3814B2DA /* LocalSpaceDeletion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalSpaceDeletion.swift; sourceTree = "<group>"; };
+		A11000000000000000000001 /* AgentPairingBootstrapNetworkClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPairingBootstrapNetworkClient.swift; sourceTree = "<group>"; };
+		A11000000000000000000002 /* AgentPairingBootstrapV2.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPairingBootstrapV2.swift; sourceTree = "<group>"; };
+		A11000000000000000000003 /* AgentPairingCredentialStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPairingCredentialStore.swift; sourceTree = "<group>"; };
+		A11000000000000000000004 /* AgentPairingBootstrapTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPairingBootstrapTests.swift; sourceTree = "<group>"; };
 		A4BD9B3B722E05DACE815B36 /* LocalMemoryStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalMemoryStoreTests.swift; sourceTree = "<group>"; };
 		A6630A6CD6A5E7F4BEB0E3A9 /* LongTermMemoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LongTermMemoryTests.swift; sourceTree = "<group>"; };
 		A9323F27D3E5EDD8A5FAA8C2 /* ShareExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ShareExtension.entitlements; sourceTree = "<group>"; };
@@ -216,6 +224,9 @@
 				B599B0416DFE77D6724DC708 /* AgentExperienceDiscovery.swift */,
 				7E2C6F5BA954F60666901F7E /* AgentLocalNodeChannel.swift */,
 				592C7FF1AAC02F7545FB8FC4 /* AgentLocalNodeNetworkClient.swift */,
+				A11000000000000000000001 /* AgentPairingBootstrapNetworkClient.swift */,
+				A11000000000000000000002 /* AgentPairingBootstrapV2.swift */,
+				A11000000000000000000003 /* AgentPairingCredentialStore.swift */,
 				E4170A11F36E2DCB0CA68C6B /* AgentPairingEnvelope.swift */,
 				D250CCAEBBCB435DE910ECC4 /* Coverage.swift */,
 				D682D6A4F47B292D80EC7D76 /* CoveragePersistence.swift */,
@@ -259,6 +270,7 @@
 		78CEE8A374EF003EE8B98F41 /* AmemeSharedTests */ = {
 			isa = PBXGroup;
 			children = (
+				A11000000000000000000004 /* AgentPairingBootstrapTests.swift */,
 				7809EE1E7C60A5DB5FE62357 /* AgentExperienceTests.swift */,
 				BCCFF759B98E624C1982ABBE /* CoverageCompilerTests.swift */,
 				B7574E716B2282E4B8E869A4 /* CoveragePersistenceTests.swift */,
@@ -469,6 +481,9 @@
 				0AA5F75777369F9B298D7CE7 /* AgentExperienceDiscovery.swift in Sources */,
 				0EEF55399DE3D02E4931DF66 /* AgentLocalNodeChannel.swift in Sources */,
 				777DA87B20425EC4C49CFABF /* AgentLocalNodeNetworkClient.swift in Sources */,
+				B11000000000000000000001 /* AgentPairingBootstrapNetworkClient.swift in Sources */,
+				B11000000000000000000002 /* AgentPairingBootstrapV2.swift in Sources */,
+				B11000000000000000000003 /* AgentPairingCredentialStore.swift in Sources */,
 				71DBFD5957CC3A93EF220A38 /* AgentPairingEnvelope.swift in Sources */,
 				4E74B286CE6C5CE0074F9DFB /* Coverage.swift in Sources */,
 				F62E7291848775CA29445947 /* CoveragePersistence.swift in Sources */,
@@ -499,6 +514,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B11000000000000000000004 /* AgentPairingBootstrapTests.swift in Sources */,
 				4C689F87CC6CEAC2132A2658 /* AgentExperienceTests.swift in Sources */,
 				0B0BD73226DBEEF59E663CB3 /* CoverageCompilerTests.swift in Sources */,
 				29DCFDAFA24A2AC7F230A9A6 /* CoveragePersistenceTests.swift in Sources */,

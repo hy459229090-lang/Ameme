@@ -13,7 +13,7 @@ import org.junit.runner.RunWith
 class PairingQrCodeInstrumentedTest {
     @Test
     fun renderedQrRoundTripsAFullSizedPairingPayload() {
-        val payload = "ameme-pairing-v1:" + "A".repeat(900)
+        val payload = "ameme-pairing-v2:" + "A".repeat(900)
         val bitmap = encodePairingQrCode(payload, size = 768)
         val pixels = IntArray(bitmap.width * bitmap.height)
         bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)

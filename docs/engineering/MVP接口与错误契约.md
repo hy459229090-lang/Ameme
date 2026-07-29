@@ -65,6 +65,14 @@ iOS 生产客户端也实现这四种操作的 canonical request builder、exact
 
 当前仓库证据覆盖 canonical 应用层、Host TLS 1.3 adapter、Android 配对 listener/凭据生命周期、SQLCipher 原子写入/读取、iOS Shared smoke/静态契约，以及 API 36 / 16 KB arm64 AVD 上 Swift Network.framework→Android SQLCipher→Today 的 create/read/revision/exact undo 纵向闭环。该 Smoke 使用 ADB forward 与显式 expanded Grant，不证明物理 LAN、普通用户 scope 扩张、共享账户 Grant registry、Android 后台生命周期、跨端撤销传播、真实 Codex/Claude Code/Cursor 生产宿主或真实设备 ContextPack/Recall。
 
+### 4.2 QR Bootstrap v2 当前实现边界
+
+Release 普通用户二维码只携带短时 bootstrap envelope，不再携带可直接用于冻结 v1 应用通道的长期凭据。envelope 由 Android 用 HMAC 做完整性保护；iOS 生成临时 P-256 key，向 bootstrap endpoint 提交公钥、nonce 与签名证明。Android 在同一临界区校验 expiry/HMAC/key possession、原子记录 consumed/key/issued credential，并返回与二维码 secret 分离的随机 credential；首次响应丢失后，同一 key 可重取原响应，换 key、过期、篡改、并发重复或已消费重放均 fail closed。
+
+Release artifact 不包含开发者 bearer，Debug Host 凭据与普通用户二维码签发凭据相互独立。iOS 将 pending envelope/private key 和 active credential 仅保存于 device-only Keychain：重启后 pending 继续同 key 交换，active 通过实际 `AgentLocalNodeNetworkClient` 恢复连接。这里的 client-key binding 精确覆盖签发与同 key 响应重取；active credential 进入冻结 v1 TLS/HMAC bearer 通道后，没有逐次重连 P-256 proof，不能扩写为硬件绑定或不可复制 bearer。
+
+该切片尚未实现 Android 扫码客户端，也没有共享账户 Grant registry、物理 LAN/设备或真实用户证据。普通用户 Grant 仍为 event-only；Revision/read/undo 不因 bootstrap v2 自动扩权。
+
 ## 5. 错误码目录
 
 ### 5.1 身份、权限与策略

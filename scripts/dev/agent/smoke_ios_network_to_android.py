@@ -158,6 +158,8 @@ def main() -> int:
         if swift_evidence is None or not all(
             swift_evidence.get(field) is True
             for field in (
+                "bootstrap_credential_separated",
+                "bootstrap_issuance_client_key_bound",
                 "bounded_visible_events",
                 "append_revision",
                 "exact_event_and_revision_undo",
@@ -171,7 +173,9 @@ def main() -> int:
             raise RuntimeError("swift_network_event_not_visible_in_android_today")
         print(json.dumps({
             "status": "passed",
-            "transport": "ios-qr-envelope-to-android-local-node",
+            "transport": "ios-qr-v2-bootstrap-to-android-local-node",
+            "bootstrap_credential_separated": True,
+            "bootstrap_issuance_client_key_bound": True,
             "qr_user_path_connected": True,
             "tls_hmac_grant_bound": True,
             "visible_in_android_today": True,
