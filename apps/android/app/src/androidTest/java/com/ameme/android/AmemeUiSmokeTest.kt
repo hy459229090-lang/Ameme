@@ -6,6 +6,8 @@ import android.os.Environment
 import android.provider.MediaStore
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
@@ -22,6 +24,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.test.platform.app.InstrumentationRegistry
 import com.ameme.android.data.local.AndroidKeystorePendingActionStore
+import com.ameme.android.data.local.LocalRecoveryPointManager
 import com.ameme.android.data.local.PendingActionSnapshot
 import com.ameme.android.data.transport.PairingExperienceStore
 import com.ameme.android.domain.EvidenceState
@@ -33,6 +36,7 @@ import com.ameme.android.domain.SourceCaptureRequest
 import com.ameme.android.domain.SourceKind
 import java.time.LocalDate
 import java.time.LocalTime
+import java.io.File
 import kotlin.math.roundToInt
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -60,12 +64,24 @@ class AmemeUiSmokeTest {
                         InstrumentationRegistry.getInstrumentation().targetContext,
                     ).clear()
                 }
+                runCatching {
+                    val context = InstrumentationRegistry.getInstrumentation().targetContext
+                    LocalRecoveryPointManager(
+                        File(context.noBackupFilesDir, "ameme-local-recovery-v1"),
+                    ).clear()
+                }
                 try {
                     base.evaluate()
                 } finally {
                     runCatching {
                         AndroidKeystorePendingActionStore(
                             InstrumentationRegistry.getInstrumentation().targetContext,
+                        ).clear()
+                    }
+                    runCatching {
+                        val context = InstrumentationRegistry.getInstrumentation().targetContext
+                        LocalRecoveryPointManager(
+                            File(context.noBackupFilesDir, "ameme-local-recovery-v1"),
                         ).clear()
                     }
                 }
@@ -172,6 +188,51 @@ class AmemeUiSmokeTest {
                     .fetchSemanticsNodes()
                     .isNotEmpty(),
         )
+    }
+
+    @Test
+    fun settingsLocalRecovery_requiresExactConfirmationAndReopensProductionStore() {
+        composeRule.onNodeWithText("查看今天").performClick()
+        waitForCaptureEntry()
+        composeRule.onNodeWithContentDescription("打开设置").performClick()
+        composeRule.onNodeWithTag("settings-list")
+            .performScrollToNode(hasTestTag("local-recovery-point-card"))
+        composeRule.onNodeWithTag("create-local-recovery-point-button")
+            .assertIsEnabled()
+            .performClick()
+        composeRule.waitUntil(timeoutMillis = 20_000) {
+            composeRule.onAllNodesWithTag("local-recovery-verified")
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
+        composeRule.onNodeWithTag("activate-local-recovery-point-button")
+            .performScrollTo()
+            .assertIsDisplayed()
+            .assertIsEnabled()
+            .performClick()
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            composeRule.onAllNodesWithTag("confirm-activate-local-recovery-button")
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
+        composeRule.onNodeWithTag("confirm-activate-local-recovery-button")
+            .assertIsNotEnabled()
+        composeRule.onNodeWithTag("activate-local-recovery-confirmation")
+            .performTextInput("恢复")
+        composeRule.onNodeWithTag("confirm-activate-local-recovery-button")
+            .assertIsEnabled()
+            .performClick()
+        composeRule.waitUntil(timeoutMillis = 20_000) {
+            composeRule.onAllNodesWithText(
+                "本机记录已恢复到恢复点",
+                substring = true,
+            ).fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithTag("settings-list")
+            .performScrollToNode(hasTestTag("local-recovery-notice"))
+        composeRule.onNodeWithTag("local-recovery-notice")
+            .assertTextContains("本机记录已恢复到恢复点", substring = true)
+            .assertIsDisplayed()
     }
 
     @Test

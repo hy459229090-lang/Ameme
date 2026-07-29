@@ -47,6 +47,8 @@ import androidx.compose.ui.unit.dp
 import com.ameme.android.data.AgentAccessAuditObjectCountBucket
 import com.ameme.android.data.AgentAccessAuditPhase
 import com.ameme.android.data.AgentAccessAuditRecord
+import com.ameme.android.data.local.LocalRecoveryPointAvailability
+import com.ameme.android.data.local.LocalRecoveryPointStatus
 import com.ameme.android.data.transport.PairingExperienceCandidate
 import com.ameme.android.data.transport.PairingExperienceConnection
 import com.ameme.android.data.transport.PairingExperienceException
@@ -95,6 +97,12 @@ fun SettingsScreen(
     exportInFlight: Boolean = false,
     onRetryExport: () -> Unit = {},
     onClearExport: () -> Unit = {},
+    localRecoveryAvailable: Boolean = false,
+    localRecoveryPointStatus: LocalRecoveryPointStatus = LocalRecoveryPointStatus.None,
+    localRecoveryInFlight: Boolean = false,
+    localRecoveryNotice: String? = null,
+    onCreateLocalRecoveryPoint: () -> Unit = {},
+    onActivateLocalRecoveryPoint: () -> Unit = {},
     calendarReadPermissionGranted: Boolean = false,
     voiceCaptureAvailable: Boolean = false,
     agentAccessAuditAvailable: Boolean = false,
@@ -116,6 +124,8 @@ fun SettingsScreen(
     var disconnecting by remember { mutableStateOf(false) }
     var showLocalSpaceDeletion by remember { mutableStateOf(false) }
     var localSpaceDeletionConfirmation by remember { mutableStateOf("") }
+    var showRecoveryActivation by remember { mutableStateOf(false) }
+    var recoveryActivationConfirmation by remember { mutableStateOf("") }
     var pairingQrExpired by remember(developerPairingQrPayload, developerPairingQrExpiresAt) {
         mutableStateOf(
             developerPairingQrExpiresAt == null ||
@@ -487,6 +497,117 @@ fun SettingsScreen(
                     }
                 }
             }
+            item { SectionTitle("同安装恢复") }
+            item {
+                Card(Modifier.fillMaxWidth().testTag("local-recovery-point-card")) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        when (localRecoveryPointStatus.availability) {
+                            LocalRecoveryPointAvailability.None -> {
+                                Text("恢复点", fontWeight = FontWeight.Medium)
+                                Text(
+                                    "尚未创建。",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            LocalRecoveryPointAvailability.Verified -> {
+                                Text("恢复点健康", fontWeight = FontWeight.Medium)
+                                Text(
+                                    "完整性与隔离候选恢复已通过。",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.testTag("local-recovery-verified"),
+                                )
+                                localRecoveryPointStatus.createdAt?.let {
+                                    Text(
+                                        "创建时间 ${AUDIT_TIME_FORMATTER.format(it)}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                localRecoveryPointStatus.verifiedAt?.let {
+                                    Text(
+                                        "最近校验 ${AUDIT_TIME_FORMATTER.format(it)}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                localRecoveryPointStatus.lastActivatedAt?.let {
+                                    Text(
+                                        "最近成功恢复 ${AUDIT_TIME_FORMATTER.format(it)}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.testTag("local-recovery-last-success"),
+                                    )
+                                }
+                                if (localRecoveryPointStatus.cleanupPending) {
+                                    Text(
+                                        "最近恢复已提交，旧 live 清理将在启动时继续收敛。",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
+                            LocalRecoveryPointAvailability.Unavailable -> {
+                                Text("恢复点不可用", fontWeight = FontWeight.Medium)
+                                Text(
+                                    "恢复点未通过校验；不会据此替换本机记录。",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.testTag("local-recovery-unavailable"),
+                                )
+                            }
+                        }
+                        localRecoveryNotice?.let { notice ->
+                            Text(
+                                notice,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.testTag("local-recovery-notice"),
+                            )
+                        }
+                        Button(
+                            onClick = onCreateLocalRecoveryPoint,
+                            enabled = localRecoveryAvailable && !localRecoveryInFlight,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("create-local-recovery-point-button"),
+                        ) {
+                            Text(
+                                when {
+                                    localRecoveryInFlight -> "正在处理恢复点"
+                                    localRecoveryPointStatus.availability ==
+                                        LocalRecoveryPointAvailability.None ->
+                                        "创建并验证恢复点"
+                                    else -> "更新并验证恢复点"
+                                },
+                            )
+                        }
+                        if (
+                            localRecoveryPointStatus.availability ==
+                            LocalRecoveryPointAvailability.Verified
+                        ) {
+                            OutlinedButton(
+                                onClick = { showRecoveryActivation = true },
+                                enabled = localRecoveryAvailable && !localRecoveryInFlight,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("activate-local-recovery-point-button"),
+                            ) {
+                                Text("恢复到此恢复点")
+                            }
+                        }
+                        Text(
+                            "恢复点只保存在当前安装，并依赖这台设备的 Keystore 密钥；卸载、换机或设备丢失后不能使用，也不等同云备份。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
             item { SectionTitle("隐私、导出与删除") }
             item {
                 Card(Modifier.fillMaxWidth()) {
@@ -657,6 +778,61 @@ fun SettingsScreen(
                         localSpaceDeletionConfirmation = ""
                     },
                     enabled = !localSpaceDeletionInFlight,
+                ) {
+                    Text("取消")
+                }
+            },
+        )
+    }
+
+    if (showRecoveryActivation) {
+        AlertDialog(
+            modifier = Modifier.testTag("activate-local-recovery-point-dialog"),
+            onDismissRequest = {
+                if (!localRecoveryInFlight) {
+                    showRecoveryActivation = false
+                    recoveryActivationConfirmation = ""
+                }
+            },
+            title = { Text("恢复本机记录？") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("恢复点之后新增或修改的本机记录会被替换。切换前后都会重新校验，失败会保留或回滚到切换前的 live。")
+                    Text("这不提供卸载、换机或设备丢失后的恢复。")
+                    OutlinedTextField(
+                        value = recoveryActivationConfirmation,
+                        onValueChange = { recoveryActivationConfirmation = it },
+                        enabled = !localRecoveryInFlight,
+                        singleLine = true,
+                        label = { Text("输入“恢复”以确认") },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("activate-local-recovery-confirmation"),
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onActivateLocalRecoveryPoint()
+                        showRecoveryActivation = false
+                        recoveryActivationConfirmation = ""
+                    },
+                    enabled =
+                        recoveryActivationConfirmation == "恢复" &&
+                            !localRecoveryInFlight,
+                    modifier = Modifier.testTag("confirm-activate-local-recovery-button"),
+                ) {
+                    Text("确认恢复")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showRecoveryActivation = false
+                        recoveryActivationConfirmation = ""
+                    },
+                    enabled = !localRecoveryInFlight,
                 ) {
                     Text("取消")
                 }

@@ -15,6 +15,81 @@ private final class LocalBackupTestKeyStore: @unchecked Sendable, KeyMaterialSto
 
 @MainActor
 final class LocalBackupStoreTests: XCTestCase {
+    func testRecoveryPointManagerCreatesPreparesActivatesAndPersistsReceipt() throws {
+        let sandbox = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: sandbox) }
+        let liveRoot = sandbox.appendingPathComponent("live", isDirectory: true)
+        let recoveryRoot = sandbox.appendingPathComponent("recovery", isDirectory: true)
+        let keyStore = LocalBackupTestKeyStore()
+        let store = LocalMemoryStore(keyStore: keyStore, rootDirectory: liveRoot)
+        let backedUp = try XCTUnwrap(store.addText("恢复点内事件"))
+        let manager = LocalRecoveryPointManager(rootDirectory: recoveryRoot)
+        let createdAt = Date(timeIntervalSince1970: 1_759_100_000)
+
+        let created = try manager.create(using: store, createdAt: createdAt)
+        XCTAssertEqual(created.availability, .verified)
+        XCTAssertEqual(created.createdAt, createdAt)
+        XCTAssertGreaterThan(created.snapshotBytes ?? 0, 0)
+        XCTAssertNil(created.lastActivatedAt)
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: recoveryRoot.appendingPathComponent("candidate").path
+            )
+        )
+
+        let liveOnly = try XCTUnwrap(store.addText("恢复后应消失"))
+        let activatedAt = Date(timeIntervalSince1970: 1_759_100_120)
+        let activated = try manager.activate(using: store, confirmedAt: activatedAt)
+        XCTAssertEqual(activated.availability, .verified)
+        XCTAssertEqual(activated.lastActivatedAt, activatedAt)
+        XCTAssertFalse(activated.cleanupPending)
+        XCTAssertNotNil(store.event(id: backedUp.id))
+        XCTAssertNil(store.event(id: liveOnly.id))
+
+        let reopenedManager = LocalRecoveryPointManager(rootDirectory: recoveryRoot)
+        let reopenedStatus = reopenedManager.refresh(
+            using: store,
+            verifiedAt: activatedAt.addingTimeInterval(30)
+        )
+        XCTAssertEqual(reopenedStatus.availability, .verified)
+        XCTAssertEqual(reopenedStatus.lastActivatedAt, activatedAt)
+        XCTAssertEqual(reopenedStatus.backupID, activated.backupID)
+    }
+
+    func testRecoveryPointManagerFailsClosedForCorruptionAndStaleDeletionWatermark() throws {
+        let sandbox = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: sandbox) }
+        let liveRoot = sandbox.appendingPathComponent("live", isDirectory: true)
+        let recoveryRoot = sandbox.appendingPathComponent("recovery", isDirectory: true)
+        let keyStore = LocalBackupTestKeyStore()
+        let store = LocalMemoryStore(keyStore: keyStore, rootDirectory: liveRoot)
+        let event = try XCTUnwrap(store.addText("删除后不得从恢复点复活"))
+        let manager = LocalRecoveryPointManager(rootDirectory: recoveryRoot)
+        XCTAssertEqual(try manager.create(using: store).availability, .verified)
+
+        XCTAssertTrue(store.delete(id: event.id))
+        XCTAssertEqual(manager.refresh(using: store).availability, .unavailable)
+        XCTAssertNil(store.event(id: event.id))
+
+        XCTAssertEqual(try manager.create(using: store).availability, .verified)
+        let ciphertext = recoveryRoot
+            .appendingPathComponent("current", isDirectory: true)
+            .appendingPathComponent("events.enc")
+        var bytes = try Data(contentsOf: ciphertext)
+        bytes[bytes.startIndex] ^= 0x01
+        try bytes.write(to: ciphertext, options: .atomic)
+        let liveSentinel = try XCTUnwrap(store.addText("损坏恢复点不能改变 live"))
+
+        XCTAssertEqual(manager.refresh(using: store).availability, .unavailable)
+        XCTAssertNotNil(store.event(id: liveSentinel.id))
+        XCTAssertThrowsError(
+            try manager.activate(using: store)
+        ) {
+            XCTAssertEqual($0 as? LocalBackupError, .invalidArtifact)
+        }
+        XCTAssertNotNil(store.event(id: liveSentinel.id))
+    }
+
     func testVerifiedBackupRestoresToNewRootAndPreservesDeletionTombstone() throws {
         let sandbox = temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: sandbox) }

@@ -47,6 +47,11 @@ import com.ameme.android.data.runCatchingCancellable
 import com.ameme.android.data.local.LocalEventDatabase
 import com.ameme.android.data.local.LocalMemoryRepository
 import com.ameme.android.data.local.AndroidKeystorePendingActionStore
+import com.ameme.android.data.local.AndroidKeystoreDatabaseKeyProvider
+import com.ameme.android.data.local.LocalRecoveryActivationCoordinator
+import com.ameme.android.data.local.LocalRecoveryPointAvailability
+import com.ameme.android.data.local.LocalRecoveryPointManager
+import com.ameme.android.data.local.LocalRecoveryPointStatus
 import com.ameme.android.data.summary.DaySummaryClient
 import com.ameme.android.data.summary.DaySummaryClientException
 import com.ameme.android.data.summary.HttpDaySummaryClient
@@ -90,6 +95,9 @@ import java.time.LocalDate
 import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
+import java.io.File
+import java.util.Collections
+import java.util.IdentityHashMap
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -131,6 +139,11 @@ fun AmemeApp(
     val ioExecutor = remember { MemoryIoExecutor() }
     val pairingManager = remember(appContext) { AgentPairingManager(appContext) }
     val pendingActionStore = remember(appContext) { AndroidKeystorePendingActionStore(appContext) }
+    val localRecoveryPointManager = remember(appContext) {
+        LocalRecoveryPointManager(
+            File(appContext.noBackupFilesDir, "ameme-local-recovery-v1"),
+        )
+    }
     val pairingExperienceConnector: PairingExperienceConnector? =
         remember(pairingExperienceConnectorOverride) {
             pairingExperienceConnectorOverride ?: PairingExperienceConnectorProvider.create(appContext)
@@ -169,6 +182,16 @@ fun AmemeApp(
     var localSpaceDeletionNeedsRetry by remember { mutableStateOf(false) }
     var pendingExportContent by remember { mutableStateOf<String?>(null) }
     var exportInFlight by remember { mutableStateOf(false) }
+    var localRecoveryPointStatus by remember {
+        mutableStateOf(LocalRecoveryPointStatus.None)
+    }
+    var localRecoveryInFlight by remember { mutableStateOf(false) }
+    var localRecoveryNotice by remember { mutableStateOf<String?>(null) }
+    val manuallyClosedRepositories = remember {
+        Collections.newSetFromMap(
+            IdentityHashMap<MemoryRepository, Boolean>(),
+        )
+    }
     var pendingIncomingShare by remember { mutableStateOf<SourceCaptureRequest?>(null) }
     var incomingShareInFlight by remember { mutableStateOf(false) }
     var experienceModeName by rememberSaveable {
@@ -319,6 +342,22 @@ fun AmemeApp(
                 localSpaceDeleted = false
                 localSpaceDeletionNeedsRetry = false
                 persistenceError = null
+                localRecoveryPointStatus = (readyRepository as? LocalMemoryRepository)
+                    ?.let { localRepository ->
+                        ioExecutor.runSourceIo {
+                            localRecoveryPointManager.refresh(localRepository)
+                        }
+                    }
+                    ?: LocalRecoveryPointStatus.None
+            } else {
+                localRecoveryPointStatus = runCatchingCancellable {
+                    ioExecutor.runSourceIo {
+                        localRecoveryPointManager.clear()
+                        LocalRecoveryPointStatus.None
+                    }
+                }.getOrElse {
+                    LocalRecoveryPointStatus.Unavailable
+                }
             }
             if (
                 deletedLocalRepository == null &&
@@ -346,7 +385,11 @@ fun AmemeApp(
     DisposableEffect(repository, repositoryOverride) {
         val ownedRepository = repository.takeIf { repositoryOverride == null }
         onDispose {
-            ownedRepository?.let(ioExecutor::closeInBackground)
+            ownedRepository?.let { owned ->
+                if (!manuallyClosedRepositories.remove(owned)) {
+                    ioExecutor.closeInBackground(owned)
+                }
+            }
         }
     }
     LaunchedEffect(repository, pairingGeneration, localSpaceDeleted) {
@@ -968,6 +1011,189 @@ fun AmemeApp(
                         }
                     }
                 },
+                localRecoveryAvailable =
+                    repository is LocalMemoryRepository &&
+                        repositoryOverride == null &&
+                        !demoMode &&
+                        !localSpaceDeleted,
+                localRecoveryPointStatus = localRecoveryPointStatus,
+                localRecoveryInFlight = localRecoveryInFlight,
+                localRecoveryNotice = localRecoveryNotice,
+                onCreateLocalRecoveryPoint = {
+                    val localRepository = repository as? LocalMemoryRepository
+                    if (localRepository != null && !localRecoveryInFlight) {
+                        localRecoveryInFlight = true
+                        localRecoveryNotice = null
+                        scope.launch {
+                            val result = runCatchingCancellable {
+                                agentRuntime?.let { runtime ->
+                                    check(ioExecutor.runSourceIo(runtime::closeAndAwait)) {
+                                        "Agent runtime did not stop before recovery-point creation"
+                                    }
+                                }
+                                agentRuntime = null
+                                agentRuntimeState = AgentLocalNodeRuntimeState.Stopped
+                                ioExecutor.runSourceIo {
+                                    localRecoveryPointManager.create(
+                                        repository = localRepository,
+                                        createdAt = Instant.now(),
+                                    )
+                                }
+                            }
+                            result.onSuccess { status ->
+                                localRecoveryPointStatus = status
+                                localRecoveryNotice =
+                                    "同安装恢复点已创建，并完成完整性校验与隔离候选恢复。"
+                            }.onFailure {
+                                localRecoveryPointStatus = ioExecutor.runSourceIo {
+                                    localRecoveryPointManager.refresh(localRepository)
+                                }
+                                localRecoveryNotice =
+                                    "恢复点没有创建完成；旧恢复点和本机记录保持不变，请重试。"
+                            }
+                            persistenceError = localRecoveryNotice
+                            pairingGeneration += 1
+                            localRecoveryInFlight = false
+                        }
+                    }
+                },
+                onActivateLocalRecoveryPoint = {
+                    val localRepository = repository as? LocalMemoryRepository
+                    if (localRepository != null && !localRecoveryInFlight) {
+                        localRecoveryInFlight = true
+                        localRecoveryNotice = null
+                        scope.launch {
+                            var repositoryDetached = false
+                            var activationCommitted = false
+                            var receiptRecorded = false
+                            var operationFailure: Throwable? = null
+                            try {
+                                agentRuntime?.let { runtime ->
+                                    check(ioExecutor.runSourceIo(runtime::closeAndAwait)) {
+                                        "Agent runtime did not stop before recovery activation"
+                                    }
+                                }
+                                agentRuntime = null
+                                agentRuntimeState = AgentLocalNodeRuntimeState.Stopped
+                                val plan = ioExecutor.runSourceIo {
+                                    localRecoveryPointManager.prepareActivation(
+                                        repository = localRepository,
+                                        confirmedAt = Instant.now(),
+                                    )
+                                }
+                                val databaseFile = appContext.getDatabasePath(
+                                    LocalMemoryRepository.DATABASE_NAME,
+                                )
+                                val keyProvider = AndroidKeystoreDatabaseKeyProvider(
+                                    appContext,
+                                    databaseFile,
+                                )
+                                manuallyClosedRepositories += localRepository
+                                repository = null
+                                repositoryDetached = true
+                                experienceModeName = ExperienceMode.Loading.name
+                                ioExecutor.close(localRepository)
+                                val receipt = ioExecutor.runSourceIo {
+                                    LocalRecoveryActivationCoordinator(keyProvider).activate(
+                                        candidate = plan.candidate,
+                                        liveDatabaseFile = databaseFile,
+                                        authorization = plan.authorization,
+                                        authoritativeWatermarks = plan.authoritativeWatermarks,
+                                    )
+                                }
+                                activationCommitted = true
+                                receiptRecorded = ioExecutor.runSourceIo {
+                                    localRecoveryPointManager.recordSuccessfulActivation(receipt)
+                                }
+                            } catch (failure: Throwable) {
+                                operationFailure = failure
+                            }
+
+                            if (repositoryDetached) {
+                                val reopened = runCatchingCancellable {
+                                    ioExecutor.open {
+                                        LocalMemoryRepository.open(
+                                            context = appContext,
+                                            spaceId = LocalEventDatabase.DEFAULT_SPACE_ID,
+                                        )
+                                    } as LocalMemoryRepository
+                                }
+                                reopened.onSuccess { readyRepository ->
+                                    val restored = runCatchingCancellable {
+                                        ioExecutor.loadActiveEvents(readyRepository) to
+                                            ioExecutor.loadDaySummary(
+                                                readyRepository,
+                                                LocalDate.now(),
+                                            )
+                                    }
+                                    restored.onSuccess { (restoredEvents, restoredSummary) ->
+                                        events.clear()
+                                        events.addAll(restoredEvents)
+                                        daySummary = restoredSummary
+                                        repository = readyRepository
+                                        localSpaceDeleted =
+                                            ioExecutor.runSourceIo(
+                                                readyRepository::isLocalSpaceDeleted,
+                                            )
+                                        localRecoveryPointStatus =
+                                            ioExecutor.runSourceIo {
+                                                localRecoveryPointManager.refresh(readyRepository)
+                                            }
+                                        experienceModeName = if (localSpaceDeleted) {
+                                            ExperienceMode.RecoverableError.name
+                                        } else {
+                                            ExperienceMode.Ready.name
+                                        }
+                                    }.onFailure { reloadFailure ->
+                                        operationFailure?.addSuppressed(reloadFailure)
+                                            ?: run { operationFailure = reloadFailure }
+                                        ioExecutor.close(readyRepository)
+                                    }
+                                }.onFailure { reopenFailure ->
+                                    operationFailure?.addSuppressed(reopenFailure)
+                                        ?: run { operationFailure = reopenFailure }
+                                }
+                            } else {
+                                localRecoveryPointStatus = ioExecutor.runSourceIo {
+                                    localRecoveryPointManager.refresh(localRepository)
+                                }
+                            }
+
+                            localRecoveryNotice = when {
+                                repository == null ->
+                                    "恢复后本机加密节点未能重新打开；没有改用明文或合成数据，请重启后重试。"
+                                activationCommitted && receiptRecorded ->
+                                    "本机记录已恢复到恢复点，并重新完成完整性校验。"
+                                activationCommitted ->
+                                    "本机记录已恢复并重新校验；最近成功恢复记录未能写入，请保留当前状态并重试创建恢复点。"
+                                operationFailure != null ->
+                                    "恢复没有完成；已保留或回滚到切换前的本机记录，请重试。"
+                                else ->
+                                    "恢复没有完成；本机记录保持不变，请重试。"
+                            }
+                            persistenceError = localRecoveryNotice
+                            if (repository == null) {
+                                experienceModeName = ExperienceMode.RecoverableError.name
+                            } else {
+                                pairingGeneration += 1
+                            }
+                            operationFailure?.let { failure ->
+                                Log.w(
+                                    "AmemeRecovery",
+                                    "activation_failed type=${failure::class.java.simpleName}",
+                                )
+                            }
+                            Log.i(
+                                "AmemeRecovery",
+                                "activation_result committed=$activationCommitted " +
+                                    "receipt_recorded=$receiptRecorded " +
+                                    "repository_open=${repository != null} " +
+                                    "point=${localRecoveryPointStatus.availability.name}",
+                            )
+                            localRecoveryInFlight = false
+                        }
+                    }
+                },
                 localSpaceDeletionAvailable =
                     repository is LocalMemoryRepository && repositoryOverride == null && !demoMode,
                 localSpaceDeleted = localSpaceDeleted,
@@ -981,7 +1207,26 @@ fun AmemeApp(
                             val convergence = runCatchingCancellable {
                                 convergeLocalSpaceDeletion(localRepository, Instant.now())
                             }
-                            convergence.onSuccess(::applyLocalSpaceDeletionConvergence)
+                            convergence.onSuccess { result ->
+                                applyLocalSpaceDeletionConvergence(result)
+                                if (result.localSpaceFrozen) {
+                                    runCatchingCancellable {
+                                        ioExecutor.runSourceIo {
+                                            localRecoveryPointManager.clear()
+                                        }
+                                    }.onSuccess {
+                                        localRecoveryPointStatus = LocalRecoveryPointStatus.None
+                                        localRecoveryNotice = null
+                                    }.onFailure {
+                                        localRecoveryPointStatus =
+                                            LocalRecoveryPointStatus.Unavailable
+                                        localSpaceDeletionNeedsRetry = true
+                                        localRecoveryNotice =
+                                            "本机 Personal 空间已冻结；旧恢复点清理待重试，根删除水位会阻止其激活。"
+                                        persistenceError = localRecoveryNotice
+                                    }
+                                }
+                            }
                                 .onFailure {
                                     localSpaceDeletionNeedsRetry = true
                                     persistenceError =

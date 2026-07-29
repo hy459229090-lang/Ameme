@@ -91,7 +91,8 @@ source/locator/path、配对密钥、模型输入或自由异常。STARTED 在 r
 拒绝执行；COMPLETED 失败保留诚实的未完成 STARTED，并依靠写操作持久幂等安全重试。SQLCipher
 表禁止 UPDATE 和未到期 DELETE，最近读取/总容量有界；Android 设置页只读最近 20 条且不生成
 合成记录。v13→v14 migration/runtime/UI instrumentation 随后已进入 API 36 / 16 KB AVD 全量；
-QR v2 后的当前启动口径为 103 discovered / 96 passed / 7 外部门 skipped / 0 failed。
+QR v2 切片的启动口径为 103 discovered / 96 passed / 7 外部门 skipped / 0 failed；后续同安装
+恢复切片已更新为 105/98/7/0。
 同安装恢复激活现把旧 live 在激活时仍未过期的审计与候选账本做单调 union：精确重复去重，
 同 ID 或同 trace/phase 的不同内容、非法记录和 50,000 行容量溢出均在换库前失败关闭；retained
 ledger digest 与合并后 SQLCipher 文件 digest 在换库前后复核，PREPARED 崩溃回旧 live 并清理
@@ -109,8 +110,8 @@ Host；账户/多设备 owner audit、安全导出、真实用户理解、物理
 - 迁移快照只在升级/回滚窗口存在，到期进入 DeletionJob。
 - MVP 不提供记忆数据云备份/灾备。peer 恢复必须先应用 tombstone/删除水位再接收对象，恢复演练验证不会复活已删对象。
 - Python Core reference 已用 synthetic 数据证明一致 SQLite 快照、已加密 Raw 密文、hash/`quick_check`、损坏拒绝、无密钥备份和恢复到新目录。这不是生产移动备份：其结构化 SQLite 为明文，密钥需外部提供，也未证明 OS 调度、Keychain/Keystore 恢复、E2EE 云传输、账户恢复或物理设备灾难恢复。
-- 双端同安装候选现在可在 exact backup 短时确认后进入可回滚 live-store 激活内核：候选与权威 tombstone 在切换前后复核，HMAC journal 只保留版本、状态、确认 ID、backup ID 与 MAC，不含正文、路径或 key；`PREPARED` 失败回旧 live，`COMMITTED` 只保留已验证新 live，原候选不消费。该内核没有普通用户入口，receipt 仍为 `productionRecoveryClaim=false`；没有 recovery secret、跨设备 key、用户自有/E2EE 路线和物理设备演练时，不得向用户宣称卸载、换机或全设备丢失后可恢复。
-- Android 激活时将 content-free 安全审计视为不可回退账本：只把旧 live 中激活时仍未过期的记录并入候选，精确重复去重，冲突/容量异常拒绝整个激活，并在原子换库前后复核账本与 SQLCipher 文件摘要。该仓库实现只完成 JVM、androidTest 编译和静态门，真实进程终止、磁盘满、断电、OEM 文件系统和物理设备仍待独立演练。
+- 双端同安装候选现在可在 exact backup 短时确认后进入可回滚 live-store 激活内核：候选与权威 tombstone 在切换前后复核，HMAC journal 只保留版本、状态、确认 ID、backup ID 与 MAC，不含正文、路径或 key；`PREPARED` 失败回旧 live，`COMMITTED` 只保留已验证新 live，原候选不消费。设置页提供普通用户“同安装恢复”：创建/更新有界 current/previous 恢复点，健康必须来自真实隔离恢复，展示创建、验证和最近成功恢复时间，并要求逐字输入 `恢复`。receipt 仍为 `productionRecoveryClaim=false`；界面明确点只在当前安装、依赖当前设备 Keychain/Keystore key，卸载、换机或设备丢失后不可用。
+- Android 激活时将 content-free 安全审计视为不可回退账本：只把旧 live 中激活时仍未过期的记录并入候选，精确重复去重，冲突/容量异常拒绝整个激活，并在原子换库前后复核账本与 SQLCipher 文件摘要。Android JVM 112/112 与 API 36 / 16 KB AVD 105/98/7/0（完整 UI 14/14）已执行；iOS Debug/Release build 与生产 Smoke 已执行，本机 XCTest 因 Command Line Tools 缺少 `XCTest` 未执行。真实进程终止、磁盘满、断电、OEM 文件系统和双端物理设备仍待独立演练。
 
 ## 7. 权利请求与身份校验
 

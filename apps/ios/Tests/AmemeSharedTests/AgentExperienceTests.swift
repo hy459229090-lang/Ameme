@@ -246,7 +246,7 @@ final class AgentExperienceTests: XCTestCase {
         XCTAssertNil(defaults.data(forKey: AgentExperienceStore.userDefaultsKey))
     }
 
-    func testRealConnectionMetadataDoesNotRelaunchAsAnActiveTransport() throws {
+    func testRealConnectionMetadataLoadsOnlyAsReconnectHint() throws {
         let suiteName = "AmemeAgentExperienceRealRestore-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
@@ -265,8 +265,10 @@ final class AgentExperienceTests: XCTestCase {
 
         try store.save(connection)
 
-        XCTAssertNil(try store.load())
-        XCTAssertNil(defaults.data(forKey: AgentExperienceStore.userDefaultsKey))
+        let reconnectHint = try XCTUnwrap(store.load())
+        XCTAssertEqual(reconnectHint, connection)
+        XCTAssertFalse(reconnectHint.simulated)
+        XCTAssertNotNil(defaults.data(forKey: AgentExperienceStore.userDefaultsKey))
     }
 
     func testLocalNodeBuildersCoverBoundedReadRevisionAndExactUndo() throws {

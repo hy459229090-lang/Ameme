@@ -76,6 +76,7 @@ targets:
       - path: Tests/AmemeSharedTests
     dependencies:
       - target: AmemeShared
+      - target: AmemeApp
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.ameme.ios.shared-tests

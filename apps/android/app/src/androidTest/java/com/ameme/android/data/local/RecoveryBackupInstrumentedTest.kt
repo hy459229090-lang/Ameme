@@ -8,6 +8,7 @@ import com.ameme.android.data.AgentAccessAuditPhase
 import com.ameme.android.data.AgentAccessAuditPolicy
 import com.ameme.android.data.AgentAccessAuditRecord
 import com.ameme.android.domain.FactStatus
+import com.ameme.android.domain.CaptureKind
 import com.ameme.android.domain.MemoryEvent
 import com.ameme.android.data.RecoveryActivationAuthorization
 import com.ameme.android.data.RecoveryBackupManifest
@@ -154,6 +155,65 @@ class RecoveryBackupInstrumentedTest {
             )
         }
         assertTrue(wrongKeyResult.isFailure)
+    }
+
+    @Test fun managedRecoveryPointCreatesActivatesReopensAndPersistsSuccessReceipt() {
+        val root = newRoot()
+        val databaseFile = File(root, "live/events.db")
+        val recoveryRoot = File(root, "managed-recovery")
+        val candidateEvent = event("event_managed_recovery_candidate")
+        LocalEventDatabase.open(databaseFile, keyProvider, SPACE_ID).use { database ->
+            database.insertCaptured(candidateEvent)
+        }
+        val repository = LocalMemoryRepository.open(
+            context = context,
+            spaceId = SPACE_ID,
+            keyProvider = keyProvider,
+            databaseFile = databaseFile,
+        )
+        val manager = LocalRecoveryPointManager(recoveryRoot)
+        val createdAt = Instant.parse("2026-07-29T09:00:00Z")
+        val created = manager.create(repository, createdAt)
+        assertEquals(LocalRecoveryPointAvailability.Verified, created.availability)
+        assertEquals(createdAt, created.createdAt)
+        assertTrue((created.snapshotBytes ?: 0) > 0)
+        assertTrue(File(recoveryRoot, "candidate").isDirectory)
+        val liveOnly = repository.capture(
+            CaptureKind.Text,
+            "恢复后不应保留的 live 事件",
+        )
+        val confirmedAt = createdAt.plusSeconds(120)
+        val plan = manager.prepareActivation(repository, confirmedAt)
+        repository.close()
+
+        val receipt = LocalRecoveryActivationCoordinator(
+            keyProvider = keyProvider,
+            clock = Clock.fixed(confirmedAt, ZoneOffset.UTC),
+        ).activate(
+            candidate = plan.candidate,
+            liveDatabaseFile = databaseFile,
+            authorization = plan.authorization,
+            authoritativeWatermarks = plan.authoritativeWatermarks,
+        )
+        assertTrue(manager.recordSuccessfulActivation(receipt))
+
+        LocalMemoryRepository.open(
+            context = context,
+            spaceId = SPACE_ID,
+            keyProvider = keyProvider,
+            databaseFile = databaseFile,
+        ).use { reopened ->
+            assertTrue(reopened.loadActiveEvents().any { it.id == candidateEvent.id })
+            assertTrue(reopened.loadActiveEvents().none { it.id == liveOnly.id })
+            val restartedManager = LocalRecoveryPointManager(recoveryRoot)
+            val refreshed = restartedManager.refresh(
+                reopened,
+                confirmedAt.plusSeconds(30),
+            )
+            assertEquals(LocalRecoveryPointAvailability.Verified, refreshed.availability)
+            assertEquals(confirmedAt, refreshed.lastActivatedAt)
+            assertEquals(created.backupId, refreshed.backupId)
+        }
     }
 
     @Test fun v8MigratesThroughCurrentSchemaAndCreatesRecoverySafetyTables() {

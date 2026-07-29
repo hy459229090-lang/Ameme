@@ -40,9 +40,12 @@ final class AppModel: ObservableObject {
     @Published private(set) var pendingExportAvailable = false
     @Published private(set) var agentExperienceConnection: AgentExperienceConnection?
     @Published private(set) var localSpaceDeletionNeedsRetry = false
+    @Published private(set) var localRecoveryPointStatus: LocalRecoveryPointStatus = .none
+    @Published private(set) var localRecoveryInFlight = false
     private var storeCancellable: AnyCancellable?
     private let incomingShareStore: IncomingShareHandoffStore
     private let pendingExportStore: PendingExportStore
+    private let localRecoveryPointManager: LocalRecoveryPointManager
     private let agentExperienceStore: AgentExperienceStore
     private let agentExperienceConnector: any AgentExperienceConnector
 
@@ -52,6 +55,9 @@ final class AppModel: ObservableObject {
         pendingIncomingShare = nil
         incomingShareStore = IncomingShareHandoffStore(rootDirectory: Self.incomingShareRoot())
         pendingExportStore = PendingExportStore(rootDirectory: Self.pendingExportRoot())
+        localRecoveryPointManager = LocalRecoveryPointManager(
+            rootDirectory: Self.localRecoveryRoot()
+        )
         agentExperienceStore = AgentExperienceStore()
         self.agentExperienceConnector = agentExperienceConnector
         if initialStore.isLocalSpaceDeleted {
@@ -84,6 +90,7 @@ final class AppModel: ObservableObject {
             } else {
                 self.restorePendingIncomingShare()
                 await self.restoreAgentExperienceConnection()
+                self.refreshLocalRecoveryPoint()
             }
         }
     }
@@ -225,6 +232,19 @@ final class AppModel: ObservableObject {
             create: true
         )) ?? fileManager.temporaryDirectory
         return support.appendingPathComponent("Ameme/PendingActions", isDirectory: true)
+    }
+
+    private static func localRecoveryRoot() -> URL {
+        let fileManager = FileManager.default
+        let support = (try? fileManager.url(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        )) ?? fileManager.temporaryDirectory
+        // This must remain a sibling of the live `Application Support/Ameme` root.
+        // Recovery activation atomically moves that entire live root.
+        return support.appendingPathComponent("AmemeLocalRecovery", isDirectory: true)
     }
 
     func addText(_ text: String) -> Bool {
@@ -489,6 +509,62 @@ final class AppModel: ObservableObject {
         notice = "已断开体验连接；本机事件没有改变。"
     }
 
+    func refreshLocalRecoveryPoint() {
+        guard !store.isDemoMode,
+              !store.isLocalSpaceDeleted,
+              store.storageState == .ready else {
+            localRecoveryPointStatus = store.isLocalSpaceDeleted ? .none : .unavailable
+            return
+        }
+        localRecoveryPointStatus = localRecoveryPointManager.refresh(using: store)
+    }
+
+    func createLocalRecoveryPoint() async {
+        guard !localRecoveryInFlight,
+              !store.isDemoMode,
+              !store.isLocalSpaceDeleted,
+              store.storageState == .ready else {
+            notice = "真实本机加密空间就绪后才能创建恢复点。"
+            return
+        }
+        localRecoveryInFlight = true
+        await Task.yield()
+        defer { localRecoveryInFlight = false }
+        do {
+            localRecoveryPointStatus = try localRecoveryPointManager.create(using: store)
+            notice = "同安装恢复点已创建，并完成完整性校验与隔离候选恢复。"
+        } catch {
+            localRecoveryPointStatus = localRecoveryPointManager.refresh(using: store)
+            notice = "恢复点没有创建完成；旧恢复点和本机记录保持不变，请重试。"
+        }
+    }
+
+    @discardableResult
+    func activateLocalRecoveryPoint() async -> Bool {
+        guard !localRecoveryInFlight,
+              !store.isDemoMode,
+              !store.isLocalSpaceDeleted,
+              store.storageState == .ready,
+              localRecoveryPointStatus.availability == .verified else {
+            notice = "没有已验证的同安装恢复点可切换。"
+            return false
+        }
+        localRecoveryInFlight = true
+        await Task.yield()
+        defer { localRecoveryInFlight = false }
+        do {
+            localRecoveryPointStatus = try localRecoveryPointManager.activate(using: store)
+            notice = localRecoveryPointStatus.cleanupPending
+                ? "本机记录已恢复；旧 live 清理将在下次启动继续收敛。"
+                : "本机记录已恢复到所选恢复点，并重新完成完整性校验。"
+            return true
+        } catch {
+            localRecoveryPointStatus = localRecoveryPointManager.refresh(using: store)
+            notice = "恢复没有完成；已保留或回滚到切换前的本机记录，请重试。"
+            return false
+        }
+    }
+
     @discardableResult
     func deleteLocalSpace(requestedAt: Date = .now) async -> LocalSpaceDeletionConvergenceResult {
         let coordinator = LocalSpaceDeletionConvergenceCoordinator(
@@ -527,10 +603,23 @@ final class AppModel: ObservableObject {
         if result.completedSteps.contains(.incomingShareHandoffsClear) {
             pendingIncomingShare = nil
         }
-        localSpaceDeletionNeedsRetry = result.status == .pendingLocalRetry
+        var recoveryCleanupPending = false
+        if result.localSpaceFrozen {
+            do {
+                try localRecoveryPointManager.clear()
+                localRecoveryPointStatus = .none
+            } catch {
+                localRecoveryPointStatus = .unavailable
+                recoveryCleanupPending = true
+            }
+        }
+        localSpaceDeletionNeedsRetry =
+            result.status == .pendingLocalRetry || recoveryCleanupPending
         notice = switch result.status {
         case .completedLocalOnly:
-            "本机 Personal 空间已删除；本机连接和待处理快照已收敛。账号、系统原件与其他设备不在此次范围内。"
+            recoveryCleanupPending
+                ? "本机 Personal 空间已冻结；旧恢复点清理待重试，根删除水位会阻止其激活。账号、系统原件与其他设备不在此次范围内。"
+                : "本机 Personal 空间已删除；本机连接、恢复点和待处理快照已收敛。账号、系统原件与其他设备不在此次范围内。"
         case .pendingExternalCleanup:
             "本机 Personal 空间已冻结；仍有本机 Raw 清理待重试，外部系统原件不会由 Ameme 删除。"
         case .pendingLocalRetry:
@@ -1997,6 +2086,8 @@ struct SettingsView: View {
     @State private var showingLocalSpaceDeletion = false
     @State private var localSpaceDeletionConfirmation = ""
     @State private var deletingLocalSpace = false
+    @State private var showingRecoveryActivation = false
+    @State private var recoveryActivationConfirmation = ""
 
     var body: some View {
         Form {
@@ -2069,6 +2160,68 @@ struct SettingsView: View {
             Section("AI 小结") {
                 SettingRowView(title: "发送范围", detail: "仅当天结构化事件；不发送照片、音频原文件、来源定位或搜索记录")
                 SettingRowView(title: "生成方式", detail: "当前 iOS 网关尚未接入；不会用模板冒充 AI 结果")
+            }
+            Section("同安装恢复") {
+                switch model.localRecoveryPointStatus.availability {
+                case .none:
+                    SettingRowView(title: "恢复点", detail: "尚未创建")
+                case .verified:
+                    SettingRowView(title: "恢复点健康", detail: "完整性与隔离候选恢复已通过")
+                    if let createdAt = model.localRecoveryPointStatus.createdAt {
+                        SettingRowView(
+                            title: "创建时间",
+                            detail: createdAt.formatted(date: .abbreviated, time: .shortened)
+                        )
+                    }
+                    if let verifiedAt = model.localRecoveryPointStatus.verifiedAt {
+                        SettingRowView(
+                            title: "最近校验",
+                            detail: verifiedAt.formatted(date: .abbreviated, time: .shortened)
+                        )
+                    }
+                    if let activatedAt = model.localRecoveryPointStatus.lastActivatedAt {
+                        SettingRowView(
+                            title: "最近成功恢复",
+                            detail: activatedAt.formatted(date: .abbreviated, time: .shortened)
+                        )
+                    }
+                    if model.localRecoveryPointStatus.cleanupPending {
+                        Text("最近恢复已提交，旧 live 清理将在启动时继续收敛。")
+                            .font(.footnote)
+                            .foregroundStyle(AmemeStyle.secondaryText)
+                    }
+                case .unavailable:
+                    Text("恢复点不可用或未通过校验；不会据此替换本机记录。")
+                        .font(.footnote)
+                        .foregroundStyle(AmemeStyle.secondaryText)
+                        .accessibilityIdentifier("settings.recovery-unavailable")
+                }
+                Button(
+                    model.localRecoveryPointStatus.availability == .none
+                        ? "创建并验证恢复点"
+                        : "更新并验证恢复点"
+                ) {
+                    Task { @MainActor in
+                        await model.createLocalRecoveryPoint()
+                    }
+                }
+                .disabled(
+                    model.localRecoveryInFlight ||
+                    model.store.isDemoMode ||
+                    model.store.isLocalSpaceDeleted ||
+                    model.store.storageState != .ready
+                )
+                .accessibilityIdentifier("settings.create-recovery-point")
+                if model.localRecoveryPointStatus.availability == .verified {
+                    Button("恢复到此恢复点", role: .destructive) {
+                        showingRecoveryActivation = true
+                    }
+                    .disabled(model.localRecoveryInFlight)
+                    .accessibilityIdentifier("settings.activate-recovery-point")
+                }
+                Text("恢复点只保存在当前安装，并依赖这台设备的 Keychain 密钥；卸载、换机或设备丢失后不能使用，也不等同云备份。")
+                    .font(.footnote)
+                    .foregroundStyle(AmemeStyle.secondaryText)
             }
             Section("隐私、导出与删除") {
                 Button(
@@ -2161,6 +2314,24 @@ struct SettingsView: View {
             }
         } message: {
             Text("此操作会冻结当前安装内的 Event、Memory、搜索和旧备份恢复，并清理本机 Agent 与待处理快照。系统原件、账号、其他设备和对端副本不会被删除。")
+        }
+        .alert("恢复本机记录？", isPresented: $showingRecoveryActivation) {
+            TextField("输入“恢复”以确认", text: $recoveryActivationConfirmation)
+            Button("确认恢复", role: .destructive) {
+                Task { @MainActor in
+                    _ = await model.activateLocalRecoveryPoint()
+                    recoveryActivationConfirmation = ""
+                }
+            }
+            .disabled(
+                recoveryActivationConfirmation != "恢复" ||
+                model.localRecoveryInFlight
+            )
+            Button("取消", role: .cancel) {
+                recoveryActivationConfirmation = ""
+            }
+        } message: {
+            Text("恢复点之后新增或修改的本机记录会被替换。切换前后都会重新校验，失败会保留或回滚到切换前的 live；这不提供卸载、换机或设备丢失后的恢复。")
         }
     }
 

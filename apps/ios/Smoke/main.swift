@@ -307,6 +307,48 @@ struct AmemeSharedSmoke {
             fileManager.fileExists(atPath: recoveryCandidate.directory.path),
             "recovery activation consumed the isolated candidate"
         )
+        let managedRecoveryRoot = recoverySandbox.appendingPathComponent(
+            "managed-recovery-point",
+            isDirectory: true
+        )
+        let recoveryPointManager = LocalRecoveryPointManager(
+            rootDirectory: managedRecoveryRoot,
+            fileManager: fileManager
+        )
+        let managedBackedUp = reloaded.addText("普通用户恢复点内事件")!
+        let managedCreatedAt = Date(timeIntervalSince1970: 1_759_100_300)
+        let managedStatus = try! recoveryPointManager.create(
+            using: reloaded,
+            createdAt: managedCreatedAt
+        )
+        precondition(
+            managedStatus.availability == .verified &&
+                managedStatus.createdAt == managedCreatedAt &&
+                (managedStatus.snapshotBytes ?? 0) > 0,
+            "managed recovery point did not complete an isolated restore verification"
+        )
+        let managedLiveOnly = reloaded.addText("普通用户恢复后应消失")!
+        let managedActivatedAt = Date(timeIntervalSince1970: 1_759_100_360)
+        let managedActivated = try! recoveryPointManager.activate(
+            using: reloaded,
+            confirmedAt: managedActivatedAt
+        )
+        precondition(
+            managedActivated.availability == .verified &&
+                managedActivated.lastActivatedAt == managedActivatedAt &&
+                reloaded.event(id: managedBackedUp.id) != nil &&
+                reloaded.event(id: managedLiveOnly.id) == nil,
+            "managed recovery activation did not replace and re-verify the live store"
+        )
+        let reopenedRecoveryPointManager = LocalRecoveryPointManager(
+            rootDirectory: managedRecoveryRoot,
+            fileManager: fileManager
+        )
+        precondition(
+            reopenedRecoveryPointManager.refresh(using: reloaded).lastActivatedAt ==
+                managedActivatedAt,
+            "managed recovery activation receipt did not survive manager restart"
+        )
 
         let coverageRoot = fileManager.temporaryDirectory
             .appendingPathComponent("AmemeSharedSmoke-Coverage-\(UUID().uuidString)", isDirectory: true)

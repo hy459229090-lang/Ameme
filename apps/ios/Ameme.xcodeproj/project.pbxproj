@@ -37,6 +37,7 @@
 		7906C5CCFAD9897FFBF7AC50 /* LongTermMemoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6630A6CD6A5E7F4BEB0E3A9 /* LongTermMemoryTests.swift */; };
 		79D8A12FA082FDB7EBF0F37A /* IncomingShareHandoffTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5F19D1C7A9E0CD00AF623F8 /* IncomingShareHandoffTests.swift */; };
 		82FD5B19EEA2AB247DF24FC5 /* AmemeShared.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 136E3A12237D7A2B2C940AC7 /* AmemeShared.framework */; };
+		89F8EAA419D9ECBF67A2437E /* LocalRecoveryPointManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87D38684EB02FF3FC5F52C72 /* LocalRecoveryPointManager.swift */; };
 		953140FEEAA2AE21B405C9C8 /* LocalSpaceDeletionConvergenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0AC4A879B3ABAB30B82184 /* LocalSpaceDeletionConvergenceTests.swift */; };
 		9EFACA2053F76573BFE9E21B /* LocalSpaceDeletionConvergence.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2D1466804395B9150998F33 /* LocalSpaceDeletionConvergence.swift */; };
 		B2098B3CA9D02DC18765698E /* SourceLineage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C4777302E77E5BD39AFFFB6 /* SourceLineage.swift */; };
@@ -76,6 +77,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = 3DAC01683AFEB065BA3EC9B8;
 			remoteInfo = AmemeShared;
+		};
+		82B8EE92822DF529631B5D91 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 29E8789DA2CC1DF8C878CAF7 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 78A56DDBAB5F0DDD3FFE872A;
+			remoteInfo = AmemeApp;
 		};
 		8795320A3712FA4A9DD083CE /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -137,6 +145,7 @@
 		7E2C6F5BA954F60666901F7E /* AgentLocalNodeChannel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentLocalNodeChannel.swift; sourceTree = "<group>"; };
 		83C5DB3128B0C0FEED20A5BE /* LocalBackupStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalBackupStoreTests.swift; sourceTree = "<group>"; };
 		856AFAB5F1C68C202F2FB8FF /* AmemeUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = AmemeUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		87D38684EB02FF3FC5F52C72 /* LocalRecoveryPointManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalRecoveryPointManager.swift; sourceTree = "<group>"; };
 		8EADB6199992B75992369955 /* MobileCoverageRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileCoverageRuntime.swift; sourceTree = "<group>"; };
 		902763A74317F7A6DEDA7267 /* AmemeUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AmemeUITests.swift; sourceTree = "<group>"; };
 		980B12D448C9547FCDBBB940 /* AgentPairingBootstrapTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPairingBootstrapTests.swift; sourceTree = "<group>"; };
@@ -233,6 +242,7 @@
 				F913BAEFF11220E52C4226BA /* IncomingShare.swift */,
 				ED174B91780C00B392299BFE /* LocalBackupStore.swift */,
 				01DEEEE10FE486FB2821C899 /* LocalMemoryStore.swift */,
+				87D38684EB02FF3FC5F52C72 /* LocalRecoveryPointManager.swift */,
 				A0FEAF71EF61749E3814B2DA /* LocalSpaceDeletion.swift */,
 				F2D1466804395B9150998F33 /* LocalSpaceDeletionConvergence.swift */,
 				0723485264CD08D64245C35E /* LongTermMemory.swift */,
@@ -347,6 +357,7 @@
 			);
 			dependencies = (
 				9470B640D93B7CB2DCE00567 /* PBXTargetDependency */,
+				EF757B5C8E145E23B940C97D /* PBXTargetDependency */,
 			);
 			name = AmemeSharedTests;
 			packageProductDependencies = (
@@ -490,6 +501,7 @@
 				0D8B75411217F210E93D7C66 /* IncomingShare.swift in Sources */,
 				430C98D8B5AB52FA3898CAF4 /* LocalBackupStore.swift in Sources */,
 				61B0D4D31CC020D6D3775FDE /* LocalMemoryStore.swift in Sources */,
+				89F8EAA419D9ECBF67A2437E /* LocalRecoveryPointManager.swift in Sources */,
 				24811BD7AACE27796A543D2C /* LocalSpaceDeletion.swift in Sources */,
 				9EFACA2053F76573BFE9E21B /* LocalSpaceDeletionConvergence.swift in Sources */,
 				023E5ABD23777843C1AA6651 /* LongTermMemory.swift in Sources */,
@@ -560,6 +572,11 @@
 			isa = PBXTargetDependency;
 			target = 3DAC01683AFEB065BA3EC9B8 /* AmemeShared */;
 			targetProxy = 1114CB6A9BAEFB07FEEC7F82 /* PBXContainerItemProxy */;
+		};
+		EF757B5C8E145E23B940C97D /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 78A56DDBAB5F0DDD3FFE872A /* AmemeApp */;
+			targetProxy = 82B8EE92822DF529631B5D91 /* PBXContainerItemProxy */;
 		};
 		F5AE11430EB36CB7AE72740B /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
@@ -865,6 +882,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = "com.ameme.ios.shared-tests";
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/AmemeApp.app/AmemeApp";
 			};
 			name = Debug;
 		};
@@ -881,6 +899,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = "com.ameme.ios.shared-tests";
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/AmemeApp.app/AmemeApp";
 			};
 			name = Release;
 		};

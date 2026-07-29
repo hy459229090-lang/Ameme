@@ -1,7 +1,7 @@
 # Ameme 封闭 Beta 外部门执行包 v0.1
 
 > 状态：`ready_to_execute / blocked_external`；当前总 verdict 为 `hold`
-> 更新日期：2026-07-26
+> 更新日期：2026-07-29
 > 适用范围：真实参与者、物理设备、真实读屏、签名/Provisioning、内部商店分发、真实 Agent 宿主、生产恢复、付费服务/成本、安全事故和回滚
 > 证据边界：Simulator、AVD、Mock、合成夹具、Swift smoke、静态门和计划只能证明准备度，不能关闭本文件的 Gate
 
@@ -105,10 +105,11 @@ python3.12 scripts/validation/prepare_external_gate_run.py \
 8. **存储/删除**：核对 SQLCipher/AES-GCM、Keystore/Keychain、错误 key fail closed；Event
    删除后 Today/Search/Memory/复用不可见；Source/Raw/space/account 仅在真实实现存在时执行，
    未实现直接 `hold`。
-9. **备份/恢复**：创建一致生产候选；显示备份健康/最近验证；损坏、错 key、旧 watermark、
-   额外文件、非空目标拒绝；恢复到空目标，经明确确认后切换；Today/Search/Revision 可读，
-   已删数据不复活。当前同安装 artifact 无 key recovery/user switch，故生产恢复 Gate 仍
-   `hold`，直到批准路线完成。
+9. **备份/恢复**：先验收仓库已有的“同安装恢复”设置入口：创建/更新恢复点、健康来自实际
+   隔离恢复、创建/验证/最近成功恢复状态可见、逐字输入 `恢复` 后切换；再执行损坏、错 key、
+   旧 watermark、额外文件、非空目标拒绝，并确认 Today/Search/Revision 可读、已删数据不复活。
+   当前 artifact 无 key recovery/user switch，故这一步只能证明当前安装路径，生产恢复 Gate
+   仍 `hold`，直到批准路线完成。
 10. **导出/退出**：结构化导出可重试/清理、Restricted/locator/media 不泄漏；账号/space
     退出的保留与删除边界可解释。
 11. **性能/资源/日志**：记录冷启动、搜索、保存、恢复、存储、电量、crash/ANR；运行正文、
@@ -154,10 +155,11 @@ python3.12 scripts/validation/prepare_external_gate_run.py \
 - 最近成功备份/验证/恢复状态与限制对普通用户可见；
 - 全设备丢失、旧设备离线、恢复 secret 丢失分别有诚实结果。
 
-当前仓库已完成同安装、设备 key 尚在时的隔离候选，以及不接 UI 的 exact-confirmation/HMAC
-journal 可回滚激活内核；artifact 与 receipt 仍为 `productionRecoveryClaim=false`。这不提供
-recovery secret、跨设备 key、用户可见备份健康或支持流程。在上述路线和物理演练前，本 Gate
-必须保持 `hold`。
+当前仓库已完成同安装、设备 key 尚在时的有界恢复点与 exact-confirmation/HMAC journal
+可回滚激活内核。双端设置页已显示实际隔离恢复得出的健康、创建/验证/最近成功恢复状态，并以
+逐字 `恢复` 确认切换；同时明确卸载、换机或设备丢失后不可用。artifact 与 receipt 仍为
+`productionRecoveryClaim=false`，不提供 recovery secret、跨设备 key、用户自有/E2EE
+存储、全设备丢失恢复或生产支持流程。在上述路线和物理演练前，本 Gate 必须保持 `hold`。
 
 ## 7. 签名、商店、隐私、付费服务与成本
 

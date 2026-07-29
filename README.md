@@ -58,6 +58,7 @@ iOS 与 Android 均以“今天”为唯一默认主页，通过一个记录按�
 | iOS | SwiftUI 客户端、Swift Shared Core、可嵌入 Share Extension、XcodeGen 工程、Unit/UI Test targets | Xcode 16.4 CI 可真实构建 App 与扩展；签名、App Store 和物理设备仍需发布验收 |
 | Android | 原生 Kotlin / Jetpack Compose 客户端，`minSdk 34` | Debug/Release 构建与 API 36 16 KB arm64 AVD 为回归基线；OEM/物理设备仍需发布验收 |
 | 本地存储 | SQLCipher 加密 Event、Revision、DayLedger、Summary 与搜索索引 | 完整物理清除和分布式删除仍待验证 |
+| 同安装恢复 | 双端设置页可创建有界恢复点，以实际隔离恢复判定健康、显示最近成功，并要求逐字确认切换 | 仅当前安装且依赖设备密钥；卸载、换机、设备丢失与跨设备生产恢复仍未支持 |
 | 信息输入 | 双端文字、按次照片、显式 Share、语音结果/录音、范围化日历导入 | 不做后台全量采集；每种敏感来源都在用户主动操作时授权 |
 | Agent | `ameme-memory` Skill、本地 MCP Host、授权与风险评测 | 真实第三方宿主与共享账户 Grant 尚未完成 |
 | AI | 可替换推理网关、固定合成评测、用户确认后生成每日小结 | 真实模型、成本和生产安全证据仍待补齐 |
