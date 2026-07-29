@@ -2,10 +2,12 @@ package com.ameme.android.ui.screens
 
 import android.content.ClipData
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -16,7 +18,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -27,6 +28,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -208,12 +210,15 @@ fun SettingsScreen(
     ) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding).testTag("settings-list"),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 18.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                horizontal = 20.dp,
+                vertical = 12.dp,
+            ),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             item { SectionTitle("来源与权限") }
             item {
-                Card(Modifier.fillMaxWidth()) {
+                SettingsGroup(Modifier.fillMaxWidth()) {
                     SettingRow("照片", "系统照片选择器 · 按次选择，不申请整库权限")
                     HorizontalDivider()
                     SettingRow(
@@ -239,14 +244,14 @@ fun SettingsScreen(
             }
             item { SectionTitle("空间、设备与 Agent") }
             item {
-                Card(Modifier.fillMaxWidth().testTag("device-connection-card")) {
+                SettingsGroup(Modifier.fillMaxWidth().testTag("device-connection-card")) {
                     SettingRow("Personal 空间", "本机 SQLCipher 加密存储")
                     HorizontalDivider()
                     SettingRow("设备同步", "云端未启用 · 可在下方按次授权另一台 Ameme 设备写入")
                 }
             }
             item {
-                Card(Modifier.fillMaxWidth()) {
+                SettingsGroup(Modifier.fillMaxWidth()) {
                     if (pairingExperienceConnection == null) {
                         Column(
                             modifier = Modifier.fillMaxWidth().padding(16.dp),
@@ -326,7 +331,7 @@ fun SettingsScreen(
                 }
             }
             item {
-                Card(
+                SettingsGroup(
                     Modifier
                         .fillMaxWidth()
                         .testTag("receive-device-connection-card"),
@@ -393,7 +398,7 @@ fun SettingsScreen(
             }
             item { SectionTitle("Agent 访问记录") }
             item {
-                Card(Modifier.fillMaxWidth().testTag("agent-access-audit-card")) {
+                SettingsGroup(Modifier.fillMaxWidth().testTag("agent-access-audit-card")) {
                     Column(
                         modifier = Modifier.fillMaxWidth().padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -431,7 +436,7 @@ fun SettingsScreen(
             if (!showExperienceControls) {
                 item { SectionTitle("体验数据") }
                 item {
-                    Card(Modifier.fillMaxWidth().testTag("demo-data-card")) {
+                    SettingsGroup(Modifier.fillMaxWidth().testTag("demo-data-card")) {
                         Column(
                             modifier = Modifier.fillMaxWidth().padding(16.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -459,7 +464,7 @@ fun SettingsScreen(
             }
             item { SectionTitle("AI 小结") }
             item {
-                Card(Modifier.fillMaxWidth()) {
+                SettingsGroup(Modifier.fillMaxWidth()) {
                     SettingRow("发送范围", "仅当天可用的结构化事件；不发送照片、音频原文件和来源定位")
                     HorizontalDivider()
                     SettingRow("生成方式", "每次在今天页明确确认后调用；失败不生成模板替代")
@@ -468,7 +473,7 @@ fun SettingsScreen(
             if (showDeveloperPairingControls) {
                 item { SectionTitle("开发者选项") }
                 item {
-                    Card(Modifier.fillMaxWidth().testTag("developer-pairing-card")) {
+                    SettingsGroup(Modifier.fillMaxWidth().testTag("developer-pairing-card")) {
                         Column(
                             modifier = Modifier.fillMaxWidth().padding(16.dp),
                             verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -538,7 +543,7 @@ fun SettingsScreen(
             }
             item { SectionTitle("同安装恢复") }
             item {
-                Card(Modifier.fillMaxWidth().testTag("local-recovery-point-card")) {
+                SettingsGroup(Modifier.fillMaxWidth().testTag("local-recovery-point-card")) {
                     Column(
                         modifier = Modifier.fillMaxWidth().padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -649,7 +654,7 @@ fun SettingsScreen(
             }
             item { SectionTitle("隐私、导出与删除") }
             item {
-                Card(Modifier.fillMaxWidth()) {
+                SettingsGroup(Modifier.fillMaxWidth()) {
                     Column(
                         modifier = Modifier.fillMaxWidth().padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -1293,7 +1298,29 @@ private fun Throwable.pairingExperienceMessage(): String = when {
 
 @Composable
 private fun SectionTitle(text: String) {
-    Text(text, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+    Text(
+        text,
+        modifier = Modifier.padding(start = 4.dp, top = 8.dp, bottom = 2.dp),
+        style = MaterialTheme.typography.titleSmall,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+@Composable
+private fun SettingsGroup(
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLowest,
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
+    ) {
+        Column(content = content)
+    }
 }
 
 @Composable
