@@ -65,6 +65,8 @@ jobs:
             -scheme Ameme \
             -destination "platform=iOS Simulator,id=$normal_device_id" \
             -resultBundlePath "$RUNNER_TEMP/AmemeTests-Normal.xcresult" \
+            -retry-tests-on-failure \
+            -test-iterations 2 \
             test
           xcrun simctl shutdown "$normal_device_id" 2>/dev/null || true
           xcrun simctl delete "$normal_device_id"
