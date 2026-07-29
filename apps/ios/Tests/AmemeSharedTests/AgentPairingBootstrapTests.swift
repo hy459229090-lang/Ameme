@@ -77,7 +77,8 @@ final class AgentPairingBootstrapTests: XCTestCase {
             account: "current"
         )
         defer { try? store.clearAndVerify() }
-        let now = Date()
+        let nowMilliseconds = floor(Date().timeIntervalSince1970 * 1_000)
+        let now = Date(timeIntervalSince1970: nowMilliseconds / 1_000)
         let envelope = try makeEnvelope(now: now)
         let privateKey = P256.Signing.PrivateKey()
         let thumbprint = AgentLocalNodeChannelCodec.digest(
