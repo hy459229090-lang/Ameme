@@ -8,7 +8,7 @@
 | 事件反馈与记忆类型 | `记忆类型与反馈事件模型.md` | v0.2，等待 DayLedger 实验验证 |
 | MVP 研发架构技术方案 | `MVP研发架构技术方案.md` | v0.6，技术栈、LAN/账户、SourceLocator、Skill 与 Spike 边界已接受 |
 | MVP 领域契约与状态机 | `MVP领域契约与状态机.md` | v0.1，领域不变量、状态、冲突、Recall 和兼容候选 |
-| MVP 本地存储、同步与删除 | `MVP本地存储同步与删除协议.md` | v0.23，Android SQLCipher v14/iOS envelope v8；双端设置页提供真实候选健康、最近成功和 exact-confirmation 的同安装恢复，QR Bootstrap v2 以一次性短 envelope + P-256 持有证明换取独立 credential，本机删除收敛 runtime/pairing/pending payload。Android 扫码、账户/共享 Grant registry、peer/provider、跨设备 key、真实用户/物理设备仍待验证 |
+| MVP 本地存储、同步与删除 | `MVP本地存储同步与删除协议.md` | v0.23，Android SQLCipher v14/iOS envelope v8；双端设置页提供真实候选健康、最近成功和 exact-confirmation 的同安装恢复，QR Bootstrap v2 以一次性短 envelope + P-256 持有证明换取独立 credential；Android 系统扫码与不读剪贴板的显式粘贴均进入同一 event-only 认证链，本机删除收敛 runtime/pairing/pending payload。账户/共享 Grant registry、peer/provider、跨设备 key、无 Play 真机、真实用户/物理设备仍待验证 |
 | MVP AI 路由与 Prompt | `MVP-AI任务路由与Prompt契约.md` | v0.1，任务目录、隐私门、回退和 Eval 候选 |
 | MVP 成本容量 SLO 与观测 | `MVP成本容量SLO与可观测性.md` | v0.2，LAN/local-first 规划档、公式、暂定预算与观测基线 |
 
@@ -50,5 +50,6 @@
 | 2026-07-29 | Android Agent 访问审计 | Android SQLCipher schema v14 增加 Local Node STARTED/COMPLETED content-free access audit、180 天单点保留、append-only/提前删除保护、失败关闭和设置页最近记录；同安装恢复进一步按未过期记录单调 union 并对冲突/容量失败关闭。相关 instrumentation 后续已在 API 36 / 16 KB AVD 执行；iOS Host、账户汇聚、真实用户/物理设备继续 hold |
 | 2026-07-29 | 本机删除访问面收敛 | 双端产品删除入口在 Personal space root freeze 后，停止当前安装 Agent、清除本机 pairing/连接元数据与 pending action/export/App Group handoff，并以 content-free marker 防复活；Android AVD 100/93/7/0、iOS 生产 Smoke、静态 Gate 206/206 通过，账户/共享 Grant registry、peer/provider 与物理设备 hold |
 | 2026-07-29 | QR Bootstrap v2 | Release 二维码改为短时一次性 bootstrap envelope；Android 原子消费并绑定首次 P-256 key、签发独立随机 credential，同 key 可重取；iOS device-only Keychain 支持 pending/active 重启恢复。冻结应用通道仍为 bearer，Android 扫码、共享 Grant、物理 LAN/设备与真实用户继续 hold |
+| 2026-07-29 | Android 普通用户 QR client | 系统 QR-only scanner 不向 App 授予相机权限；无系统扫码服务时可显式粘贴完整码，App 不读取剪贴板、输入 16,384 字符有界并在取消/提交时清除。两者复用严格 v2 parser、event-only 确认、P-256/TLS pin/独立 credential/应用认证；AVD 115/108/7/0，物理扫码、无 Play 真机、LAN/真实用户 hold |
 | 2026-07-29 | 同安装恢复用户入口 | 双端设置页接通有界恢复点、实际隔离恢复健康、创建/验证/最近成功状态和逐字 `恢复`；Android 关闭/重开 SQLCipher 并重载 Today，iOS 将恢复根放在 live 根同级。该入口仍依赖当前安装设备 key，跨设备与物理灾备 hold |
 | 2026-07-14 | Android 完整体验 | SQLCipher 升级 v6；加入 DayLedger/Summary 与持久 Agent 幂等，配对 TLS/HMAC Host→Android→Today 模拟器闭环通过；NSD/物理 LAN/后台与账户 Grant 仍保留 |

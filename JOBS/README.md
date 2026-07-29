@@ -14,7 +14,7 @@
 | MVP 工程实现 | done | M24 engineering pass / Gate 1 and release hold | 双端真实本机/固定 Mock 核心闭环、可装配工程、QR→Android TLS/HMAC/Grant、Android 16 KB 大字号设备回归、iOS Xcode/XCUITest 截图和仓库门禁已收口；物理设备、真实读屏、签名/商店、账户共享 Grant、后台、正式用户与生产模型继续作为发布保留门；`JOBS-Ameme.md#mvp-工程实现` |
 | 双端平台视觉与设备复验 | done | M25 engineering pass / release hold | iOS 26 原生 Liquid Glass 与 Android 当前稳定 Material 3 已完成同屏视觉、字号、语义、真实构建和 Simulator/16 KB AVD 复验；物理设备/真实读屏/签名与商店仍 hold；`JOBS-Ameme.md#第二十五批双端平台视觉升级与设备复验里程碑2026-07-26done` |
 | Prototype 候选评审 | plan_ready | Gate 1 hold | D1–D10 已回填，等待 Gate 1 输入与实施证据；`JOBS-Ameme.md#prototype-候选评审` |
-| 封闭 Beta 候选持续执行 | in_progress | production P0 / external gates hold | Coverage、事件、长期 Memory、普通用户同安装恢复点/真实健康/exact 切换、复用、来源/space 删除、字段证据、用户确认 provenance、Android Agent bounded read/write/undo、QR v2 服务端消费/独立凭据和 iOS device-only 恢复已接生产；Android scanner client、最终 head XCTest、真实用户/设备/共享 Grant/跨设备恢复/签名/商店 Gate 继续 `hold`；`JOBS-Ameme.md#封闭-beta-候选持续执行-goal` |
+| 封闭 Beta 候选持续执行 | in_progress | production P0 / external gates hold | Coverage、事件、长期 Memory、普通用户同安装恢复点/真实健康/exact 切换、复用、来源/space 删除、字段证据、用户确认 provenance、Android Agent bounded read/write/undo、QR v2 服务端消费/独立凭据、Android 系统扫码/显式粘贴 client 和 iOS device-only 恢复已接生产；最终 head XCTest、物理扫码/无 Play 真机、真实用户/设备/共享 Grant/跨设备恢复/签名/商店 Gate 继续 `hold`；`JOBS-Ameme.md#封闭-beta-候选持续执行-goal` |
 
 ## 状态定义
 

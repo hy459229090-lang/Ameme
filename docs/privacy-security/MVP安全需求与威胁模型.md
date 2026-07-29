@@ -109,7 +109,7 @@ Android 官方建议敏感、仅 App 使用的数据存储在 app-specific inter
 | P5 Agent | pairing MITM/replay、并发扫码、key possession、同 key 响应重取、issued bearer 复制边界、host impersonation、prompt injection、cross-space、expiry/revoke |
 | Gate 5/6 | SAST/SCA/SBOM、secret scan、DAST/API auth、restore/deletion drill、incident tabletop |
 
-当前 QR Bootstrap v2 已在仓库内实现短时 HMAC envelope、P-256 持有证明、Android 原子一次性消费/同 key 重取和独立随机 credential；Release artifact 不含开发者 bearer，iOS pending/active 状态进入 device-only Keychain。该控制只把 credential 签发与首次 client key 绑定；冻结 v1 应用通道后续仍以 bearer 认证，没有每次重连 P-256 proof。Android 扫码客户端、共享账户 Grant registry、物理网络/设备、真实用户配对和 bearer 复制攻击验证仍为未关闭 Gate。
+当前 QR Bootstrap v2 已在仓库内实现短时 HMAC envelope、P-256 持有证明、Android 原子一次性消费/同 key 重取和独立随机 credential；Release artifact 不含开发者 bearer，iOS pending/active 状态进入 device-only Keychain。Android Release 已接系统 QR-only scanner 与不读剪贴板的显式粘贴替代，两条入口都复用严格 parser、event-only 确认和设备凭据/TLS 应用认证。该控制只把 credential 签发与首次 client key 绑定；冻结 v1 应用通道后续仍以 bearer 认证，没有每次重连 P-256 proof。共享账户 Grant registry、物理扫码/无 Play 真机、物理网络/设备、真实用户配对和 bearer 复制攻击验证仍为未关闭 Gate。
 
 ## 7. 未决但已收敛
 

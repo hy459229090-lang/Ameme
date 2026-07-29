@@ -71,7 +71,15 @@ Release 普通用户二维码只携带短时 bootstrap envelope，不再携带�
 
 Release artifact 不包含开发者 bearer，Debug Host 凭据与普通用户二维码签发凭据相互独立。iOS 将 pending envelope/private key 和 active credential 仅保存于 device-only Keychain：重启后 pending 继续同 key 交换，active 通过实际 `AgentLocalNodeNetworkClient` 恢复连接。这里的 client-key binding 精确覆盖签发与同 key 响应重取；active credential 进入冻结 v1 TLS/HMAC bearer 通道后，没有逐次重连 P-256 proof，不能扩写为硬件绑定或不可复制 bearer。
 
-该切片尚未实现 Android 扫码客户端，也没有共享账户 Grant registry、物理 LAN/设备或真实用户证据。普通用户 Grant 仍为 event-only；Revision/read/undo 不因 bootstrap v2 自动扩权。
+Android Release 已实现普通用户扫码客户端：用户主动触发 Google Play 系统 QR-only scanner，
+App 不声明相机权限；结果最大 16,384 字符并只在短时 UI 状态中存在。没有可用系统扫码服务时，
+设置页提供“粘贴完整配对码”：应用不读取剪贴板，用户自行粘贴，输入同样有界并在取消或提交
+时清除。两条入口都必须经过同一严格 v2 parser、设备与 event-only 授权确认、P-256 possession
+proof、TLS 1.3 certificate pin、独立 credential 签发和应用 HMAC/capability 认证，不能退回
+Debug Host credential 或把解析成功当作连接成功。
+
+该切片仍没有共享账户 Grant registry、物理扫码/无 Play 真机、物理 LAN/设备或真实用户证据。
+普通用户 Grant 仍为 event-only；Revision/read/undo 不因 bootstrap v2 或客户端支持而自动扩权。
 
 ## 5. 错误码目录
 
