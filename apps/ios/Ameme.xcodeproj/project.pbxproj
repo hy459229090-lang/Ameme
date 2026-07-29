@@ -882,7 +882,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = "com.ameme.ios.shared-tests";
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/AmemeApp.app/AmemeApp";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Ameme.app/Ameme";
 			};
 			name = Debug;
 		};
@@ -899,7 +899,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = "com.ameme.ios.shared-tests";
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/AmemeApp.app/AmemeApp";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Ameme.app/Ameme";
 			};
 			name = Release;
 		};

@@ -81,6 +81,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.ameme.ios.shared-tests
         GENERATE_INFOPLIST_FILE: true
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Ameme.app/Ameme"
 
   AmemeUITests:
     type: bundle.ui-testing
