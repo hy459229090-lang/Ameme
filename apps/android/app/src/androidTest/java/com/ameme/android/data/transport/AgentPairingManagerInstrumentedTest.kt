@@ -51,6 +51,10 @@ class AgentPairingManagerInstrumentedTest {
             assertEquals(created.material, active.material)
             assertEquals(now.plusSeconds(30L * 24 * 60 * 60), active.expiresAt)
             assertArrayEquals(created.oneTimeSecret.encodeToByteArray(), active.secret)
+            assertEquals(
+                setOf("create_event", "append_revision", "undo_capture", "visible_events"),
+                active.accessGrantPolicy.operations,
+            )
         } finally {
             active.close()
         }
@@ -70,5 +74,18 @@ class AgentPairingManagerInstrumentedTest {
 
         assertNull(expiredView.loadActive())
         assertFalse(expiredView.pairingFile().exists())
+    }
+
+    @Test
+    fun legacy_pairing_without_explicit_operations_is_revoked_instead_of_expanded() {
+        manager.create(host = "127.0.0.1", port = 43_821)
+        val preferences = context.getSharedPreferences(
+            "ameme_agent_pairing",
+            android.content.Context.MODE_PRIVATE,
+        )
+        assertTrue(preferences.edit().remove("grant_operations").commit())
+
+        assertNull(manager.loadActive())
+        assertFalse(manager.pairingFile().exists())
     }
 }

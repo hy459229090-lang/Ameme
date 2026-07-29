@@ -120,6 +120,7 @@ data class AgentAccessGrantPolicy(
     val purposes: Set<String>,
     val spaces: Set<String>,
     val dataTypes: Set<String>,
+    val operations: Set<String>,
     val notBefore: Instant,
     val expiresAt: Instant,
     val status: AgentAccessGrantStatus,
@@ -131,6 +132,30 @@ data class AgentAccessGrantPolicy(
         require(purposes.isNotEmpty() && purposes.size <= 8 && purposes.all { it.length <= 80 && '*' !in it })
         require(spaces.isNotEmpty() && spaces.size <= 8 && spaces.all { it.length <= 128 && '*' !in it })
         require(dataTypes.isNotEmpty() && dataTypes.size <= 8 && dataTypes.all { it.length <= 64 && '*' !in it })
+        require(
+            operations.isNotEmpty() &&
+                operations.size <= 8 &&
+                operations.all { it in MemoryRepositoryAgentLocalNodeEndpoint.IMPLEMENTED_OPERATIONS },
+        ) { "operations contain an unsupported capability" }
+        require(
+            MemoryRepositoryAgentLocalNodeEndpoint.OPERATION_CREATE_EVENT !in operations ||
+                MemoryRepositoryAgentLocalNodeEndpoint.MEMORY_TYPE_EVENT in dataTypes,
+        )
+        require(
+            MemoryRepositoryAgentLocalNodeEndpoint.OPERATION_APPEND_REVISION !in operations ||
+                MemoryRepositoryAgentLocalNodeEndpoint.MEMORY_TYPE_REVISION in dataTypes,
+        )
+        require(
+            MemoryRepositoryAgentLocalNodeEndpoint.OPERATION_UNDO_CAPTURE !in operations ||
+                dataTypes.any {
+                    it == MemoryRepositoryAgentLocalNodeEndpoint.MEMORY_TYPE_EVENT ||
+                        it == MemoryRepositoryAgentLocalNodeEndpoint.MEMORY_TYPE_REVISION
+                },
+        )
+        require(
+            MemoryRepositoryAgentLocalNodeEndpoint.OPERATION_VISIBLE_EVENTS !in operations ||
+                MemoryRepositoryAgentLocalNodeEndpoint.MEMORY_TYPE_EVENT in dataTypes,
+        )
         require(expiresAt >= notBefore && expiresAt > createdAt)
     }
 
@@ -163,7 +188,8 @@ data class AgentAccessGrantPolicy(
             ownerId = ownerId,
             purposes = setOf("autonomous_memory"),
             spaces = setOf("space_personal"),
-            dataTypes = setOf("event"),
+            dataTypes = setOf("event", "revision"),
+            operations = MemoryRepositoryAgentLocalNodeEndpoint.IMPLEMENTED_OPERATIONS,
             notBefore = createdAt,
             expiresAt = expiresAt,
             status = AgentAccessGrantStatus.Active,

@@ -1,7 +1,7 @@
-# Ameme MVP 接口、错误与 Agent 工具契约 v0.2
+# Ameme MVP 接口、错误与 Agent 工具契约 v0.5
 
 > 文档状态：已接受；HTTP/MCP 语义、幂等、分页和错误码为研发前实现契约\
-> 更新日期：2026-07-14\
+> 更新日期：2026-07-26\
 > OpenAPI：`../../packages/contracts/api/openapi.yaml`\
 > JSON Schema：`../../packages/contracts/schemas/ameme-domain.schema.json`、`../../packages/contracts/schemas/ameme-agent-local-node.schema.json`
 
@@ -57,9 +57,11 @@ Skill 文档负责“何时调用”和对用户的确认文案，不能放长�
 
 `ameme.agent-local-node.v1` 是 MCP adapter 与 Local Node 之间的应用层协议，不是 LAN、HTTP 或设备发现协议。正本由严格 JSON Schema、[`agent-local-node-protocol`](../../packages/agent-local-node-protocol/) executable spec 和跨语言 conformance vector 共同约束：canonical UTF-8 JSON、payload/result SHA-256 digest、最小且由 payload 派生的请求 scope、可为请求超集的 verified Grant、请求绑定响应、域分离幂等槽与稳定错误码。未知字段、重复键、浮点数、非法 UTF-8、NUL 和 lone surrogate 均 fail closed；v1 只有 `TEMPORARILY_UNAVAILABLE`、`INTERNAL_ERROR` 可重试。
 
-当前 MCP `android-local-node` 后端与 Android 端点只实现 `create_event`。适配器必须显式选择并注入已认证 channel provider、endpoint/credential/session binding 引用和 expected device id；Android 必须获得 separately verified session、授权的 space/type/sensitivity/data class 与原子幂等 registry，才可写入 SQLCipher `MemoryRepository`。生产 Android factory 默认关闭；普通 CLI 不带 provider 会失败，不回退 Python Core 或 JSON Mock。其余 v1 operation 返回 `OPERATION_UNSUPPORTED`。
+当前 MCP `android-local-node` 后端与 Android 端点实现四种最小操作：`create_event`、`append_revision`、exact `undo_capture` 与有界 `visible_events`。适配器必须显式选择并注入已认证 channel provider、endpoint/credential/session binding 引用和 expected device id；Android 必须获得 separately verified session 以及获准的 operation/space/type/sensitivity/data class。Revision 写入对不存在、已删除或 sensitivity 不可见目标统一返回 `NOT_VISIBLE`，也不确认长期 Memory。撤销只接受原 capture 返回的域分离 token、同 caller/grant/purpose/space/type，且首次调用必须在原幂等记录创建后 10 分钟内：Event 追加 tombstone；Revision 仅在该 Revision 仍为 current head 时追加补偿 Revision，绝不覆盖历史。撤销 mutation 与撤销幂等记录处于同一 SQLCipher transaction，重开后同请求重放同一终态。
 
-当前通过的是应用层与本地持久化边界，不是生产通道。尚未实现或证明：设备配对与认证、credential 生命周期、LAN/NSD、socket、TLS/传输加密、会话重放保护、Android 后台生命周期、跨重启持久幂等，以及真实 Codex/Claude Code/Cursor 宿主。
+`visible_events` 不是任意 ID 读取：只接受当前绑定的 Personal space、`event`、`structured`，查询最多 1,000 code points、结果 1–100 条，并在 SQLCipher current active projection 上执行 AND 关键词、时区化时间范围和 session sensitivity 交集。生产 runtime 只授予 `public/personal/confidential`；Restricted 即使存在也不能越过 session，且只有 session 本身获准 Restricted 时，`risk_filtered` 才可反映策略过滤，避免向未授权 caller 泄漏存在性。返回仅含 bounded title（240）、description（1,000）、Event/revision/type/evidence/fact/sensitivity 与 `content_truncated`，不含 user words、source label/ID、locator、路径或 Raw。Host 对成功结果再次做 exact key/scope/type/sensitivity/长度/数量绑定，恶意结果会毒化会话；`get_context` 仍把正文视为不可信数据并执行 injection、item/token budget。`get_event` 与 `set_policy_blocked` 继续返回 `OPERATION_UNSUPPORTED`，因此 Revision 写入不会用目标读取把旧正文复制进 Host control state。
+
+当前仓库证据覆盖 canonical 应用层、Host TLS 1.3 adapter、Android 配对 listener/凭据生命周期、SQLCipher 原子写入/读取与历史 AVD `create_event` 纵向 smoke。`append_revision`、精确撤销和 `visible_events` 有 JVM、Host MCP/TLS 回归及已编译的 SQLCipher 关闭重开 instrumentation source，但本轮读取/Revision/撤销没有 AVD 或物理设备执行。共享账户 Grant registry、物理 LAN/NSD、Android 后台生命周期、跨端撤销传播、真实 Codex/Claude Code/Cursor 生产宿主以及真实设备 ContextPack/Recall 闭环仍未证明。
 
 ## 5. 错误码目录
 

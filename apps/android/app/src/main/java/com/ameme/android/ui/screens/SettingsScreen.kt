@@ -267,7 +267,7 @@ fun SettingsScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         Text(
-                            "二维码只用于短时交换安全配对材料。对方扫描并确认后，只能在 Personal 空间写入结构化事件。",
+                            "二维码只用于短时交换安全配对材料。对方扫描并确认后，只能在 Personal 空间读取获准的结构化事件、写入 event/revision，并在 10 分钟内撤销自己的最近写入。",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -368,7 +368,7 @@ fun SettingsScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                             Text(
-                                "创建时明确授权 Agent 在 Personal 空间写入结构化事件 30 天；需要手动复制一次性密钥和 JSON。",
+                                "创建时明确授权 Agent 在 Personal 空间读取获准的结构化事件、写入 event/revision 与 10 分钟撤销，有效期 30 天；需要手动复制一次性密钥和 JSON。",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -513,7 +513,7 @@ fun SettingsScreen(
                     Text(candidate.deviceName, fontWeight = FontWeight.SemiBold)
                     Text("Agent：${candidate.agentName}")
                     Text("连接方式：${candidate.method.label()}")
-                    Text("拟授权范围：Personal 空间 · autonomous_memory · 结构化 event · 30 天")
+                    Text("拟授权范围：Personal 空间 · autonomous_memory · 获准结构化事件读取、event/revision 写入与 10 分钟撤销 · 30 天")
                     Text("允许：${candidate.capabilities.joinToString("、")}")
                     if (candidate.simulated) {
                         Text(

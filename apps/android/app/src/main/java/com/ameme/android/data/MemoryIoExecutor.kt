@@ -107,6 +107,20 @@ class MemoryIoExecutor(
         pageSize: Int,
     ): MemoryPage = onIo { repository.searchPage(query, startDate, endDate, cursor, pageSize) }
 
+    suspend fun buildAndResolveReuseContext(
+        repository: ReuseRepository,
+        request: ReuseRequest,
+        resolvedAt: java.time.Instant,
+    ): ResolvedReuseContext = onIo {
+        val context = repository.buildReuseContext(request)
+        repository.resolveReuseContext(context, resolvedAt)
+    }
+
+    suspend fun recordReuseOutcome(
+        repository: ReuseRepository,
+        submission: ReuseOutcomeSubmission,
+    ): Boolean = onIo { repository.recordReuseOutcome(submission) }
+
     suspend fun deleteEvent(repository: MemoryRepository, eventId: String): Boolean =
         onIo { repository.deleteEvent(eventId) }
 

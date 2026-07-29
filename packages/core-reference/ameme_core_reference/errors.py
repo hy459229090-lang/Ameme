@@ -35,3 +35,7 @@ class RawQuotaExceeded(CoreOracleError):
 
 class QueueLeaseConflict(CoreOracleError):
     """A durable job was completed or failed without its active lease."""
+
+
+class BackupIntegrityError(CoreOracleError):
+    """A reference backup or restored snapshot failed integrity verification."""

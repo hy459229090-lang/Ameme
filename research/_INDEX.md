@@ -4,6 +4,7 @@
 |---|---|---|
 | `windows/` | Windows 信息源低风险能力验证 | `windows/_INDEX.md` |
 | `browser/` | Browser Extension 与当前页低权限 Capture | `browser/_INDEX.md` |
+| `coverage/` | 目标用户一天上下文、来源增量、规模口径与 7 天研究 | `coverage/_INDEX.md` |
 
 ## 规则
 

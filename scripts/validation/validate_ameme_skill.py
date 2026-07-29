@@ -14,7 +14,7 @@ SKILL = ROOT / "packages" / "agent-skills" / "ameme-memory"
 FIXTURE = ROOT / "tests" / "fixtures" / "skills" / "ameme-memory-eval.json"
 TOOLS = {"pair", "recall", "get_context", "capture", "feedback", "status"}
 MODES = {"ameme.pair", "ameme.recall", "ameme.context", "ameme.capture", "ameme.feedback", "ameme.status", "none"}
-REQUIRED_RISKS = {"first_pair", "scope_expansion", "restricted_external", "false_trigger", "false_completion_evidence", "prompt_injection", "offline_queue", "destructive_delete", "autonomous_direct_write", "autonomous_restricted_boundary"}
+REQUIRED_RISKS = {"first_pair", "scope_expansion", "restricted_external", "false_trigger", "false_completion_evidence", "prompt_injection", "offline_queue", "destructive_delete", "autonomous_direct_write", "autonomous_restricted_boundary", "long_term_promotion_boundary"}
 
 
 def main() -> int:
@@ -54,6 +54,12 @@ def main() -> int:
     for tool in TOOLS:
         if f"`{tool}`" not in skill_text:
             errors.append(f"SKILL.md does not mention tool: {tool}")
+    for marker in (
+        "does not authorize promotion into a confirmed long-term Memory",
+        "candidate_user_confirmation_required",
+    ):
+        if marker not in skill_text:
+            errors.append(f"SKILL.md missing long-term memory boundary: {marker}")
 
     yaml_text = (SKILL / "agents" / "openai.yaml").read_text(encoding="utf-8")
     for marker in ('allow_implicit_invocation: true', 'value: "ameme"', '$ameme-memory'):

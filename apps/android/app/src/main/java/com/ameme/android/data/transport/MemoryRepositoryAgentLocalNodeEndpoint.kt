@@ -1,9 +1,13 @@
 package com.ameme.android.data.transport
 
 import com.ameme.android.data.MemoryRepository
+import com.ameme.android.data.AgentCaptureUndoConflictException
+import com.ameme.android.data.AgentCaptureUndoResult
+import com.ameme.android.data.AgentCaptureUndoTarget
 import com.ameme.android.domain.FactStatus
 import com.ameme.android.domain.EventType
 import com.ameme.android.domain.EvidenceState
+import com.ameme.android.domain.MemoryEvent
 import com.ameme.android.domain.Sensitivity
 import com.ameme.android.domain.SourceCaptureRequest
 import com.ameme.android.domain.SourceKind
@@ -60,6 +64,14 @@ internal fun interface AgentLocalNodeIdempotencyRegistry {
         payloadDigest: String,
         capture: () -> AgentLocalNodeCaptureOutcome,
     ): AgentLocalNodeIdempotencyResult
+
+    fun resolveOrUndo(
+        binding: AgentLocalNodeIdempotencyBinding,
+        payloadDigest: String,
+        undoToken: String,
+        at: Instant,
+        capture: (AgentCaptureUndoTarget) -> AgentCaptureUndoResult?,
+    ): AgentLocalNodeUndoIdempotencyResult = AgentLocalNodeUndoIdempotencyResult.NotVisible
 }
 
 internal data class AgentLocalNodeIdempotencyBinding(
@@ -75,6 +87,7 @@ internal data class AgentLocalNodeIdempotencyBinding(
 internal data class AgentLocalNodeCaptureOutcome(
     val eventId: String,
     val revision: Int,
+    val revisionId: String? = null,
 )
 
 internal sealed interface AgentLocalNodeIdempotencyResult {
@@ -83,8 +96,17 @@ internal sealed interface AgentLocalNodeIdempotencyResult {
     data object Conflict : AgentLocalNodeIdempotencyResult
 }
 
+internal sealed interface AgentLocalNodeUndoIdempotencyResult {
+    data class Applied(val outcome: AgentCaptureUndoResult) : AgentLocalNodeUndoIdempotencyResult
+
+    data object Conflict : AgentLocalNodeUndoIdempotencyResult
+
+    data object NotVisible : AgentLocalNodeUndoIdempotencyResult
+}
+
 /**
- * Process-local `create_event` application dispatcher backed by [MemoryRepository].
+ * Process-local `create_event` / `append_revision` / exact `undo_capture` / bounded
+ * `visible_events` dispatcher backed by [MemoryRepository].
  *
  * This is not a socket, discovery service, LAN protocol, or authentication implementation. The
  * public factory is closed. An enabled instance requires a separately verified session and an
@@ -103,13 +125,31 @@ class MemoryRepositoryAgentLocalNodeEndpoint private constructor(
         try {
             val control = request.control
             authorizationError(control)?.let { return error(request, it) }
-            if (control.operation != OPERATION_CREATE_EVENT) {
+            if (control.operation !in IMPLEMENTED_OPERATIONS) {
                 return error(request, AgentLocalNodeErrorCode.OPERATION_UNSUPPORTED)
             }
 
             payloadBytes = request.payloadCopy()
-            val command = try {
-                AgentLocalNodeApplicationCodec.decodeCreateEvent(payloadBytes)
+            val decoded = try {
+                when (control.operation) {
+                    OPERATION_CREATE_EVENT ->
+                        AgentLocalNodeDecodedCommand.Create(
+                            AgentLocalNodeApplicationCodec.decodeCreateEvent(payloadBytes),
+                        )
+                    OPERATION_APPEND_REVISION ->
+                        AgentLocalNodeDecodedCommand.Append(
+                            AgentLocalNodeApplicationCodec.decodeAppendRevision(payloadBytes),
+                        )
+                    OPERATION_UNDO_CAPTURE ->
+                        AgentLocalNodeDecodedCommand.Undo(
+                            AgentLocalNodeApplicationCodec.decodeUndoCapture(payloadBytes),
+                        )
+                    OPERATION_VISIBLE_EVENTS ->
+                        AgentLocalNodeDecodedCommand.Visible(
+                            AgentLocalNodeApplicationCodec.decodeVisibleEvents(payloadBytes),
+                        )
+                    else -> return error(request, AgentLocalNodeErrorCode.OPERATION_UNSUPPORTED)
+                }
             } catch (_: AgentLocalNodePayloadTooLargeException) {
                 return error(request, AgentLocalNodeErrorCode.PAYLOAD_TOO_LARGE)
             } catch (_: IllegalArgumentException) {
@@ -119,63 +159,15 @@ class MemoryRepositoryAgentLocalNodeEndpoint private constructor(
                 return error(request, AgentLocalNodeErrorCode.PAYLOAD_DIGEST_MISMATCH)
             }
 
-            val spaceId = requireNotNull(repositorySpaceId)
-            if (
-                control.spaces != setOf(command.space) ||
-                control.memoryTypes != setOf(command.memoryType)
-            ) {
-                return error(request, AgentLocalNodeErrorCode.SCOPE_MISMATCH)
-            }
-            if (command.space != spaceId) {
-                return error(request, AgentLocalNodeErrorCode.SPACE_DENIED)
-            }
-            val session = requireNotNull(verifiedSession)
-            if (command.sensitivity !in session.allowedSensitivities) {
-                return error(request, AgentLocalNodeErrorCode.DATA_TYPE_DENIED)
-            }
-            if (command.dataClass !in session.allowedDataClasses) {
-                return error(request, AgentLocalNodeErrorCode.DATA_TYPE_DENIED)
-            }
-
-            val factStatus = command.toFactStatus()
-                ?: return error(request, AgentLocalNodeErrorCode.INVALID_REQUEST)
-            val eventTimestamp = command.eventTimestamp()
-            val content = command.content
-            val result = requireNotNull(idempotencyRegistry).resolveOrCapture(
-                binding = AgentLocalNodeIdempotencyBinding(
-                    callerId = control.callerId,
-                    grantId = control.grantId,
-                    purpose = control.purpose,
-                    spaceId = command.space,
-                    memoryType = command.memoryType,
-                    operation = control.operation,
-                    slot = control.idempotencySlot,
-                ),
-                payloadDigest = control.payloadDigest,
-            ) {
-                val event = requireNotNull(repository).captureSource(
-                    SourceCaptureRequest(
-                        sourceKind = SourceKind.AgentAutonomous,
-                        title = content.lineSequence()
-                            .map(String::trim)
-                            .firstOrNull(String::isNotEmpty)
-                            .orEmpty()
-                            .take(MAX_TITLE_CHARS),
-                        detail = content,
-                        factStatus = factStatus,
-                        localDate = eventTimestamp.toLocalDate(),
-                        time = eventTimestamp.toLocalTime(),
-                        eventType = EventType.entries.first { it.wireValue == command.eventType },
-                        evidenceState = EvidenceState.entries.first { it.wireValue == command.evidenceState },
-                        sensitivity = Sensitivity.entries.first { it.wireValue == command.sensitivity },
-                    ),
-                )
-                AgentLocalNodeCaptureOutcome(eventId = event.id, revision = FIRST_REVISION)
-            }
-            return when (result) {
-                is AgentLocalNodeIdempotencyResult.Applied -> success(request, result.outcome)
-                AgentLocalNodeIdempotencyResult.Conflict ->
-                    error(request, AgentLocalNodeErrorCode.IDEMPOTENCY_CONFLICT)
+            return when (decoded) {
+                is AgentLocalNodeDecodedCommand.Create ->
+                    createEvent(request, decoded.command)
+                is AgentLocalNodeDecodedCommand.Append ->
+                    appendRevision(request, decoded.command)
+                is AgentLocalNodeDecodedCommand.Undo ->
+                    undoCapture(request, decoded.command)
+                is AgentLocalNodeDecodedCommand.Visible ->
+                    visibleEvents(request, decoded.command)
             }
         } catch (cancelled: CancellationException) {
             throw cancelled
@@ -185,6 +177,213 @@ class MemoryRepositoryAgentLocalNodeEndpoint private constructor(
             payloadBytes?.fill(0)
             request.close()
         }
+    }
+
+    private fun createEvent(
+        request: AgentLocalNodeRequest,
+        command: AgentLocalNodeCreateEventPayload,
+    ): AgentLocalNodeResponse {
+        scopeError(request.control, command.space, command.memoryType)?.let {
+            return error(request, it)
+        }
+        val session = requireNotNull(verifiedSession)
+        if (command.sensitivity !in session.allowedSensitivities) {
+            return error(request, AgentLocalNodeErrorCode.DATA_TYPE_DENIED)
+        }
+        if (command.dataClass !in session.allowedDataClasses) {
+            return error(request, AgentLocalNodeErrorCode.DATA_TYPE_DENIED)
+        }
+        val factStatus = command.toFactStatus()
+            ?: return error(request, AgentLocalNodeErrorCode.INVALID_REQUEST)
+        val eventTimestamp = command.eventTimestamp()
+        val content = command.content
+        val result = requireNotNull(idempotencyRegistry).resolveOrCapture(
+            binding = request.control.idempotencyBinding(command.space, command.memoryType),
+            payloadDigest = request.control.payloadDigest,
+        ) {
+            val event = requireNotNull(repository).captureSource(
+                SourceCaptureRequest(
+                    sourceKind = SourceKind.AgentAutonomous,
+                    title = content.lineSequence()
+                        .map(String::trim)
+                        .firstOrNull(String::isNotEmpty)
+                        .orEmpty()
+                        .take(MAX_TITLE_CHARS),
+                    detail = content,
+                    factStatus = factStatus,
+                    localDate = eventTimestamp.toLocalDate(),
+                    time = eventTimestamp.toLocalTime(),
+                    eventType = EventType.entries.first { it.wireValue == command.eventType },
+                    evidenceState = EvidenceState.entries.first { it.wireValue == command.evidenceState },
+                    sensitivity = Sensitivity.entries.first { it.wireValue == command.sensitivity },
+                ),
+            )
+            AgentLocalNodeCaptureOutcome(eventId = event.id, revision = FIRST_REVISION)
+        }
+        return idempotencyResponse(request, result)
+    }
+
+    private fun appendRevision(
+        request: AgentLocalNodeRequest,
+        command: AgentLocalNodeAppendRevisionPayload,
+    ): AgentLocalNodeResponse {
+        scopeError(request.control, command.space, command.memoryType)?.let {
+            return error(request, it)
+        }
+        val factStatus = command.toFactStatus()
+            ?: return error(request, AgentLocalNodeErrorCode.INVALID_REQUEST)
+        val evidenceState = EvidenceState.entries.first { it.wireValue == command.evidenceState }
+        val session = requireNotNull(verifiedSession)
+        if ("structured" !in session.allowedDataClasses) {
+            return error(request, AgentLocalNodeErrorCode.DATA_TYPE_DENIED)
+        }
+        val allowedSensitivities = Sensitivity.entries
+            .filterTo(mutableSetOf()) { it.wireValue in session.allowedSensitivities }
+        if (allowedSensitivities.isEmpty()) {
+            return error(request, AgentLocalNodeErrorCode.DATA_TYPE_DENIED)
+        }
+        val result = try {
+            requireNotNull(idempotencyRegistry).resolveOrCapture(
+                binding = request.control.idempotencyBinding(command.space, command.memoryType),
+                payloadDigest = request.control.payloadDigest,
+            ) {
+                val appended = requireNotNull(repository).appendAgentRevision(
+                    eventId = command.eventId,
+                    content = command.content,
+                    evidenceState = evidenceState,
+                    factStatus = factStatus,
+                    allowedSensitivities = allowedSensitivities,
+                ) ?: throw AgentLocalNodeTargetNotVisibleException()
+                AgentLocalNodeCaptureOutcome(
+                    eventId = appended.event.id,
+                    revision = appended.event.revision,
+                    revisionId = appended.revisionId,
+                )
+            }
+        } catch (_: AgentLocalNodeTargetNotVisibleException) {
+            return error(request, AgentLocalNodeErrorCode.NOT_VISIBLE)
+        }
+        return idempotencyResponse(request, result)
+    }
+
+    private fun undoCapture(
+        request: AgentLocalNodeRequest,
+        command: AgentLocalNodeUndoCapturePayload,
+    ): AgentLocalNodeResponse {
+        scopeError(request.control, command.space, command.memoryType)?.let {
+            return error(request, it)
+        }
+        val session = requireNotNull(verifiedSession)
+        if ("structured" !in session.allowedDataClasses) {
+            return error(request, AgentLocalNodeErrorCode.DATA_TYPE_DENIED)
+        }
+        val allowedSensitivities = Sensitivity.entries
+            .filterTo(mutableSetOf()) { it.wireValue in session.allowedSensitivities }
+        if (allowedSensitivities.isEmpty()) {
+            return error(request, AgentLocalNodeErrorCode.DATA_TYPE_DENIED)
+        }
+        val result = try {
+            requireNotNull(idempotencyRegistry).resolveOrUndo(
+                binding = request.control.idempotencyBinding(command.space, command.memoryType),
+                payloadDigest = request.control.payloadDigest,
+                undoToken = command.undoToken,
+                at = clock.instant(),
+            ) { target ->
+                requireNotNull(repository).undoAgentCapture(
+                    target = target,
+                    allowedSensitivities = allowedSensitivities,
+                    undoneAt = clock.instant(),
+                )
+            }
+        } catch (_: AgentCaptureUndoConflictException) {
+            return error(request, AgentLocalNodeErrorCode.REVISION_CONFLICT)
+        }
+        return when (result) {
+            is AgentLocalNodeUndoIdempotencyResult.Applied ->
+                undoSuccess(request, result.outcome)
+            AgentLocalNodeUndoIdempotencyResult.Conflict ->
+                error(request, AgentLocalNodeErrorCode.IDEMPOTENCY_CONFLICT)
+            AgentLocalNodeUndoIdempotencyResult.NotVisible ->
+                error(request, AgentLocalNodeErrorCode.NOT_VISIBLE)
+        }
+    }
+
+    private fun visibleEvents(
+        request: AgentLocalNodeRequest,
+        command: AgentLocalNodeVisibleEventsPayload,
+    ): AgentLocalNodeResponse {
+        val spaces = command.spaces.toSet()
+        val memoryTypes = command.memoryTypes.toSet()
+        if (request.control.spaces != spaces || request.control.memoryTypes != memoryTypes) {
+            return error(request, AgentLocalNodeErrorCode.SCOPE_MISMATCH)
+        }
+        if (spaces != setOf(requireNotNull(repositorySpaceId))) {
+            return error(request, AgentLocalNodeErrorCode.SPACE_DENIED)
+        }
+        if (memoryTypes != setOf(MEMORY_TYPE_EVENT)) {
+            return error(request, AgentLocalNodeErrorCode.DATA_TYPE_DENIED)
+        }
+        val session = requireNotNull(verifiedSession)
+        if ("structured" !in session.allowedDataClasses) {
+            return error(request, AgentLocalNodeErrorCode.DATA_TYPE_DENIED)
+        }
+        val allowedSensitivities = Sensitivity.entries
+            .filterTo(mutableSetOf()) { it.wireValue in session.allowedSensitivities }
+        if (allowedSensitivities.isEmpty()) {
+            return error(request, AgentLocalNodeErrorCode.DATA_TYPE_DENIED)
+        }
+        val result = requireNotNull(repository).readAgentVisibleEvents(
+            query = command.query.orEmpty(),
+            startAt = command.startInstant(),
+            endAt = command.endInstant(),
+            timeZone = clock.zone,
+            allowedSensitivities = allowedSensitivities,
+            allowHighRisk = command.allowHighRisk,
+            limit = command.limit,
+        )
+        return visibleSuccess(
+            request,
+            AgentLocalNodeVisibleEventsResult(
+                events = result.events.map { it.toAgentLocalNodeEventView(requireNotNull(repositorySpaceId)) },
+                riskFiltered = result.riskFiltered,
+            ),
+        )
+    }
+
+    private fun scopeError(
+        control: AgentLocalNodeControl,
+        space: String,
+        memoryType: String,
+    ): AgentLocalNodeErrorCode? {
+        if (control.spaces != setOf(space) || control.memoryTypes != setOf(memoryType)) {
+            return AgentLocalNodeErrorCode.SCOPE_MISMATCH
+        }
+        if (space != requireNotNull(repositorySpaceId)) {
+            return AgentLocalNodeErrorCode.SPACE_DENIED
+        }
+        return null
+    }
+
+    private fun AgentLocalNodeControl.idempotencyBinding(
+        space: String,
+        memoryType: String,
+    ) = AgentLocalNodeIdempotencyBinding(
+        callerId = callerId,
+        grantId = grantId,
+        purpose = purpose,
+        spaceId = space,
+        memoryType = memoryType,
+        operation = operation,
+        slot = idempotencySlot,
+    )
+
+    private fun idempotencyResponse(
+        request: AgentLocalNodeRequest,
+        result: AgentLocalNodeIdempotencyResult,
+    ): AgentLocalNodeResponse = when (result) {
+        is AgentLocalNodeIdempotencyResult.Applied -> success(request, result.outcome)
+        AgentLocalNodeIdempotencyResult.Conflict ->
+            error(request, AgentLocalNodeErrorCode.IDEMPOTENCY_CONFLICT)
     }
 
     private fun authorizationError(control: AgentLocalNodeControl): AgentLocalNodeErrorCode? {
@@ -243,12 +442,67 @@ class MemoryRepositoryAgentLocalNodeEndpoint private constructor(
         request: AgentLocalNodeRequest,
         outcome: AgentLocalNodeCaptureOutcome,
     ): AgentLocalNodeResponse {
-        val result = AgentLocalNodeApplicationCodec.encodeCreateEventResult(
-            AgentLocalNodeCreateEventResult(
-                eventId = outcome.eventId,
-                revision = outcome.revision,
+        val result = when (request.control.operation) {
+            OPERATION_CREATE_EVENT -> AgentLocalNodeApplicationCodec.encodeCreateEventResult(
+                AgentLocalNodeCreateEventResult(
+                    eventId = outcome.eventId,
+                    revision = outcome.revision,
+                ),
+            )
+            OPERATION_APPEND_REVISION -> AgentLocalNodeApplicationCodec.encodeAppendRevisionResult(
+                AgentLocalNodeAppendRevisionResult(
+                    eventRevisionId = requireNotNull(outcome.revisionId),
+                    targetEventId = outcome.eventId,
+                    revision = outcome.revision,
+                ),
+            )
+            else -> error("unsupported success operation")
+        }
+        return try {
+            AgentLocalNodeResponse.validatedFor(
+                request = request,
+                protocolVersion = request.control.protocolVersion,
+                requestId = request.control.requestId,
+                status = AgentLocalNodeStatus.Ok,
+                resultDigest = AgentLocalNodeApplicationCodec.canonicalDigest(result),
+                payload = result,
+            )
+        } finally {
+            result.fill(0)
+        }
+    }
+
+    private fun undoSuccess(
+        request: AgentLocalNodeRequest,
+        outcome: AgentCaptureUndoResult,
+    ): AgentLocalNodeResponse {
+        val result = AgentLocalNodeApplicationCodec.encodeUndoCaptureResult(
+            AgentLocalNodeUndoCaptureResult(
+                targetEventId = outcome.eventId,
+                undoneObjectType = outcome.objectType,
+                undoneObjectId = outcome.objectId,
+                compensationRevisionId = outcome.compensationRevisionId,
             ),
         )
+        return try {
+            AgentLocalNodeResponse.validatedFor(
+                request = request,
+                protocolVersion = request.control.protocolVersion,
+                requestId = request.control.requestId,
+                status = AgentLocalNodeStatus.Ok,
+                resultDigest = AgentLocalNodeApplicationCodec.canonicalDigest(result),
+                payload = result,
+            )
+        } finally {
+            result.fill(0)
+        }
+    }
+
+    private fun visibleSuccess(
+        request: AgentLocalNodeRequest,
+        visible: AgentLocalNodeVisibleEventsResult,
+    ): AgentLocalNodeResponse {
+        val result = AgentLocalNodeApplicationCodec.encodeVisibleEventsResult(visible)
         return try {
             AgentLocalNodeResponse.validatedFor(
                 request = request,
@@ -277,7 +531,17 @@ class MemoryRepositoryAgentLocalNodeEndpoint private constructor(
     companion object {
         const val PURPOSE_AUTONOMOUS_MEMORY = "autonomous_memory"
         const val OPERATION_CREATE_EVENT = "create_event"
+        const val OPERATION_APPEND_REVISION = "append_revision"
+        const val OPERATION_UNDO_CAPTURE = "undo_capture"
+        const val OPERATION_VISIBLE_EVENTS = "visible_events"
         const val MEMORY_TYPE_EVENT = "event"
+        const val MEMORY_TYPE_REVISION = "revision"
+        val IMPLEMENTED_OPERATIONS = setOf(
+            OPERATION_CREATE_EVENT,
+            OPERATION_APPEND_REVISION,
+            OPERATION_UNDO_CAPTURE,
+            OPERATION_VISIBLE_EVENTS,
+        )
         private const val FIRST_REVISION = 1
         private const val MAX_TITLE_CHARS = 240
 
@@ -352,6 +616,93 @@ internal data class AgentLocalNodeCreateEventPayload(
 }
 
 @Serializable
+internal data class AgentLocalNodeAppendRevisionPayload(
+    @SerialName("event_id") val eventId: String,
+    val space: String,
+    @SerialName("memory_type") val memoryType: String,
+    val content: String,
+    @SerialName("evidence_state") val evidenceState: String,
+    @SerialName("fact_status") val factStatus: String,
+    val now: String,
+) {
+    init {
+        requireIdentifier(eventId, "event_id")
+        requireIdentifier(space, "space")
+        require(memoryType == "revision") { "unsupported memory_type" }
+        require(content.isNotBlank() && content.codePointLength() <= 4_000) { "invalid content" }
+        require('\u0000' !in content) { "content contains NUL" }
+        require(evidenceState in AgentLocalNodeCreateEventPayload.EVIDENCE_STATES) {
+            "invalid evidence_state"
+        }
+        require(factStatus in AgentLocalNodeCreateEventPayload.FACT_STATUSES) {
+            "invalid fact_status"
+        }
+        parseTimestamp(now)
+    }
+
+    fun toFactStatus(): FactStatus? = when (evidenceState to factStatus) {
+        "observed" to "confirmed" -> FactStatus.Confirmed
+        "user_asserted" to "user_asserted" -> FactStatus.UserAsserted
+        "inferred" to "low_confidence_candidate" -> FactStatus.NeedsReview
+        else -> null
+    }
+}
+
+@Serializable
+internal data class AgentLocalNodeUndoCapturePayload(
+    @SerialName("undo_token") val undoToken: String,
+    val space: String,
+    @SerialName("memory_type") val memoryType: String,
+    val now: String,
+) {
+    init {
+        requireIdentifier(undoToken, "undo_token")
+        requireIdentifier(space, "space")
+        require(memoryType in setOf("event", "revision")) { "unsupported memory_type" }
+        parseTimestamp(now)
+    }
+}
+
+@Serializable
+internal data class AgentLocalNodeVisibleEventsPayload(
+    val spaces: List<String>,
+    @SerialName("memory_types") val memoryTypes: List<String>,
+    val query: String? = null,
+    @SerialName("allow_high_risk") val allowHighRisk: Boolean,
+    val limit: Int,
+    @SerialName("start_at") val startAt: String? = null,
+    @SerialName("end_at") val endAt: String? = null,
+) {
+    init {
+        require(
+            spaces.isNotEmpty() &&
+                spaces.size <= 8 &&
+                spaces == spaces.distinct().sortedWith(::compareUnicodeCodePoints),
+        ) { "spaces must be sorted and unique" }
+        spaces.forEach { requireIdentifier(it, "space") }
+        require(
+            memoryTypes.isNotEmpty() &&
+                memoryTypes.size <= 8 &&
+                memoryTypes == memoryTypes.distinct().sortedWith(::compareUnicodeCodePoints),
+        ) { "memory_types must be sorted and unique" }
+        require(memoryTypes.all { it in setOf("event", "revision") }) {
+            "unsupported memory_type"
+        }
+        query?.let {
+            require(it.codePointLength() <= 1_000 && '\u0000' !in it) { "invalid query" }
+        }
+        require(limit in 1..100) { "invalid limit" }
+        val start = startAt?.let(::parseTimestamp)
+        val end = endAt?.let(::parseTimestamp)
+        require(start == null || end == null || !end.isBefore(start)) { "invalid time range" }
+    }
+
+    fun startInstant(): Instant? = startAt?.let(::parseTimestamp)?.toInstant()
+
+    fun endInstant(): Instant? = endAt?.let(::parseTimestamp)?.toInstant()
+}
+
+@Serializable
 internal data class AgentLocalNodeCreateEventResult(
     @SerialName("event_id") val eventId: String,
     @SerialName("object_type") val objectType: String = "event",
@@ -363,6 +714,110 @@ internal data class AgentLocalNodeCreateEventResult(
         require(revision >= 1) { "invalid revision" }
     }
 }
+
+@Serializable
+internal data class AgentLocalNodeAppendRevisionResult(
+    @SerialName("event_revision_id") val eventRevisionId: String,
+    @SerialName("object_type") val objectType: String = "revision",
+    val revision: Int,
+    @SerialName("target_event_id") val targetEventId: String,
+) {
+    init {
+        requireIdentifier(eventRevisionId, "event_revision_id")
+        require(objectType == "revision") { "unsupported object_type" }
+        require(revision >= 2) { "invalid revision" }
+        requireIdentifier(targetEventId, "target_event_id")
+    }
+}
+
+@Serializable
+internal data class AgentLocalNodeUndoCaptureResult(
+    val state: String = "undone",
+    @SerialName("target_event_id") val targetEventId: String,
+    @SerialName("undone_object_type") val undoneObjectType: String,
+    @SerialName("undone_object_id") val undoneObjectId: String,
+    @SerialName("activity_visible") val activityVisible: Boolean = true,
+    @SerialName("compensation_revision_id") val compensationRevisionId: String? = null,
+) {
+    init {
+        require(state == "undone") { "invalid undo state" }
+        requireIdentifier(targetEventId, "target_event_id")
+        require(undoneObjectType in setOf("event", "revision")) { "invalid undone object type" }
+        requireIdentifier(undoneObjectId, "undone_object_id")
+        require(activityVisible) { "undo activity must remain visible" }
+        if (undoneObjectType == "event") {
+            require(undoneObjectId == targetEventId) { "event undo identity is invalid" }
+            require(compensationRevisionId == null) { "event undo cannot have compensation revision" }
+        } else {
+            requireNotNull(compensationRevisionId) { "revision undo requires compensation revision" }
+            requireIdentifier(compensationRevisionId, "compensation_revision_id")
+        }
+    }
+}
+
+@Serializable
+internal data class AgentLocalNodeEventView(
+    @SerialName("event_id") val eventId: String,
+    @SerialName("space_id") val spaceId: String,
+    @SerialName("memory_type") val memoryType: String = "event",
+    val revision: Int,
+    @SerialName("event_type") val eventType: String,
+    val title: String,
+    val description: String,
+    @SerialName("fact_status") val factStatus: String,
+    @SerialName("evidence_state") val evidenceState: String,
+    val sensitivity: String,
+    @SerialName("data_class") val dataClass: String = "structured",
+    @SerialName("content_truncated") val contentTruncated: Boolean,
+) {
+    init {
+        requireIdentifier(eventId, "event_id")
+        requireIdentifier(spaceId, "space_id")
+        require(memoryType == "event") { "unsupported memory_type" }
+        require(revision >= 1) { "invalid revision" }
+        require(eventType in AgentLocalNodeCreateEventPayload.EVENT_TYPES) { "invalid event_type" }
+        require(title.isNotBlank() && title.codePointLength() <= MAX_READ_TITLE_CODE_POINTS) {
+            "invalid title"
+        }
+        require(description.codePointLength() <= MAX_READ_DESCRIPTION_CODE_POINTS) {
+            "invalid description"
+        }
+        require('\u0000' !in title && '\u0000' !in description) { "read content contains NUL" }
+        require(factStatus.isNotBlank() && factStatus.length <= 64) { "invalid fact_status" }
+        require(evidenceState in AgentLocalNodeCreateEventPayload.EVIDENCE_STATES) {
+            "invalid evidence_state"
+        }
+        require(sensitivity in AgentLocalNodeCreateEventPayload.SENSITIVITIES) {
+            "invalid sensitivity"
+        }
+        require(dataClass == "structured") { "unsupported data_class" }
+    }
+}
+
+@Serializable
+internal data class AgentLocalNodeVisibleEventsResult(
+    val events: List<AgentLocalNodeEventView>,
+    @SerialName("risk_filtered") val riskFiltered: Boolean,
+) {
+    init {
+        require(events.size <= 100) { "too many visible events" }
+        require(events.map(AgentLocalNodeEventView::eventId).distinct().size == events.size) {
+            "duplicate visible event"
+        }
+    }
+}
+
+private sealed interface AgentLocalNodeDecodedCommand {
+    data class Create(val command: AgentLocalNodeCreateEventPayload) : AgentLocalNodeDecodedCommand
+
+    data class Append(val command: AgentLocalNodeAppendRevisionPayload) : AgentLocalNodeDecodedCommand
+
+    data class Undo(val command: AgentLocalNodeUndoCapturePayload) : AgentLocalNodeDecodedCommand
+
+    data class Visible(val command: AgentLocalNodeVisibleEventsPayload) : AgentLocalNodeDecodedCommand
+}
+
+private class AgentLocalNodeTargetNotVisibleException : IllegalStateException()
 
 @OptIn(ExperimentalSerializationApi::class)
 internal object AgentLocalNodeApplicationCodec {
@@ -401,8 +856,107 @@ internal object AgentLocalNodeApplicationCodec {
         return payload
     }
 
+    fun encodeAppendRevision(payload: AgentLocalNodeAppendRevisionPayload): ByteArray =
+        canonicalBytes(json.encodeToJsonElement(payload)).also {
+            if (it.size > MAX_CANONICAL_PAYLOAD_BYTES) {
+                it.fill(0)
+                throw AgentLocalNodePayloadTooLargeException()
+            }
+        }
+
+    fun decodeAppendRevision(bytes: ByteArray): AgentLocalNodeAppendRevisionPayload {
+        if (bytes.size > MAX_CANONICAL_PAYLOAD_BYTES) throw AgentLocalNodePayloadTooLargeException()
+        val text = decodeUtf8(bytes)
+        StrictJsonScanner(text).validate()
+        val element = json.parseToJsonElement(text)
+        require(element is JsonObject) { "payload must be an object" }
+        val payload = json.decodeFromJsonElement<AgentLocalNodeAppendRevisionPayload>(element)
+        val canonical = encodeAppendRevision(payload)
+        try {
+            require(MessageDigest.isEqual(bytes, canonical)) { "payload is not canonical JSON" }
+        } finally {
+            canonical.fill(0)
+        }
+        return payload
+    }
+
+    fun encodeUndoCapture(payload: AgentLocalNodeUndoCapturePayload): ByteArray =
+        canonicalBytes(json.encodeToJsonElement(payload)).also {
+            if (it.size > MAX_CANONICAL_PAYLOAD_BYTES) {
+                it.fill(0)
+                throw AgentLocalNodePayloadTooLargeException()
+            }
+        }
+
+    fun decodeUndoCapture(bytes: ByteArray): AgentLocalNodeUndoCapturePayload {
+        if (bytes.size > MAX_CANONICAL_PAYLOAD_BYTES) throw AgentLocalNodePayloadTooLargeException()
+        val text = decodeUtf8(bytes)
+        StrictJsonScanner(text).validate()
+        val element = json.parseToJsonElement(text)
+        require(element is JsonObject) { "payload must be an object" }
+        val payload = json.decodeFromJsonElement<AgentLocalNodeUndoCapturePayload>(element)
+        val canonical = encodeUndoCapture(payload)
+        try {
+            require(MessageDigest.isEqual(bytes, canonical)) { "payload is not canonical JSON" }
+        } finally {
+            canonical.fill(0)
+        }
+        return payload
+    }
+
+    fun encodeVisibleEvents(payload: AgentLocalNodeVisibleEventsPayload): ByteArray =
+        canonicalBytes(json.encodeToJsonElement(payload)).also {
+            if (it.size > MAX_CANONICAL_PAYLOAD_BYTES) {
+                it.fill(0)
+                throw AgentLocalNodePayloadTooLargeException()
+            }
+        }
+
+    fun decodeVisibleEvents(bytes: ByteArray): AgentLocalNodeVisibleEventsPayload {
+        if (bytes.size > MAX_CANONICAL_PAYLOAD_BYTES) throw AgentLocalNodePayloadTooLargeException()
+        val text = decodeUtf8(bytes)
+        StrictJsonScanner(text).validate()
+        val element = json.parseToJsonElement(text)
+        require(element is JsonObject) { "payload must be an object" }
+        val payload = json.decodeFromJsonElement<AgentLocalNodeVisibleEventsPayload>(element)
+        val canonical = encodeVisibleEvents(payload)
+        try {
+            require(MessageDigest.isEqual(bytes, canonical)) { "payload is not canonical JSON" }
+        } finally {
+            canonical.fill(0)
+        }
+        return payload
+    }
+
     fun payloadDigest(payload: AgentLocalNodeCreateEventPayload): String {
         val bytes = encodeCreateEvent(payload)
+        return try {
+            canonicalDigest(bytes)
+        } finally {
+            bytes.fill(0)
+        }
+    }
+
+    fun payloadDigest(payload: AgentLocalNodeAppendRevisionPayload): String {
+        val bytes = encodeAppendRevision(payload)
+        return try {
+            canonicalDigest(bytes)
+        } finally {
+            bytes.fill(0)
+        }
+    }
+
+    fun payloadDigest(payload: AgentLocalNodeUndoCapturePayload): String {
+        val bytes = encodeUndoCapture(payload)
+        return try {
+            canonicalDigest(bytes)
+        } finally {
+            bytes.fill(0)
+        }
+    }
+
+    fun payloadDigest(payload: AgentLocalNodeVisibleEventsPayload): String {
+        val bytes = encodeVisibleEvents(payload)
         return try {
             canonicalDigest(bytes)
         } finally {
@@ -424,6 +978,15 @@ internal object AgentLocalNodeApplicationCodec {
     fun encodeCreateEventResult(result: AgentLocalNodeCreateEventResult): ByteArray =
         canonicalBytes(json.encodeToJsonElement(result))
 
+    fun encodeAppendRevisionResult(result: AgentLocalNodeAppendRevisionResult): ByteArray =
+        canonicalBytes(json.encodeToJsonElement(result))
+
+    fun encodeUndoCaptureResult(result: AgentLocalNodeUndoCaptureResult): ByteArray =
+        canonicalBytes(json.encodeToJsonElement(result))
+
+    fun encodeVisibleEventsResult(result: AgentLocalNodeVisibleEventsResult): ByteArray =
+        canonicalBytes(json.encodeToJsonElement(result))
+
     /** Canonical envelope encoder used for shared Kotlin conformance tests, not a LAN transport. */
     fun encodeCreateEventRequestEnvelope(
         control: AgentLocalNodeControl,
@@ -433,27 +996,64 @@ internal object AgentLocalNodeApplicationCodec {
         require(control.spaces == setOf(payload.space))
         require(control.memoryTypes == setOf(payload.memoryType))
         require(control.payloadDigest == payloadDigest(payload))
-        val payloadElement = json.encodeToJsonElement(payload)
-        return canonicalBytes(
-            buildJsonObject {
-                put("protocol_version", AgentLocalNodeControl.PROTOCOL_VERSION)
-                put("request_id", control.requestId)
-                put("control", buildJsonObject {
-                    put("caller_id", control.callerId)
-                    put("grant_id", control.grantId)
-                    put("purpose", control.purpose)
-                    put("spaces", sortedStringArray(control.spaces))
-                    put("memory_types", sortedStringArray(control.memoryTypes))
-                    put("operation", control.operation)
-                    put("idempotency_slot", control.idempotencySlot)
-                    put("payload_digest", control.payloadDigest)
-                })
-                put("payload", payloadElement)
-            },
-        )
+        return encodeRequestEnvelope(control, json.encodeToJsonElement(payload))
     }
 
-    fun decodeCreateEventRequestEnvelope(bytes: ByteArray): AgentLocalNodeRequest {
+    fun encodeAppendRevisionRequestEnvelope(
+        control: AgentLocalNodeControl,
+        payload: AgentLocalNodeAppendRevisionPayload,
+    ): ByteArray {
+        require(control.operation == MemoryRepositoryAgentLocalNodeEndpoint.OPERATION_APPEND_REVISION)
+        require(control.spaces == setOf(payload.space))
+        require(control.memoryTypes == setOf(payload.memoryType))
+        require(control.payloadDigest == payloadDigest(payload))
+        return encodeRequestEnvelope(control, json.encodeToJsonElement(payload))
+    }
+
+    fun encodeUndoCaptureRequestEnvelope(
+        control: AgentLocalNodeControl,
+        payload: AgentLocalNodeUndoCapturePayload,
+    ): ByteArray {
+        require(control.operation == MemoryRepositoryAgentLocalNodeEndpoint.OPERATION_UNDO_CAPTURE)
+        require(control.spaces == setOf(payload.space))
+        require(control.memoryTypes == setOf(payload.memoryType))
+        require(control.payloadDigest == payloadDigest(payload))
+        return encodeRequestEnvelope(control, json.encodeToJsonElement(payload))
+    }
+
+    fun encodeVisibleEventsRequestEnvelope(
+        control: AgentLocalNodeControl,
+        payload: AgentLocalNodeVisibleEventsPayload,
+    ): ByteArray {
+        require(control.operation == MemoryRepositoryAgentLocalNodeEndpoint.OPERATION_VISIBLE_EVENTS)
+        require(control.spaces == payload.spaces.toSet())
+        require(control.memoryTypes == payload.memoryTypes.toSet())
+        require(control.payloadDigest == payloadDigest(payload))
+        return encodeRequestEnvelope(control, json.encodeToJsonElement(payload))
+    }
+
+    private fun encodeRequestEnvelope(
+        control: AgentLocalNodeControl,
+        payload: JsonElement,
+    ): ByteArray = canonicalBytes(
+        buildJsonObject {
+            put("protocol_version", AgentLocalNodeControl.PROTOCOL_VERSION)
+            put("request_id", control.requestId)
+            put("control", buildJsonObject {
+                put("caller_id", control.callerId)
+                put("grant_id", control.grantId)
+                put("purpose", control.purpose)
+                put("spaces", sortedStringArray(control.spaces))
+                put("memory_types", sortedStringArray(control.memoryTypes))
+                put("operation", control.operation)
+                put("idempotency_slot", control.idempotencySlot)
+                put("payload_digest", control.payloadDigest)
+            })
+            put("payload", payload)
+        },
+    )
+
+    fun decodeRequestEnvelope(bytes: ByteArray): AgentLocalNodeRequest {
         require(bytes.isNotEmpty() && bytes.size <= MAX_REQUEST_BYTES) { "request envelope is too large" }
         val text = decodeUtf8(bytes)
         StrictJsonScanner(text).validate()
@@ -487,10 +1087,32 @@ internal object AgentLocalNodeApplicationCodec {
         ) { "control fields are invalid" }
         val spaces = controlElement.sortedStrings("spaces")
         val memoryTypes = controlElement.sortedStrings("memory_types")
+        val operation = controlElement.string("operation")
         val payloadElement = root["payload"] as? JsonObject
             ?: throw IllegalArgumentException("payload must be an object")
-        val payload = json.decodeFromJsonElement<AgentLocalNodeCreateEventPayload>(payloadElement)
-        val payloadBytes = encodeCreateEvent(payload)
+        val payloadBytes = when (operation) {
+            MemoryRepositoryAgentLocalNodeEndpoint.OPERATION_CREATE_EVENT -> {
+                val payload = json.decodeFromJsonElement<AgentLocalNodeCreateEventPayload>(payloadElement)
+                require(spaces == listOf(payload.space) && memoryTypes == listOf(payload.memoryType))
+                encodeCreateEvent(payload)
+            }
+            MemoryRepositoryAgentLocalNodeEndpoint.OPERATION_APPEND_REVISION -> {
+                val payload = json.decodeFromJsonElement<AgentLocalNodeAppendRevisionPayload>(payloadElement)
+                require(spaces == listOf(payload.space) && memoryTypes == listOf(payload.memoryType))
+                encodeAppendRevision(payload)
+            }
+            MemoryRepositoryAgentLocalNodeEndpoint.OPERATION_UNDO_CAPTURE -> {
+                val payload = json.decodeFromJsonElement<AgentLocalNodeUndoCapturePayload>(payloadElement)
+                require(spaces == listOf(payload.space) && memoryTypes == listOf(payload.memoryType))
+                encodeUndoCapture(payload)
+            }
+            MemoryRepositoryAgentLocalNodeEndpoint.OPERATION_VISIBLE_EVENTS -> {
+                val payload = json.decodeFromJsonElement<AgentLocalNodeVisibleEventsPayload>(payloadElement)
+                require(spaces == payload.spaces && memoryTypes == payload.memoryTypes)
+                encodeVisibleEvents(payload)
+            }
+            else -> throw IllegalArgumentException("operation is unsupported")
+        }
         return try {
             AgentLocalNodeRequest(
                 AgentLocalNodeControl(
@@ -501,7 +1123,7 @@ internal object AgentLocalNodeApplicationCodec {
                     purpose = controlElement.string("purpose"),
                     spaces = spaces.toSet(),
                     memoryTypes = memoryTypes.toSet(),
-                    operation = controlElement.string("operation"),
+                    operation = operation,
                     idempotencySlot = controlElement.string("idempotency_slot"),
                     payloadDigest = controlElement.string("payload_digest"),
                 ),
@@ -512,12 +1134,21 @@ internal object AgentLocalNodeApplicationCodec {
         }
     }
 
+    fun decodeCreateEventRequestEnvelope(bytes: ByteArray): AgentLocalNodeRequest {
+        val request = decodeRequestEnvelope(bytes)
+        if (request.control.operation != MemoryRepositoryAgentLocalNodeEndpoint.OPERATION_CREATE_EVENT) {
+            request.close()
+            throw IllegalArgumentException("operation is not create_event")
+        }
+        return request
+    }
+
     /** Canonical six-field response envelope encoder for shared Kotlin conformance tests. */
     fun encodeResponseEnvelope(response: AgentLocalNodeResponse): ByteArray {
         val result = if (response.status == AgentLocalNodeStatus.Ok) {
             val resultBytes = response.payloadCopy()
             try {
-                json.encodeToJsonElement(decodeCreateEventResult(resultBytes))
+                decodeResultElement(resultBytes)
             } finally {
                 resultBytes.fill(0)
             }
@@ -555,6 +1186,69 @@ internal object AgentLocalNodeApplicationCodec {
             canonical.fill(0)
         }
         return result
+    }
+
+    fun decodeAppendRevisionResult(bytes: ByteArray): AgentLocalNodeAppendRevisionResult {
+        val text = decodeUtf8(bytes)
+        StrictJsonScanner(text).validate()
+        val element = json.parseToJsonElement(text)
+        require(element is JsonObject) { "result must be an object" }
+        val result = json.decodeFromJsonElement<AgentLocalNodeAppendRevisionResult>(element)
+        val canonical = encodeAppendRevisionResult(result)
+        try {
+            require(MessageDigest.isEqual(bytes, canonical)) { "result is not canonical JSON" }
+        } finally {
+            canonical.fill(0)
+        }
+        return result
+    }
+
+    fun decodeUndoCaptureResult(bytes: ByteArray): AgentLocalNodeUndoCaptureResult {
+        val text = decodeUtf8(bytes)
+        StrictJsonScanner(text).validate()
+        val element = json.parseToJsonElement(text)
+        require(element is JsonObject) { "result must be an object" }
+        val result = json.decodeFromJsonElement<AgentLocalNodeUndoCaptureResult>(element)
+        val canonical = encodeUndoCaptureResult(result)
+        try {
+            require(MessageDigest.isEqual(bytes, canonical)) { "result is not canonical JSON" }
+        } finally {
+            canonical.fill(0)
+        }
+        return result
+    }
+
+    fun decodeVisibleEventsResult(bytes: ByteArray): AgentLocalNodeVisibleEventsResult {
+        val text = decodeUtf8(bytes)
+        StrictJsonScanner(text).validate()
+        val element = json.parseToJsonElement(text)
+        require(element is JsonObject) { "result must be an object" }
+        val result = json.decodeFromJsonElement<AgentLocalNodeVisibleEventsResult>(element)
+        val canonical = encodeVisibleEventsResult(result)
+        try {
+            require(MessageDigest.isEqual(bytes, canonical)) { "result is not canonical JSON" }
+        } finally {
+            canonical.fill(0)
+        }
+        return result
+    }
+
+    private fun decodeResultElement(bytes: ByteArray): JsonElement {
+        val text = decodeUtf8(bytes)
+        StrictJsonScanner(text).validate()
+        val element = json.parseToJsonElement(text) as? JsonObject
+            ?: throw IllegalArgumentException("result must be an object")
+        return when {
+            element["state"]?.let { it is JsonPrimitive && it.isString && it.content == "undone" } == true ->
+                json.encodeToJsonElement(decodeUndoCaptureResult(bytes))
+            element["object_type"]?.let { it is JsonPrimitive && it.isString && it.content == "event" } == true ->
+                json.encodeToJsonElement(decodeCreateEventResult(bytes))
+            element["object_type"]?.let { it is JsonPrimitive && it.isString && it.content == "revision" } == true ->
+                json.encodeToJsonElement(decodeAppendRevisionResult(bytes))
+            element.keys == setOf("events", "risk_filtered") ->
+                json.encodeToJsonElement(decodeVisibleEventsResult(bytes))
+            else -> throw IllegalArgumentException("result object type is unsupported")
+        }
     }
 
     fun canonicalDigest(bytes: ByteArray): String =
@@ -620,6 +1314,26 @@ private fun parseTimestamp(value: String): OffsetDateTime {
 }
 
 private fun String.codePointLength(): Int = codePointCount(0, length)
+
+private fun String.takeCodePoints(maximum: Int): String =
+    if (codePointLength() <= maximum) this else substring(0, offsetByCodePoints(0, maximum))
+
+private fun MemoryEvent.toAgentLocalNodeEventView(spaceId: String): AgentLocalNodeEventView {
+    val safeTitle = title.takeCodePoints(MAX_READ_TITLE_CODE_POINTS)
+    val safeDescription = detail.takeCodePoints(MAX_READ_DESCRIPTION_CODE_POINTS)
+    return AgentLocalNodeEventView(
+        eventId = id,
+        spaceId = spaceId,
+        revision = revision,
+        eventType = eventType.wireValue,
+        title = safeTitle,
+        description = safeDescription,
+        factStatus = factStatus.wireValue,
+        evidenceState = evidenceState.wireValue,
+        sensitivity = sensitivity.wireValue,
+        contentTruncated = safeTitle != title || safeDescription != detail,
+    )
+}
 
 private fun ByteArray.toHex(): String = joinToString(separator = "") { byte -> "%02x".format(byte) }
 
@@ -789,6 +1503,8 @@ private fun String.hasLoneSurrogate(): Boolean {
 }
 
 private val IDENTIFIER = Regex("[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")
+private const val MAX_READ_TITLE_CODE_POINTS = 240
+private const val MAX_READ_DESCRIPTION_CODE_POINTS = 1_000
 private val INTEGER = Regex("-?(0|[1-9][0-9]*)")
 private val MIN_SAFE_INTEGER = BigInteger("-9007199254740991")
 private val MAX_SAFE_INTEGER = BigInteger("9007199254740991")

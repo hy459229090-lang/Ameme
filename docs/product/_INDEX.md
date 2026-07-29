@@ -9,6 +9,7 @@
 | 愿景与项目命题 | `../00-project-charter.md` | v0.2，事件覆盖优先 |
 | 能力、多端与版本框架 | `../02-product-system-framework.md` | v0.3，双主采集职责已确认 |
 | 用户与场景 | `../04-user-scenario-matrix.md` | v0.2，待访谈验证 |
+| 目标用户一天上下文覆盖与来源优先级 | `目标用户一天上下文覆盖与来源优先级.md` | v0.2，本地 reference conditional_pass；真实覆盖与规模待 Pilot |
 | Prototype 候选 | `../07-prototype-candidate-review.md` | v0.2 DayLedger Core，Gate 1 hold |
 | 记忆反馈与类型覆盖 | `记忆反馈与类型覆盖框架.md` | 事件覆盖后的辅助机制 |
 | 多端使用与体验闭环 | `多端使用与体验闭环.md` | v0.1，第 5 步评审候选 |
@@ -56,3 +57,5 @@
 | 2026-07-13 | 审计 | 全链 Review 后取消三种自定义视觉方向前置，MVP 随双端原生 shell 验证平台视觉和流畅性 |
 | 2026-07-14 | 决策 | 品牌收口为简洁高效；今天页采用单悬浮记录按钮；Agent 在 exact Grant 内自动读写；Health 进入首个公开版本 |
 | 2026-07-15 | 新增 | 增加 3 张 GitHub README 功能与设计插画，表达 DayLedger、本地优先授权和 Mobile 产品设计 |
+| 2026-07-26 | 新增 | 以目标用户一天的上下文覆盖为上游，形成来源、系统能力、六项长期承诺和跨模块变更优先级 |
+| 2026-07-26 | 验证 | 覆盖契约、保守编译、删除/恢复、Agent 长期记忆边界和后续复用本地闭环条件通过；外部 Gate 保持 hold |

@@ -4,13 +4,18 @@ import com.ameme.android.domain.CaptureKind
 import com.ameme.android.domain.DayGroup
 import com.ameme.android.domain.DaySummarySnapshot
 import com.ameme.android.domain.DaySummaryState
+import com.ameme.android.domain.EvidenceState
+import com.ameme.android.domain.FactStatus
 import com.ameme.android.domain.MemoryEvent
 import com.ameme.android.domain.MemoryPage
 import com.ameme.android.domain.SearchBackend
 import com.ameme.android.domain.SourceCaptureRequest
 import com.ameme.android.domain.SourceLocator
 import com.ameme.android.domain.PendingSourceLocatorRelease
+import com.ameme.android.domain.Sensitivity
+import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneId
 
 /** Fail-closed UI adapter used only when the encrypted repository cannot be opened. */
 class UnavailableMemoryRepository : MemoryRepository {
@@ -64,7 +69,31 @@ class UnavailableMemoryRepository : MemoryRepository {
 
     override fun updateEvent(
         eventId: String,
-        factStatus: com.ameme.android.domain.FactStatus?,
+        factStatus: FactStatus?,
         userWords: String?,
     ): MemoryEvent? = null
+
+    override fun appendAgentRevision(
+        eventId: String,
+        content: String,
+        evidenceState: EvidenceState,
+        factStatus: FactStatus,
+        allowedSensitivities: Set<Sensitivity>,
+    ): AgentRevisionAppendResult? = null
+
+    override fun undoAgentCapture(
+        target: AgentCaptureUndoTarget,
+        allowedSensitivities: Set<Sensitivity>,
+        undoneAt: Instant,
+    ): AgentCaptureUndoResult? = null
+
+    override fun readAgentVisibleEvents(
+        query: String,
+        startAt: Instant?,
+        endAt: Instant?,
+        timeZone: ZoneId,
+        allowedSensitivities: Set<Sensitivity>,
+        allowHighRisk: Boolean,
+        limit: Int,
+    ): AgentVisibleEventsReadResult = AgentVisibleEventsReadResult(emptyList(), riskFiltered = false)
 }

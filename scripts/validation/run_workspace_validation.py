@@ -26,6 +26,72 @@ PYTHON_PATHS = [
 COMMANDS = [
     ("contract_quality", [sys.executable, "scripts/validation/run_contract_quality.py"]),
     (
+        "mobile_coverage_contract",
+        [sys.executable, "scripts/validation/validate_mobile_coverage_contract.py"],
+    ),
+    (
+        "mobile_long_term_memory_contract",
+        [sys.executable, "scripts/validation/validate_mobile_long_term_memory_contract.py"],
+    ),
+    (
+        "mobile_recovery_contract",
+        [sys.executable, "scripts/validation/validate_mobile_recovery_contract.py"],
+    ),
+    (
+        "mobile_reuse_contract",
+        [sys.executable, "scripts/validation/validate_mobile_reuse_contract.py"],
+    ),
+    (
+        "mobile_source_deletion_contract",
+        [sys.executable, "scripts/validation/validate_mobile_source_deletion_contract.py"],
+    ),
+    (
+        "mobile_field_provenance_contract",
+        [
+            sys.executable,
+            "scripts/validation/validate_mobile_field_provenance_contract.py",
+        ],
+    ),
+    (
+        "mobile_user_confirmation_provenance_contract",
+        [
+            sys.executable,
+            "scripts/validation/validate_mobile_user_confirmation_provenance_contract.py",
+        ],
+    ),
+    (
+        "android_agent_revision_contract",
+        [
+            sys.executable,
+            "scripts/validation/validate_android_agent_revision_contract.py",
+        ],
+    ),
+    (
+        "android_agent_undo_contract",
+        [
+            sys.executable,
+            "scripts/validation/validate_android_agent_undo_contract.py",
+        ],
+    ),
+    (
+        "android_agent_read_contract",
+        [
+            sys.executable,
+            "scripts/validation/validate_android_agent_read_contract.py",
+        ],
+    ),
+    (
+        "mobile_local_space_deletion_contract",
+        [
+            sys.executable,
+            "scripts/validation/validate_mobile_local_space_deletion_contract.py",
+        ],
+    ),
+    (
+        "external_gate_packs",
+        [sys.executable, "scripts/validation/validate_external_gate_packs.py"],
+    ),
+    (
         "core_reference",
         [sys.executable, "-m", "unittest", "discover", "-s", "tests/core", "-p", "test_*.py", "-v"],
     ),

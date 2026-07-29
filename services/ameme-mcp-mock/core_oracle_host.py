@@ -206,6 +206,7 @@ class Host:
             allow_high_risk=params["allow_high_risk"],
             start_at=_parse_datetime(params.get("start_at")),
             end_at=_parse_datetime(params.get("end_at")),
+            limit=int(params.get("limit", 100)),
         )
         return {"events": events, "risk_filtered": risk_filtered}
 

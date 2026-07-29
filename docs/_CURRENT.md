@@ -7,7 +7,7 @@
 
 ## 当前阶段
 
-Ameme 已完成 MVP 研发前本地可完善准备与 D1–D10 最终拍板；差距矩阵 `needs_work = 0`、`needs_owner_review = 0`，全链结论为 `pass_with_external_evidence`。M1–M6 全面研发获批；当前已集成契约、参考 Core/Raw/队列与同步、独立 CoreOracle 参考宿主、R0 AI/固定评测、Android SQLCipher Local Event Node，以及 Agent Local Node v1 应用协议和 capture-only MCP→Android `create_event` 边界。生产认证/加密/发现、持久幂等、真实宿主、Raw/LAN、双端真机与 iOS 构建仍未完成。Gate 1 仍为 `hold`、Gate 2 未执行，不能用合成评测和 AVD 进度替代真实用户、双端真机和生产实现证据。
+Ameme 已完成 MVP 研发前本地可完善准备、D1–D10 最终拍板和 M24/M25 双端仓库工程候选；当前 Goal 继续收敛 P0 生产运行时、跨端复用体验与外部门执行包。当前已集成契约、参考 Core/Raw/队列与同步、独立 CoreOracle、AI/固定评测、Android SQLCipher Local Event Node、双端本机核心与 Share/Agent Local Node 路径。Android/iOS 生产模块已加入 Coverage v1、九类 Event-revision-bound 长期 Memory、删除水位、认证同安装恢复候选、同安装 exact-confirmation/HMAC journal 可回滚激活内核、四类短时复用、SourceObject→Event lineage、exact-revision 字段证据、独立用户确认 provenance 与当前安装 Personal space 根冻结。恢复默认只生成隔离候选；显式激活内核要求 exact backup ID、最长 15 分钟确认，在切换前后复核候选与调用时权威删除水位，`PREPARED` 失败回旧 live、`COMMITTED` 保留已验证新 live，原候选不消费且 `productionRecoveryClaim=false`。四类复用 API 的 exact references 15 分钟到期，并在 Android SQLCipher transaction / iOS MainActor 同步调用内完成 revision/删除/Restricted 复核和正文解析；持久 telemetry 只含加盐摘要、结果和动作。双端 Search 现均只展示一个“把记忆用起来”入口：iOS 使用原生 `confirmationDialog` + 结果 Sheet，iOS 26 Liquid Glass 只用于系统控制面；Android 使用当前稳定 Material 3 的扁平行项目 + `AlertDialog`，并以单一 `LazyColumn` 解决小屏/大字号空态下入口不可达的问题。Android schema v7–v13 SQLCipher instrumentation 已在 API 36 / 16 KB arm64 AVD 全量执行，XML 精确结果为 91 discovered / 84 passed / 7 外部门 skipped / 0 failed；恢复激活专项 3/3、完整 UI 套件 12/12。iOS 本地 Shared/App build、生产 Smoke 与目标 parse 通过，Smoke 已覆盖 exact-confirmation 激活、过期授权零变更与删除不复活，但本机没有完整 Xcode；新 UI/激活 XCTest 与截图必须由 CI 签收。真实 Host/ContextPack、真实用户确认动作与 helpful outcome、account/Grant/peer/分布式删除、跨端撤销传播、跨设备 key recovery、用户可见生产恢复、T0 Pilot、物理设备、真实读屏、签名和发布仍为 `hold`，不能用合成评测、Mock、Simulator/AVD 或静态检查替代。
 
 ## 按问题查正本
 
@@ -17,6 +17,19 @@ Ameme 已完成 MVP 研发前本地可完善准备与 D1–D10 最终拍板；�
 | 产品能力、多端、体验与版本框架 | `02-product-system-framework.md` | v0.3，双主采集职责已确认 |
 | R0/R1 调研计划 | `03-r0-r1-research-plan.md` | plan_ready，按产品决策有意后置 |
 | 用户与场景矩阵 | `04-user-scenario-matrix.md` | v0.2，待真实访谈验证 |
+| 目标用户一天上下文覆盖与来源优先级 | `product/目标用户一天上下文覆盖与来源优先级.md` | v0.2，本地 reference conditional_pass；市场规模与真实覆盖待 7 天 Pilot |
+| 一天上下文覆盖研究执行基线 | `../research/coverage/目标用户一天上下文覆盖研究执行基线.md` | plan_ready；T0 8 人 × 7 天，尚无真实参与者 |
+| P0 上下文覆盖与长期记忆验证 | `quality/P0-上下文覆盖与长期记忆闭环验证-20260726.md` | conditional_pass；真实用户/生产恢复/物理设备 hold |
+| P0 双端生产 Coverage 运行时验证 | `quality/P0-双端生产Coverage运行时验证-20260726.md` | conditional_pass；生产领域底座通过，持久化/Event/Memory/真机待接入 |
+| P0 双端 Coverage 持久化与显式 Event 接线 | `quality/P0-双端Coverage持久化与显式Event接线验证-20260726.md` | conditional_pass；iOS 生产密文 smoke 与双端原子接受边界通过；Android SQLCipher 后续已由 2026-07-29 API 36 / 16 KB 全量回归补证，iOS XCTest/真机待补 |
+| P0 双端生产长期 Memory 边界 | `quality/P0-双端生产长期Memory边界验证-20260726.md` | conditional_pass；双端 evidence revision、显式确认、有效期、替代、上游失效与不复活通过；Android SQLCipher 后续已由 2026-07-29 API 36 / 16 KB 全量回归补证，iOS XCTest、ContextPack/恢复/真机待补 |
+| P0 双端本机恢复候选与删除水位 | `quality/P0-双端本机恢复候选与删除水位验证-20260726.md` | conditional_pass；持久删除水位、认证同安装备份、隔离候选和损坏/错 key/旧水位/非空目标拒绝通过；同安装候选可由独立 exact-confirmation API 原子激活并在失败时回旧 live，跨设备 key、用户流程与物理恢复 hold |
+| P0 双端本机恢复候选可回滚激活内核 | `quality/P0-双端本机恢复候选可回滚激活内核验证-20260729.md` | conditional_pass；exact backup 短时确认、候选/水位二次验证、HMAC crash journal、失败回旧 live、成功保留删除水位与候选不消费已实现；Android API 36 / 16 KB AVD 专项 3/3 与全量 91/84/7/0 通过，用户 UI、跨设备 key、iOS XCTest 与物理恢复 hold |
+| P0 双端本机 Space 冻结与删除水位 | `quality/P0-双端本机Space冻结与删除水位验证-20260726.md` | conditional_pass；当前安装 Personal space 原子收敛、根水位、写入冻结、本机 cleanup 与旧备份拒绝通过，账号/Grant/peer/provider 原件/物理擦除/设备执行 hold |
+| P0 双端用户确认字段证据与删源保留 | `quality/P0-双端用户确认字段证据与来源删除保留验证-20260729.md` | conditional_pass；Android schema v13 / iOS envelope v8 的 content-free exact-revision 完整确认保留、partial/stale/legacy fail-closed、迁移与加密重载已实现；Android SQLCipher 已在 API 36 / 16 KB AVD 执行，真实用户、iOS XCTest/物理设备及外部删除 proof hold |
+| P0 Android 生产 Agent Revision 写入 | `quality/P0-Android生产Agent-Revision写入验证-20260726.md` | conditional_pass；Revision 切片的 exact-Grant/SQLCipher 幂等/敏感目标隐藏/Host MCP+TLS 通过；当时的 undo 关闭结论已由后续独立撤销报告更新 |
+| P0 Android 生产 Agent Event/Revision 撤销 | `quality/P0-Android生产Agent-EventRevision撤销验证-20260726.md` | conditional_pass；撤销切片的 exact token、10 分钟首次时窗、Event tombstone、Revision compensation/head conflict、SQLCipher 持久幂等与 Host MCP+TLS 通过；当时的 read 关闭结论已由后续最小读取报告更新 |
+| P0 Android 生产 Agent 最小读取 | `quality/P0-Android生产Agent-最小读取验证-20260726.md` | conditional_pass；bounded `visible_events`、SQLCipher scope/sensitivity/time/query/delete、Host Recall/Context/injection/budget 与 TLS 通过，真实 Host/设备/共享 Grant/发布 hold |
 | R0 用户任务与竞品证据 | `research/R0用户任务与竞品证据_20260713.md` | 桌面研究完成 |
 | R0 访谈与行为验证 | `research/R0用户访谈与行为验证计划.md` | 等待招募确认 |
 | R0 FORMALdoc 真实样本 | `research/R0-FORMALdoc真实工作样本实验.md` | 专业桌面来源快照完成，不代表通用产品 |
@@ -39,8 +52,8 @@ Ameme 已完成 MVP 研发前本地可完善准备与 D1–D10 最终拍板；�
 | MVP 指标与埋点字典 | `product/MVP指标与埋点字典.md` | v0.1，主指标、护栏和隐私安全埋点候选 |
 | MVP 研发架构技术方案 | `architecture/MVP研发架构技术方案.md` | v0.6，技术实现默认栈与 Spike 边界已接受 |
 | MVP 领域契约与状态机 | `architecture/MVP领域契约与状态机.md` | v0.1，不变量、状态、冲突、Recall 与兼容候选 |
-| MVP 本地存储、同步与删除 | `architecture/MVP本地存储同步与删除协议.md` | v0.5，Android SQLCipher 4.15.0/v5、space/Revision/SourceLocator 与 10k/100k AVD 基线已验证；完整 Raw/LAN/删除仍待验证 |
-| MVP 接口、错误与 Agent 工具 | `engineering/MVP接口与错误契约.md` | v0.2，Agent Local Node v1 应用协议与 capture-only 实现边界已登记 |
+| MVP 本地存储、同步与删除 | `architecture/MVP本地存储同步与删除协议.md` | v0.19，Android SQLCipher 4.15.0/v13、iOS envelope v8、space/Revision/SourceLocator/Coverage/长期 Memory/删除水位/恢复候选与同安装激活回滚/复用/来源证据/用户确认 provenance/space root、Android Agent bounded Event read + Event/Revision write/exact undo；用户恢复 UI、iOS XCTest、真实用户确认/ContextPack、account/Grant/peer proof、跨设备 key、完整 Raw/LAN 仍待验证 |
+| MVP 接口、错误与 Agent 工具 | `engineering/MVP接口与错误契约.md` | v0.5，Agent Local Node v1 bounded `visible_events` + `create_event`/`append_revision`/exact `undo_capture`，`get_event`/策略/长期 Memory 关闭 |
 | MVP 机器契约 | `../packages/contracts/` | v0.1，JSON Schema/OpenAPI/合成夹具可复跑 |
 | MVP AI 路由与 Prompt | `architecture/MVP-AI任务路由与Prompt契约.md` | v0.1，任务分层、隐私门、回退与 Eval 候选 |
 | MVP 成本容量 SLO 与观测 | `architecture/MVP成本容量SLO与可观测性.md` | v0.2，LAN/local-first 成本、容量、SLO 与观测基线 |
@@ -50,11 +63,12 @@ Ameme 已完成 MVP 研发前本地可完善准备与 D1–D10 最终拍板；�
 | MVP 安全需求与威胁模型 | `privacy-security/MVP安全需求与威胁模型.md` | v0.2，LAN/账户密钥模型、20 类威胁、控制和测试门已接受 |
 | MVP 第三方与商店申报 | `privacy-security/MVP第三方处理与商店申报清单.md` | v0.2，无数据云、release allow-list 为空，准入门已定义 |
 | MVP 测试与 AI 评测 | `quality/MVP测试与AI评测策略.md` | v0.1，层级、夹具、旅程、环境和 Gate 候选 |
-| Agent Skill 运行时契约 | `engineering/Ameme-Skill运行时契约.md` | v0.1，宿主/MCP/兼容/安全门已接受 |
+| Agent Skill 运行时契约 | `engineering/Ameme-Skill运行时契约.md` | v0.4，宿主/MCP/兼容/安全门与 Android bounded Event read/write/exact undo 边界已接受 |
 | MVP 工程任务与里程碑 | `engineering/MVP研发任务书与里程碑.md` | v0.3，M1–M6 全面研发获批、发布仍受 Gate 约束 |
 | MVP 技术 Spike | `engineering/MVP技术Spike任务书.md` | v0.3，15 项验证/否决任务 ready_to_execute |
-| MVP 用户/真机验证 | `research/MVP用户与真机验证执行包.md` | ready_to_execute / blocked_external |
+| MVP 用户/真机验证 | `research/MVP用户与真机验证执行包.md` | v0.2 ready_to_execute / blocked_external；T0 8×7、4/4 平台目标、56 user-days、24 复用任务、8 次 D8、角色/耗时/私有模板/阈值齐，等待真实人员设备账号 |
 | MVP 封闭发布与回滚 | `release/MVP封闭发布与回滚计划.md` | v0.2，LAN/Health、5→10–15 人 rings、stop/rollback 基线 |
+| 封闭 Beta 外部门执行包 | `release/封闭Beta外部门执行包.md` | v0.1 ready_to_execute / blocked_external；双端物理设备/读屏、真实 Agent/LAN、生产恢复、签名/商店、真实成本、事故/回滚的人员设备账号步骤耗时和判定齐，当前 hold |
 | MVP 运行与事故响应 | `operations/MVP运行监控与事故响应.md` | v0.1，dashboard、SEV、Runbook、支持与演练候选 |
 | 事件反馈与记忆类型模型 | `architecture/记忆类型与反馈事件模型.md` | v0.2，架构草案 |
 | Prototype 候选 | `07-prototype-candidate-review.md` | v0.2，DayLedger Core，Gate 1 hold |

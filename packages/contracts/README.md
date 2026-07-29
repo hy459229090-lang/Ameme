@@ -6,12 +6,14 @@ This directory is the machine-readable source of truth for MVP domain objects an
 
 - `schemas/ameme-domain.schema.json`: JSON Schema 2020-12 definitions for immutable inputs, source locators, events, day ledgers, recall, grants, sync, deletion, export and derived outputs.
 - `schemas/ameme-agent-local-node.schema.json`: strict JSON Schema 2020-12 request/response envelope for the versioned Agent-to-Local-Node application RPC. Its request scope is minimal and payload-derived; an authenticated Grant may be a superset.
+- `schemas/ameme-coverage.schema.json`: strict planning/research contract for target segments, context taxonomy, source capabilities, synthetic coverage days, evidence-backed coverage observations and explicit context gaps. It is not a production persistence contract or market-size claim.
 - `api/openapi.yaml`: transport contract; business invariants remain in the domain schema and architecture docs.
 - `examples/synthetic-day.json`: non-personal synthetic contract bundle used by validation and tests.
 - `examples/invalid-contracts.json`: mutation-based negative fixtures proving required/security fields cannot be silently ignored.
 - `versions/manifest.json`: machine-readable contract release list, compatibility policy and immutable snapshot hashes.
 - `versions/v0.1/`: exact JSON Schema and OpenAPI baseline used by the breaking-change gate.
 - `../../scripts/validation/validate_contracts.py`: offline syntax, reference, OpenAPI and example validation.
+- `../../scripts/validation/validate_coverage_contracts.py`: validates the synthetic context/source matrix, field-authority and hard-gate rules, conservative event compilation and the ban on fabricated coverage percentages or market size.
 - `../../scripts/validation/check_contract_compatibility.py`: baseline hash and backward-compatibility diff.
 - `../../tests/contracts/`: generated positive/required/unknown/enum checks for every public object plus cross-object invariants.
 - `../../tests/harness/`: fixed clock, deterministic IDs, deterministic fault injection and allow-list logger harness.
@@ -48,10 +50,11 @@ Individual gates remain runnable for diagnosis:
 python scripts/validation/check_contract_compatibility.py
 python scripts/validation/validate_contracts.py
 python scripts/validation/validate_agent_local_node_protocol.py
+python scripts/validation/validate_coverage_contracts.py
 python scripts/validation/generate_agent_local_node_vectors.py --check
 python -m unittest discover -s tests/contracts -p "test_*.py" -v
 python -m unittest discover -s tests/harness -p "test_*.py" -v
 python -m unittest discover -s tests/security/contract -p "test_*.py" -v
 ```
 
-This M1 baseline does not claim C-002/C-003/C-004 completion. Swift DTO, Kotlin DTO and platform/Agent adapter round trips remain mobile and integration deliverables.
+The coverage schema is additive to the frozen v0.1 runtime contract: it supports research and reference compilation without claiming that mobile persistence, real authorization rates, target-user scale or whole-day coverage have been validated. This M1 baseline does not claim C-002/C-003/C-004 completion. Swift DTO, Kotlin DTO and platform/Agent adapter round trips remain mobile and integration deliverables.

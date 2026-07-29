@@ -17,8 +17,10 @@ import com.ameme.android.domain.SourceLocator
 import com.ameme.android.domain.PendingSourceLocatorRelease
 import com.ameme.android.domain.LocatorPermissionState
 import java.time.Clock
+import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
+import java.time.ZoneId
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.UUID
 
@@ -36,6 +38,7 @@ class FakeMemoryRepository(
     private val activeSourceInstances = mutableMapOf<String, String>()
     private val summaries = mutableMapOf<LocalDate, DaySummary>()
     private val ledgerRevisions = mutableMapOf<LocalDate, Int>()
+    private val agentRevisionSnapshots = mutableMapOf<String, MemoryEvent>()
 
     fun seedEvents(): List<MemoryEvent> {
         val today = LocalDate.now(clock)
@@ -327,6 +330,141 @@ class FakeMemoryRepository(
         ledgerRevisions.merge(updated.localDate, 1, Int::plus)
         summaries.remove(updated.localDate)
         return updated
+    }
+
+    override fun appendAgentRevision(
+        eventId: String,
+        content: String,
+        evidenceState: EvidenceState,
+        factStatus: FactStatus,
+        allowedSensitivities: Set<Sensitivity>,
+    ): AgentRevisionAppendResult? {
+        require(allowedSensitivities.isNotEmpty())
+        require(content.isNotBlank() && content.codePointCount(0, content.length) <= 4_000)
+        val index = events.indexOfFirst { it.id == eventId }
+        if (index < 0) return null
+        val current = events[index]
+        if (current.sensitivity !in allowedSensitivities) return null
+        val updated = current.copy(
+            detail = content,
+            factStatus = factStatus,
+            evidenceState = evidenceState,
+            revision = current.revision + 1,
+        )
+        val revisionId = "rev_${UUID.randomUUID()}"
+        agentRevisionSnapshots[revisionId] = current
+        events[index] = updated
+        ledgerRevisions.merge(updated.localDate, 1, Int::plus)
+        summaries.remove(updated.localDate)
+        return AgentRevisionAppendResult(
+            event = updated,
+            revisionId = revisionId,
+        )
+    }
+
+    override fun undoAgentCapture(
+        target: AgentCaptureUndoTarget,
+        allowedSensitivities: Set<Sensitivity>,
+        undoneAt: Instant,
+    ): AgentCaptureUndoResult? {
+        require(allowedSensitivities.isNotEmpty())
+        val index = events.indexOfFirst { it.id == target.eventId }
+        if (index < 0) return null
+        val current = events[index]
+        if (current.sensitivity !in allowedSensitivities) return null
+        return when (target.objectType) {
+            "event" -> {
+                if (
+                    target.objectId != target.eventId ||
+                    target.createdRevision != 1
+                ) {
+                    return null
+                }
+                if (current.revision != target.createdRevision) {
+                    throw AgentCaptureUndoConflictException()
+                }
+                if (!deleteEvent(target.eventId)) return null
+                AgentCaptureUndoResult(
+                    eventId = target.eventId,
+                    objectType = "event",
+                    objectId = target.objectId,
+                    terminalRevision = target.createdRevision + 1,
+                )
+            }
+            "revision" -> {
+                val previous = agentRevisionSnapshots[target.objectId] ?: return null
+                if (
+                    previous.id != target.eventId ||
+                    previous.revision + 1 != target.createdRevision
+                ) {
+                    return null
+                }
+                if (current.revision != target.createdRevision) {
+                    throw AgentCaptureUndoConflictException()
+                }
+                val compensationRevisionId = "rev_${UUID.randomUUID()}"
+                val restored = previous.copy(revision = current.revision + 1)
+                events[index] = restored
+                ledgerRevisions.merge(restored.localDate, 1, Int::plus)
+                summaries.remove(restored.localDate)
+                AgentCaptureUndoResult(
+                    eventId = target.eventId,
+                    objectType = "revision",
+                    objectId = target.objectId,
+                    terminalRevision = restored.revision,
+                    compensationRevisionId = compensationRevisionId,
+                )
+            }
+            else -> null
+        }
+    }
+
+    override fun readAgentVisibleEvents(
+        query: String,
+        startAt: Instant?,
+        endAt: Instant?,
+        timeZone: ZoneId,
+        allowedSensitivities: Set<Sensitivity>,
+        allowHighRisk: Boolean,
+        limit: Int,
+    ): AgentVisibleEventsReadResult {
+        require(query.codePointCount(0, query.length) <= 1_000)
+        require(allowedSensitivities.isNotEmpty())
+        require(limit in 1..100)
+        require(startAt == null || endAt == null || !endAt.isBefore(startAt))
+        val effectiveSensitivities = if (allowHighRisk) {
+            allowedSensitivities
+        } else {
+            allowedSensitivities - Sensitivity.Restricted
+        }
+        val terms = searchTerms(query)
+        fun MemoryEvent.matches(): Boolean {
+            val at = localDate.atTime(time ?: LocalTime.MIN).atZone(timeZone).toInstant()
+            if (startAt != null && at.isBefore(startAt)) return false
+            if (endAt != null && at.isAfter(endAt)) return false
+            val haystack = listOf(title, detail)
+                .joinToString("\n")
+                .lowercase()
+            return terms.all { it.lowercase() in haystack }
+        }
+        val matching = events.filter { it.matches() }
+        val riskFiltered =
+            !allowHighRisk &&
+                Sensitivity.Restricted in allowedSensitivities &&
+                matching.any { it.sensitivity == Sensitivity.Restricted }
+        return AgentVisibleEventsReadResult(
+            events = matching
+                .asSequence()
+                .filter { it.sensitivity in effectiveSensitivities }
+                .sortedWith(
+                    compareByDescending<MemoryEvent> { it.localDate }
+                        .thenByDescending { it.time ?: LocalTime.MIN }
+                        .thenByDescending(MemoryEvent::id),
+                )
+                .take(limit)
+                .toList(),
+            riskFiltered = riskFiltered,
+        )
     }
 
     private fun SourceCaptureRequest.sourceIdentity(): String? {

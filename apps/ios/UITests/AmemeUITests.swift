@@ -135,7 +135,25 @@ final class AmemeUITests: XCTestCase {
         searchField.typeText(realTitle)
         let searchResult = eventButton(containing: realTitle, in: app)
         XCTAssertTrue(scrollToElement(searchResult, in: app))
-        searchResult.tap()
+
+        let reuseLauncher = app.buttons["search.reuse"]
+        XCTAssertTrue(scrollToElement(reuseLauncher, in: app))
+        reuseLauncher.tap()
+        let historicalReuse = app.buttons["历史找回（按当前筛选）"]
+        XCTAssertTrue(historicalReuse.waitForExistence(timeout: 5))
+        historicalReuse.tap()
+        XCTAssertTrue(app.navigationBars["历史找回"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["reuse.result.0"].waitForExistence(timeout: 5))
+        let usefulFeedback = app.buttons["reuse.feedback.useful"]
+        XCTAssertTrue(scrollToElement(usefulFeedback, in: app))
+        usefulFeedback.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["reuse.feedback.saved"].waitForExistence(timeout: 5))
+        attachScreenshot(named: "08-real-local-reuse")
+        app.buttons["关闭"].tap()
+
+        let revisedSearchResult = eventButton(containing: realTitle, in: app)
+        XCTAssertTrue(scrollToElement(revisedSearchResult, in: app))
+        revisedSearchResult.tap()
         XCTAssertTrue(app.navigationBars["事件详情"].waitForExistence(timeout: 5))
 
         let addendumField = app.textFields["补充一句原话或说明"]
@@ -147,7 +165,7 @@ final class AmemeUITests: XCTestCase {
         saveAddendum.tap()
         dismissNotice(in: app)
         XCTAssertTrue(scrollToElement(app.staticTexts["Personal 空间 · Revision 2"], in: app))
-        attachScreenshot(named: "08-real-local-revision")
+        attachScreenshot(named: "09-real-local-revision")
 
         let deleteImpact = app.buttons["查看删除影响"]
         XCTAssertTrue(scrollToElement(deleteImpact, in: app))
@@ -160,7 +178,7 @@ final class AmemeUITests: XCTestCase {
         XCTAssertTrue(returnToday.waitForExistence(timeout: 5))
         XCTAssertTrue(returnToday.isEnabled)
         XCTAssertTrue(returnToday.isHittable)
-        attachScreenshot(named: "09-real-local-delete-complete")
+        attachScreenshot(named: "10-real-local-delete-complete")
         returnToday.tap()
 
         XCTAssertTrue(app.navigationBars["删除影响与进度"].waitForNonExistence(timeout: 5))

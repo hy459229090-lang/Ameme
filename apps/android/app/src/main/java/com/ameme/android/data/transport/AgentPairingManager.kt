@@ -130,6 +130,7 @@ class AgentPairingManager(
             .putString(KEY_GRANT_PURPOSES, accessGrantPolicy.purposes.joinToString(SCOPE_SEPARATOR))
             .putString(KEY_GRANT_SPACES, accessGrantPolicy.spaces.joinToString(SCOPE_SEPARATOR))
             .putString(KEY_GRANT_DATA_TYPES, accessGrantPolicy.dataTypes.joinToString(SCOPE_SEPARATOR))
+            .putString(KEY_GRANT_OPERATIONS, accessGrantPolicy.operations.joinToString(SCOPE_SEPARATOR))
             .putLong(KEY_GRANT_NOT_BEFORE, accessGrantPolicy.notBefore.toEpochMilli())
             .putLong(KEY_GRANT_CREATED_AT, accessGrantPolicy.createdAt.toEpochMilli())
             .commit()
@@ -179,6 +180,7 @@ class AgentPairingManager(
             .remove(KEY_GRANT_PURPOSES)
             .remove(KEY_GRANT_SPACES)
             .remove(KEY_GRANT_DATA_TYPES)
+            .remove(KEY_GRANT_OPERATIONS)
             .remove(KEY_GRANT_NOT_BEFORE)
             .remove(KEY_GRANT_CREATED_AT)
             .commit()
@@ -195,6 +197,7 @@ class AgentPairingManager(
             !preferences.contains(KEY_GRANT_PURPOSES) ||
             !preferences.contains(KEY_GRANT_SPACES) ||
             !preferences.contains(KEY_GRANT_DATA_TYPES) ||
+            !preferences.contains(KEY_GRANT_OPERATIONS) ||
             !preferences.contains(KEY_GRANT_NOT_BEFORE) ||
             !preferences.contains(KEY_GRANT_CREATED_AT)
         ) {
@@ -206,6 +209,8 @@ class AgentPairingManager(
         val spaces = preferences.getString(KEY_GRANT_SPACES, null)
             ?.split(SCOPE_SEPARATOR)?.filter(String::isNotBlank)?.toSet() ?: return null
         val dataTypes = preferences.getString(KEY_GRANT_DATA_TYPES, null)
+            ?.split(SCOPE_SEPARATOR)?.filter(String::isNotBlank)?.toSet() ?: return null
+        val operations = preferences.getString(KEY_GRANT_OPERATIONS, null)
             ?.split(SCOPE_SEPARATOR)?.filter(String::isNotBlank)?.toSet() ?: return null
         val notBefore = runCatching {
             Instant.ofEpochMilli(preferences.getLong(KEY_GRANT_NOT_BEFORE, Long.MIN_VALUE))
@@ -220,6 +225,7 @@ class AgentPairingManager(
                 purposes = purposes,
                 spaces = spaces,
                 dataTypes = dataTypes,
+                operations = operations,
                 notBefore = notBefore,
                 expiresAt = expiresAt,
                 status = AgentAccessGrantStatus.Active,
@@ -318,6 +324,7 @@ class AgentPairingManager(
         private const val KEY_GRANT_PURPOSES = "grant_purposes"
         private const val KEY_GRANT_SPACES = "grant_spaces"
         private const val KEY_GRANT_DATA_TYPES = "grant_data_types"
+        private const val KEY_GRANT_OPERATIONS = "grant_operations"
         private const val KEY_GRANT_NOT_BEFORE = "grant_not_before"
         private const val KEY_GRANT_CREATED_AT = "grant_created_at"
         private const val SCOPE_SEPARATOR = "\u001f"

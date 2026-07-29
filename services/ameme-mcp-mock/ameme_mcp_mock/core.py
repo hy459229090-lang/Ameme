@@ -29,6 +29,24 @@ DEFAULT_CONTEXT_TOKENS = 2_000
 CONTEXT_TOKEN_COUNT_METHOD = "sum_ceil_canonical_item_utf8_bytes_div_4_v1"
 CONTEXT_TTL_MINUTES = 15
 UNDO_TTL_MINUTES = 10
+LONG_TERM_MEMORY_TYPES = {
+    "fact",
+    "decision",
+    "commitment",
+    "insight",
+    "preference",
+    "relationship",
+    "health",
+    "financial",
+    "major_decision",
+}
+USER_CONFIRMATION_MEMORY_TYPES = {
+    "preference",
+    "relationship",
+    "health",
+    "financial",
+    "major_decision",
+}
 INJECTION_PATTERN = re.compile(
     r"ignore (?:all |previous |system )?(?:instructions?|requirements?)|"
     r"忽略(?:系统|之前|以上).{0,12}(?:要求|指令)|"
@@ -276,6 +294,7 @@ class AmemeMock:
                     "evidence_kind",
                     "target_event_id",
                     "event_time",
+                    "long_term_memory_type",
                 )
             }
         )
@@ -292,10 +311,18 @@ class AmemeMock:
             return replay
 
         evidence_state, fact_status = self._evidence(arguments["evidence_kind"])
+        long_term_memory_state = self._long_term_memory_state(
+            arguments.get("long_term_memory_type"),
+            evidence_state,
+        )
         now = _iso(self.clock())
         previous_event_snapshot: dict[str, Any] | None = None
         if memory_type == "revision":
-            if arguments.get("target_event_id"):
+            advertised_operations = getattr(self.store, "supported_operations", None)
+            can_read_target = (
+                advertised_operations is None or "get_event" in advertised_operations
+            )
+            if arguments.get("target_event_id") and can_read_target:
                 previous_event_snapshot = self.store.get_event(
                     arguments["target_event_id"],
                     scope=scope,
@@ -327,7 +354,16 @@ class AmemeMock:
         else:
             raise MockError("DATA_TYPE_DENIED", "capture_only_creates_event_or_revision")
 
-        undo_token = _identifier("undo")
+        undo_token_hint = result.pop("_undo_token_hint", None)
+        if undo_token_hint is None:
+            undo_token = _identifier("undo")
+        elif (
+            isinstance(undo_token_hint, str)
+            and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", undo_token_hint)
+        ):
+            undo_token = undo_token_hint
+        else:
+            raise MockError("INTERNAL_ERROR", "store_undo_token_invalid", retryable=True)
         undo_target = result.get("event_id") or result["target_event_id"]
         undo_record = {
             "caller_id": arguments["caller_id"],
@@ -363,6 +399,7 @@ class AmemeMock:
             "activity_visible": True,
             "undo_token": undo_token,
             "undo_expires_at": self.store.state["undo"][undo_token]["expires_at"],
+            "long_term_memory_state": long_term_memory_state,
         }
         self.store.state["idempotency"][control_slot] = {
             "payload_hash": payload_hash,
@@ -463,6 +500,7 @@ class AmemeMock:
         scope = self._event_scope(grant, arguments, spaces, memory_types)
         allow_high_risk = self._high_risk_gate(arguments, autonomous=autonomous)
         start_at, end_at = self._requested_time_range(arguments.get("time_range"))
+        limit = min(max(int(arguments.get("limit", 20)), 1), 100)
         events, risk_filtered = self._visible_events(
             scope,
             spaces,
@@ -471,8 +509,8 @@ class AmemeMock:
             allow_high_risk=allow_high_risk,
             start_at=start_at,
             end_at=end_at,
+            limit=limit,
         )
-        limit = min(max(int(arguments.get("limit", 20)), 1), 100)
         results = [
             {
                 "object_type": event["memory_type"],
@@ -522,6 +560,7 @@ class AmemeMock:
             allow_high_risk=allow_high_risk,
             start_at=self.clock() - timedelta(days=days),
             end_at=self.clock(),
+            limit=min(DEFAULT_CONTEXT_ITEMS + 1, 100),
         )
         safe_events: list[dict[str, Any]] = []
         filtered = risk_filtered
@@ -828,6 +867,7 @@ class AmemeMock:
         allow_high_risk: bool,
         start_at: datetime | None = None,
         end_at: datetime | None = None,
+        limit: int = 100,
     ) -> tuple[list[dict[str, Any]], bool]:
         return self.store.visible_events(
             scope=scope,
@@ -837,6 +877,7 @@ class AmemeMock:
             allow_high_risk=allow_high_risk,
             start_at=start_at,
             end_at=end_at,
+            limit=limit,
         )
 
     @staticmethod
@@ -927,3 +968,19 @@ class AmemeMock:
         if kind not in mapping:
             raise MockError("INVALID_ARGUMENT", "unknown_evidence_kind")
         return mapping[kind]
+
+    @staticmethod
+    def _long_term_memory_state(
+        memory_type: Any,
+        evidence_state: str,
+    ) -> str:
+        if memory_type is None:
+            return "not_requested"
+        if memory_type not in LONG_TERM_MEMORY_TYPES:
+            raise MockError("INVALID_ARGUMENT", "unknown_long_term_memory_type")
+        if (
+            evidence_state == "inferred"
+            or memory_type in USER_CONFIRMATION_MEMORY_TYPES
+        ):
+            return "candidate_user_confirmation_required"
+        return "eligible_for_memory_compiler"

@@ -78,6 +78,11 @@ class AgentAccessGrantTest {
             createdAt = createdAt,
             expiresAt = createdAt.plusSeconds(3_600),
         )
+        assertEquals(setOf("event", "revision"), policy.dataTypes)
+        assertEquals(
+            setOf("create_event", "append_revision", "undo_capture", "visible_events"),
+            policy.operations,
+        )
         val bound = policy.bind("agent_synthetic_001", "grt_from_host_001")
         bound.authorize(request().copy(grantId = "grt_from_host_001"), createdAt.plusSeconds(1))
         val denied = assertThrows(AgentAccessGrantException::class.java) {

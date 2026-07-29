@@ -840,12 +840,16 @@ struct SearchView: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.verticalSizeClass) private var verticalSizeClass
+    @StateObject private var reuseController = ReuseJourneyController()
     let onSettings: () -> Void
     let onEvent: (UUID) -> Void
     @State private var query = ""
     @State private var startDate: Date?
     @State private var endDate: Date?
     @State private var showingDateFilter = false
+    @State private var showingReuseIntentPicker = false
+    @State private var showingReuseResults = false
+    @State private var reuseFailure: String?
 
     private var results: [MemoryEvent] {
         model.store.search(query: query, startDate: startDate, endDate: endDate)
@@ -926,6 +930,35 @@ struct SearchView: View {
                 }
                 .presentationDetents([.medium])
             }
+            .confirmationDialog(
+                "把记忆用起来",
+                isPresented: $showingReuseIntentPicker,
+                titleVisibility: .visible
+            ) {
+                ForEach(ReuseIntent.allCases, id: \.self) { intent in
+                    Button(intent.pickerLabel) {
+                        startReuse(intent)
+                    }
+                }
+            } message: {
+                Text("使用当前搜索词和日期范围；不会把搜索词或正文写入反馈记录。")
+            }
+            .sheet(
+                isPresented: $showingReuseResults,
+                onDismiss: { reuseController.reset() }
+            ) {
+                if let resolved = reuseController.resolved {
+                    ReuseJourneySheet(
+                        controller: reuseController,
+                        resolved: resolved,
+                        store: model.store,
+                        onEvent: { eventID in
+                            showingReuseResults = false
+                            onEvent(eventID)
+                        }
+                    )
+                }
+            }
     }
 
     @ViewBuilder
@@ -965,6 +998,16 @@ struct SearchView: View {
                     DemoModeNotice()
                         .padding(.bottom, 12)
                 }
+                if !model.store.isDemoMode {
+                    reuseLauncher
+                    if let reuseFailure {
+                        Text(reuseFailure)
+                            .font(.footnote)
+                            .foregroundStyle(.red)
+                            .accessibilityIdentifier("search.reuse.error")
+                            .padding(.bottom, 12)
+                    }
+                }
                 if groups.isEmpty {
                     EmptyMessageView(
                         title: query.isEmpty && startDate == nil && endDate == nil ? "当前可见范围内没有记录" : "当前条件没有结果",
@@ -990,6 +1033,59 @@ struct SearchView: View {
         .accessibilityIdentifier("search.results")
     }
 
+    private var reuseLauncher: some View {
+        Button {
+            reuseFailure = nil
+            showingReuseIntentPicker = true
+        } label: {
+            HStack(alignment: .center, spacing: 12) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("把记忆用起来")
+                        .font(.headline)
+                    Text("继续项目、准备会面或找回决定")
+                        .font(.footnote)
+                        .foregroundStyle(AmemeStyle.secondaryText)
+                }
+                Spacer(minLength: 12)
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(AmemeStyle.secondaryText)
+                    .accessibilityHidden(true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("把记忆用起来")
+        .accessibilityHint("选择历史找回、继续项目、准备会面或决定与承诺")
+        .accessibilityIdentifier("search.reuse")
+    }
+
+    private func startReuse(_ intent: ReuseIntent) {
+        reuseFailure = nil
+        reuseController.start(
+            store: model.store,
+            intent: intent,
+            query: query,
+            startDate: startDate,
+            endDate: endDate,
+            meetingAnchorDate: intent == .preMeetingContext ? (startDate ?? endDate) : nil
+        )
+        switch reuseController.status {
+        case .ready:
+            showingReuseResults = true
+        case .invalidScope:
+            reuseFailure = intent.invalidScopeMessage
+        case .unavailable:
+            reuseFailure = "本机记录尚未就绪；恢复完成后再试。"
+        case .failed:
+            reuseFailure = "本机上下文生成失败；已有记录没有被修改。"
+        case .idle, .feedbackRecorded:
+            break
+        }
+    }
+
     private var searchContentBottomPadding: CGFloat {
         dynamicTypeSize.isAccessibilitySize && verticalSizeClass == .compact ? 240 : 24
     }
@@ -1012,6 +1108,173 @@ struct SearchView: View {
             return "Personal 空间 · 仅本机结果 · 截至 \(endDate.formatted(.dateTime.year().month().day()))"
         }
         return "Personal 空间 · 仅本机结果 · 按日期从新到旧浏览"
+    }
+}
+
+private struct ReuseJourneySheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var controller: ReuseJourneyController
+    let resolved: ResolvedReuseContext
+    let store: LocalMemoryStore
+    let onEvent: (UUID) -> Void
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    Text(resolved.context.rangeState.userDescription)
+                        .foregroundStyle(AmemeStyle.secondaryText)
+                    if !resolved.context.exclusions.isEmpty {
+                        Text("部分候选因权限、删除或版本变化没有显示。")
+                            .foregroundStyle(AmemeStyle.secondaryText)
+                    }
+                }
+
+                Section("结果") {
+                    if resolved.items.isEmpty {
+                        Text("当前本机获准范围没有可用结果。")
+                            .foregroundStyle(AmemeStyle.secondaryText)
+                    } else {
+                        ForEach(
+                            Array(resolved.items.enumerated()),
+                            id: \.element.reference
+                        ) { index, item in
+                            Button {
+                                dismiss()
+                                onEvent(item.sourceEvent.id)
+                            } label: {
+                                VStack(alignment: .leading, spacing: 5) {
+                                    Text(item.memorySummary ?? item.sourceEvent.title)
+                                        .font(.headline)
+                                        .foregroundStyle(.primary)
+                                    Text(item.resultDescription)
+                                        .font(.footnote)
+                                        .foregroundStyle(AmemeStyle.secondaryText)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityIdentifier("reuse.result.\(index)")
+                        }
+                    }
+                }
+
+                Section("这次结果有帮助吗？") {
+                    if controller.status == .feedbackRecorded {
+                        Label("反馈已保存", systemImage: "checkmark.circle.fill")
+                            .foregroundStyle(AmemeStyle.teal)
+                            .accessibilityIdentifier("reuse.feedback.saved")
+                    } else {
+                        ForEach(reuseFeedbackOptions, id: \.self) { outcome in
+                            Button(outcome.userLabel) {
+                                _ = controller.submitFeedback(
+                                    store: store,
+                                    outcome: outcome
+                                )
+                            }
+                            .accessibilityIdentifier("reuse.feedback.\(outcome.rawValue)")
+                        }
+                        if controller.status == .failed {
+                            Text("反馈未保存；结果仍只在当前页面可见，可以重试。")
+                                .font(.footnote)
+                                .foregroundStyle(.red)
+                        }
+                    }
+                    Text("反馈只记录结果类型和动作，不记录正文、搜索词或原始对象 ID。")
+                        .font(.footnote)
+                        .foregroundStyle(AmemeStyle.secondaryText)
+                }
+            }
+            .navigationTitle(resolved.context.intent.userLabel)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("关闭") { dismiss() }
+                }
+            }
+        }
+        .presentationDetents([.large])
+    }
+}
+
+private let reuseFeedbackOptions: [ReuseOutcome] = [
+    .useful,
+    .notUseful,
+    .wrongMemory,
+    .importantMiss,
+    .outdated,
+]
+
+private extension ReuseIntent {
+    var userLabel: String {
+        switch self {
+        case .historicalSearch: "历史找回"
+        case .projectResume: "继续项目"
+        case .preMeetingContext: "准备会面"
+        case .decisionCommitmentRecall: "决定与承诺"
+        }
+    }
+
+    var pickerLabel: String {
+        switch self {
+        case .historicalSearch: "历史找回（按当前筛选）"
+        case .projectResume: "继续项目（需要关键词）"
+        case .preMeetingContext: "准备会面（需要关键词或日期）"
+        case .decisionCommitmentRecall: "决定与承诺"
+        }
+    }
+
+    var invalidScopeMessage: String {
+        switch self {
+        case .historicalSearch: "历史找回需要搜索词或日期范围。"
+        case .projectResume: "继续项目需要明确的项目关键词。"
+        case .preMeetingContext: "准备会面需要关键词或你选择的日期。"
+        case .decisionCommitmentRecall: "当前条件不可用。"
+        }
+    }
+}
+
+private extension ReuseRangeState {
+    var userDescription: String {
+        switch self {
+        case .completeForLocalScope: "当前本机获准范围内结果完整。"
+        case .partialForLocalScope: "结果已达上限，当前只显示一部分。"
+        case .empty: "当前本机获准范围没有可用结果。"
+        }
+    }
+}
+
+private extension ReuseOutcome {
+    var userLabel: String {
+        switch self {
+        case .useful: "有帮助"
+        case .notUseful: "没帮助"
+        case .wrongMemory: "记错了"
+        case .importantMiss: "有遗漏"
+        case .outdated: "已过期"
+        case .permissionDenied: "权限不足"
+        case .deletionFailure: "删除失败"
+        case .recoveryFailure: "恢复失败"
+        case .restrictedEgressBlocked: "受限内容已拦截"
+        }
+    }
+}
+
+private extension ResolvedReuseItem {
+    var resultDescription: String {
+        let reason: String
+        switch reference.selectionReason {
+        case .keywordMatch: reason = "关键词匹配"
+        case .dateMatch: reason = "日期匹配"
+        case .meetingAnchor: reason = "会面日期"
+        case .activeDecision: reason = "已确认决定"
+        case .activeCommitment: reason = "已确认承诺"
+        }
+        let source = memorySummary == nil
+            ? sourceEvent.detail
+            : "来自事件：\(sourceEvent.title)"
+        return "\(sourceEvent.localDate.formatted(.dateTime.year().month().day())) · \(reason)\n\(source)"
     }
 }
 

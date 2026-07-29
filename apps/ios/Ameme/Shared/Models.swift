@@ -170,7 +170,7 @@ public struct MemoryEvent: Identifiable, Codable, Hashable {
     public var detail: String
     public var factStatus: FactStatus
     public let sourceLabel: String
-    public let sourceLocator: String?
+    public var sourceLocator: String?
     public let captureKind: CaptureKind
     public let isLocalOnly: Bool
     public var userWords: String?

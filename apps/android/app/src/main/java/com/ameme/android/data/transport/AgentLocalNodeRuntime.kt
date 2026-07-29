@@ -43,6 +43,38 @@ class AgentLocalNodeRuntime private constructor(
     private val executor = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "ameme-agent-local-node").apply { isDaemon = true }
     }
+    private val grantedMemoryTypes = accessGrantPolicy.dataTypes.intersect(
+        setOf(
+            MemoryRepositoryAgentLocalNodeEndpoint.MEMORY_TYPE_EVENT,
+            MemoryRepositoryAgentLocalNodeEndpoint.MEMORY_TYPE_REVISION,
+        ),
+    )
+    private val grantedOperations = buildSet {
+        if (
+            MemoryRepositoryAgentLocalNodeEndpoint.MEMORY_TYPE_EVENT in grantedMemoryTypes &&
+            MemoryRepositoryAgentLocalNodeEndpoint.OPERATION_CREATE_EVENT in accessGrantPolicy.operations
+        ) {
+            add(MemoryRepositoryAgentLocalNodeEndpoint.OPERATION_CREATE_EVENT)
+        }
+        if (
+            MemoryRepositoryAgentLocalNodeEndpoint.MEMORY_TYPE_REVISION in grantedMemoryTypes &&
+            MemoryRepositoryAgentLocalNodeEndpoint.OPERATION_APPEND_REVISION in accessGrantPolicy.operations
+        ) {
+            add(MemoryRepositoryAgentLocalNodeEndpoint.OPERATION_APPEND_REVISION)
+        }
+        if (
+            grantedMemoryTypes.isNotEmpty() &&
+            MemoryRepositoryAgentLocalNodeEndpoint.OPERATION_UNDO_CAPTURE in accessGrantPolicy.operations
+        ) {
+            add(MemoryRepositoryAgentLocalNodeEndpoint.OPERATION_UNDO_CAPTURE)
+        }
+        if (
+            MemoryRepositoryAgentLocalNodeEndpoint.MEMORY_TYPE_EVENT in grantedMemoryTypes &&
+            MemoryRepositoryAgentLocalNodeEndpoint.OPERATION_VISIBLE_EVENTS in accessGrantPolicy.operations
+        ) {
+            add(MemoryRepositoryAgentLocalNodeEndpoint.OPERATION_VISIBLE_EVENTS)
+        }
+    }
 
     private val channelPairing = AndroidLocalNodePairingMaterial(
         channelProtocol = pairing.material.channelProtocol,
@@ -69,7 +101,7 @@ class AgentLocalNodeRuntime private constructor(
                     pairingSecret = pairing.secret,
                     sslServerSocketFactory = sslServerSocketFactory,
                     applicationRequestHandler = AndroidLocalNodeApplicationRequestHandler(::handleApplicationRequest),
-                    supportedOperations = setOf(MemoryRepositoryAgentLocalNodeEndpoint.OPERATION_CREATE_EVENT),
+                    supportedOperations = grantedOperations,
                 )
             } catch (_: Exception) {
                 signal(AgentLocalNodeRuntimeState.RecoverableError)
@@ -101,7 +133,7 @@ class AgentLocalNodeRuntime private constructor(
     private fun handleApplicationRequest(outer: AndroidLocalNodeApplicationRequest): ByteArray {
         val applicationLine = outer.applicationLineCopy()
         val request = try {
-            AgentLocalNodeApplicationCodec.decodeCreateEventRequestEnvelope(applicationLine)
+            AgentLocalNodeApplicationCodec.decodeRequestEnvelope(applicationLine)
         } finally {
             applicationLine.fill(0)
         }
@@ -119,8 +151,8 @@ class AgentLocalNodeRuntime private constructor(
             grantId = control.grantId,
             purpose = control.purpose,
             allowedSpaces = setOf(LocalEventDatabase.DEFAULT_SPACE_ID),
-            allowedMemoryTypes = setOf(MemoryRepositoryAgentLocalNodeEndpoint.MEMORY_TYPE_EVENT),
-            allowedOperations = setOf(MemoryRepositoryAgentLocalNodeEndpoint.OPERATION_CREATE_EVENT),
+            allowedMemoryTypes = grantedMemoryTypes,
+            allowedOperations = grantedOperations,
             allowedSensitivities = setOf("public", "personal", "confidential"),
             allowedDataClasses = setOf("structured"),
             expiresAt = pairing.expiresAt,
@@ -139,7 +171,14 @@ class AgentLocalNodeRuntime private constructor(
         val response = runBlocking { endpoint.exchange(request) }
         return try {
             val encoded = AgentLocalNodeApplicationCodec.encodeResponseEnvelope(response)
-            if (response.status == AgentLocalNodeStatus.Ok) {
+            if (
+                response.status == AgentLocalNodeStatus.Ok &&
+                control.operation in setOf(
+                    MemoryRepositoryAgentLocalNodeEndpoint.OPERATION_CREATE_EVENT,
+                    MemoryRepositoryAgentLocalNodeEndpoint.OPERATION_APPEND_REVISION,
+                    MemoryRepositoryAgentLocalNodeEndpoint.OPERATION_UNDO_CAPTURE,
+                )
+            ) {
                 runCatching(onEventPersisted)
             }
             encoded

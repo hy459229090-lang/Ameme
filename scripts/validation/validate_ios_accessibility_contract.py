@@ -33,6 +33,7 @@ def main() -> int:
         ('accessibilityLabel("搜索历史记录")', "Today/Search exposes a named search action"),
         ('accessibilityLabel("打开设置")', "Today/Search exposes a named settings action"),
         ('accessibilityLabel("选择日期")', "Search exposes a named date-range action"),
+        ('accessibilityIdentifier("search.reuse")', "Search exposes one named reuse launcher"),
         ('accessibilityLabel("记录一件事")', "Today exposes a named capture action"),
         ('accessibilityLabel("写下一句话")', "Text capture exposes a named editor"),
         ('Button("确认删除")', "Delete confirmation has a visible action label"),
@@ -115,6 +116,36 @@ def main() -> int:
         "usesCompactAccessibilitySearch" in search_view
         and 'TextField("搜索历史记录", text: $query)' in search_view,
         "Search replaces oversized navigation search chrome in compact accessibility layouts",
+        checks,
+    )
+    require(
+        'accessibilityHint("选择历史找回、继续项目、准备会面或决定与承诺")' in search_view,
+        "Reuse launcher explains the four available journeys without exposing extra chrome",
+        checks,
+    )
+    require(
+        "ForEach(ReuseIntent.allCases" in search_view
+        and "ReuseJourneySheet(" in search_view,
+        "Search makes all four bounded reuse journeys reachable from one native chooser",
+        checks,
+    )
+    reuse_sheet = section(source, "private struct ReuseJourneySheet", "struct CaptureSheet")
+    require(
+        'Section("结果")' in reuse_sheet
+        and 'accessibilityIdentifier("reuse.result.\\(index)")' in reuse_sheet,
+        "Reuse results expose ordered, individually actionable rows",
+        checks,
+    )
+    require(
+        'Section("这次结果有帮助吗？")' in reuse_sheet
+        and 'accessibilityIdentifier("reuse.feedback.\\(outcome.rawValue)")' in reuse_sheet
+        and 'accessibilityIdentifier("reuse.feedback.saved")' in reuse_sheet,
+        "Reuse feedback exposes named actions and a readable saved state",
+        checks,
+    )
+    require(
+        "反馈只记录结果类型和动作，不记录正文、搜索词或原始对象 ID。" in reuse_sheet,
+        "Reuse feedback discloses its content-free telemetry boundary",
         checks,
     )
     delete_progress = section(source, "private struct DeleteProgressView")

@@ -335,7 +335,10 @@ class CoreOracleHostReferenceStore:
         allow_high_risk: bool,
         start_at: datetime | None,
         end_at: datetime | None,
+        limit: int = 100,
     ) -> tuple[list[dict[str, Any]], bool]:
+        if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 100:
+            raise ValueError("visible event limit is invalid")
         requested_spaces = list(spaces)
         requested_types = list(memory_types)
         for space in requested_spaces:
@@ -351,6 +354,7 @@ class CoreOracleHostReferenceStore:
                 "allow_high_risk": allow_high_risk,
                 "start_at": start_at.isoformat() if start_at else None,
                 "end_at": end_at.isoformat() if end_at else None,
+                "limit": limit,
             },
         )
         return list(result["events"]), bool(result["risk_filtered"])

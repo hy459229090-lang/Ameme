@@ -8,7 +8,7 @@
 | 事件反馈与记忆类型 | `记忆类型与反馈事件模型.md` | v0.2，等待 DayLedger 实验验证 |
 | MVP 研发架构技术方案 | `MVP研发架构技术方案.md` | v0.6，技术栈、LAN/账户、SourceLocator、Skill 与 Spike 边界已接受 |
 | MVP 领域契约与状态机 | `MVP领域契约与状态机.md` | v0.1，领域不变量、状态、冲突、Recall 和兼容候选 |
-| MVP 本地存储、同步与删除 | `MVP本地存储同步与删除协议.md` | v0.7，Android SQLCipher v6、DayLedger/Summary、持久 Agent 幂等、三入口发现/统一授权分层、来源实例与 10k/100k AVD 基线；真实 NSD/QR/账户、Raw/LAN/完整删除和物理设备仍待验证 |
+| MVP 本地存储、同步与删除 | `MVP本地存储同步与删除协议.md` | v0.19，Android SQLCipher v13/iOS envelope v8、本机恢复/删除水位、同安装 HMAC journal 激活回滚、source lineage/字段证据/用户确认 provenance/space freeze、Agent bounded Event read + Event/Revision 原子写入/exact undo；跨设备 key/用户恢复 UI、真实用户确认/ContextPack、账户/LAN/完整 Raw 和物理设备仍待验证 |
 | MVP AI 路由与 Prompt | `MVP-AI任务路由与Prompt契约.md` | v0.1，任务目录、隐私门、回退和 Eval 候选 |
 | MVP 成本容量 SLO 与观测 | `MVP成本容量SLO与可观测性.md` | v0.2，LAN/local-first 规划档、公式、暂定预算与观测基线 |
 
@@ -41,4 +41,9 @@
 | 2026-07-14 | P1 修复 | 持久 URI 删除改为 `RELEASE_PENDING → RELEASED` 两阶段清理；启动/删除后重试，失败保留且按 space 隔离 |
 | 2026-07-14 | 容量/来源 | Android 升级 v5 来源实例幂等，接入 Calendar Provider/系统语音引用，完成异步 I/O、34 项普通 AVD 测试及 10k/100k 性能报告 |
 | 2026-07-14 | Agent 应用协议 | 冻结 `ameme.agent-local-node.v1`，Android capture-only 端点可写入 SQLCipher；不包含 LAN、认证、加密、发现或生产持久幂等 |
+| 2026-07-26 | Agent Revision 写入 | Android/Host 在冻结 v1 上实现 write-only `append_revision`、SQLCipher 原子幂等与 sensitivity 隐藏；该切片当时 undo 关闭，后续由独立撤销切片更新 |
+| 2026-07-26 | Agent Event/Revision 撤销 | Android/Host 在冻结 v1 上实现 exact `undo_capture`、Event tombstone、Revision compensation/head conflict、10 分钟首次时窗与重开重放；read/ContextPack/Recall、跨端传播、真实宿主和设备门保持关闭 |
+| 2026-07-26 | Agent 最小读取 | Android/Host 在冻结 v1 上实现 bounded `visible_events`、SQLCipher current projection、scope/sensitivity/time/query/delete 边界与 Host Recall/Context budget；`get_event`/策略/长期 Memory、真实宿主和设备门保持关闭 |
+| 2026-07-29 | 用户确认 provenance | Android schema v13 / iOS envelope v8 新增 content-free exact-revision 用户确认记录；完整显式 Candidate 确认可在删源后保留 Event 但去除来源声明，partial/stale/legacy fail closed，迁移不猜测旧动作；真实用户和设备 Gate 保持 hold |
+| 2026-07-29 | 恢复激活回滚 | 双端新增同安装候选 exact-confirmation 激活内核、HMAC `prepared/committed` crash journal、失败回旧 live、启动收敛与伪造 journal fail closed；不接普通用户 UI 且不改变 `productionRecoveryClaim=false`，跨设备 key 与物理恢复继续 hold |
 | 2026-07-14 | Android 完整体验 | SQLCipher 升级 v6；加入 DayLedger/Summary 与持久 Agent 幂等，配对 TLS/HMAC Host→Android→Today 模拟器闭环通过；NSD/物理 LAN/后台与账户 Grant 仍保留 |

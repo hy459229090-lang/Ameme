@@ -1,5 +1,6 @@
 package com.ameme.android.ui.screens
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -8,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DatePickerState
@@ -30,14 +32,24 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.ameme.android.data.MemoryRepository
 import com.ameme.android.data.MemoryIoExecutor
+import com.ameme.android.data.ResolvedReuseContext
+import com.ameme.android.data.ReuseIntent
+import com.ameme.android.data.ReuseOutcome
+import com.ameme.android.data.ReuseOutcomeSubmission
+import com.ameme.android.data.ReuseRepository
+import com.ameme.android.data.ReuseRequest
+import com.ameme.android.data.ReuseUserAction
 import com.ameme.android.domain.ExperienceMode
 import com.ameme.android.domain.DayGroup
 import com.ameme.android.domain.MemoryEvent
@@ -77,7 +89,14 @@ fun SearchScreen(
     var searchFailed by remember { mutableStateOf(false) }
     var searchAttempt by remember { mutableIntStateOf(0) }
     var loadMoreJob by remember { mutableStateOf<Job?>(null) }
+    var reuseResolved by remember(repository) { mutableStateOf<ResolvedReuseContext?>(null) }
+    var reuseInFlight by remember { mutableStateOf(false) }
+    var reuseFeedbackInFlight by remember { mutableStateOf(false) }
+    var reuseFeedbackRecorded by remember { mutableStateOf(false) }
+    var reuseFailure by remember { mutableStateOf<String?>(null) }
+    var showingReuseIntentPicker by remember { mutableStateOf(false) }
     val coordinator = remember { SearchRequestCoordinator() }
+    val reuseRepository = repository as? ReuseRepository
     val latestRepository by rememberUpdatedState(repository)
     val latestQuery by rememberUpdatedState(query)
     val latestStartDate by rememberUpdatedState(selectedStartDate)
@@ -101,6 +120,86 @@ fun SearchScreen(
         searchFailed = false
         page = null
         searchAttempt += 1
+    }
+
+    fun startReuse(intent: ReuseIntent) {
+        val available = reuseRepository ?: run {
+            reuseFailure = "当前存储还不能生成复用上下文。"
+            return
+        }
+        if (reuseInFlight) return
+        val requestedAt = Instant.now()
+        val request = runCatching {
+            ReuseRequest(
+                spaceId = "space_personal",
+                intent = intent,
+                query = query,
+                startDate = selectedStartDate,
+                endDate = selectedEndDate,
+                meetingAnchorDate = if (intent == ReuseIntent.PreMeetingContext) {
+                    selectedStartDate ?: selectedEndDate
+                } else {
+                    null
+                },
+                requestedAt = requestedAt,
+            )
+        }.getOrElse {
+            reuseFailure = when (intent) {
+                ReuseIntent.HistoricalSearch -> "历史找回需要搜索词或日期范围。"
+                ReuseIntent.ProjectResume -> "继续项目需要明确的项目关键词。"
+                ReuseIntent.PreMeetingContext -> "准备会面需要关键词或你选择的日期。"
+                ReuseIntent.DecisionCommitmentRecall -> "当前条件不可用。"
+            }
+            return
+        }
+        reuseInFlight = true
+        reuseFailure = null
+        reuseFeedbackRecorded = false
+        scope.launch {
+            try {
+                reuseResolved = ioExecutor.buildAndResolveReuseContext(
+                    available,
+                    request,
+                    Instant.now(),
+                )
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) {
+                reuseFailure = "本机上下文生成失败；已有记录没有被修改。"
+            } finally {
+                reuseInFlight = false
+            }
+        }
+    }
+
+    fun submitReuseFeedback(outcome: ReuseOutcome) {
+        val available = reuseRepository ?: return
+        val resolved = reuseResolved ?: return
+        if (reuseFeedbackInFlight || reuseFeedbackRecorded) return
+        reuseFeedbackInFlight = true
+        reuseFailure = null
+        scope.launch {
+            try {
+                reuseFeedbackRecorded = ioExecutor.recordReuseOutcome(
+                    available,
+                    ReuseOutcomeSubmission(
+                        attemptId = resolved.context.attemptId,
+                        outcome = outcome,
+                        userAction = ReuseUserAction.None,
+                        submittedAt = Instant.now(),
+                    ),
+                )
+                if (!reuseFeedbackRecorded) {
+                    reuseFailure = "反馈未保存；可以关闭后重新发起一次找回。"
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) {
+                reuseFailure = "反馈未保存；找回结果仍只在当前页面可见。"
+            } finally {
+                reuseFeedbackInFlight = false
+            }
+        }
     }
 
     LaunchedEffect(repository, query, selectedStartDate, selectedEndDate, searchAttempt) {
@@ -164,103 +263,178 @@ fun SearchScreen(
             )
         },
     ) { padding ->
-        Column(
+        LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
                 .padding(horizontal = 16.dp),
+            contentPadding = PaddingValues(bottom = 16.dp),
         ) {
-            OutlinedTextField(
-                value = query,
-                onValueChange = { updated ->
-                    if (updated != query) {
-                        query = updated
-                        invalidateFor(SearchRequestIdentity(repository, updated, selectedStartDate, selectedEndDate))
+            item(key = "search-field") {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { updated ->
+                        if (updated != query) {
+                            query = updated
+                            invalidateFor(
+                                SearchRequestIdentity(
+                                    repository,
+                                    updated,
+                                    selectedStartDate,
+                                    selectedEndDate,
+                                ),
+                            )
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth().testTag("search-query"),
+                    label = { Text("搜索历史记录") },
+                    leadingIcon = { Icon(AmemeSymbols.Search, contentDescription = null) },
+                    trailingIcon = {
+                        if (query.isNotEmpty()) {
+                            IconButton(onClick = {
+                                query = ""
+                                invalidateFor(
+                                    SearchRequestIdentity(
+                                        repository,
+                                        "",
+                                        selectedStartDate,
+                                        selectedEndDate,
+                                    ),
+                                )
+                            }) {
+                                Icon(AmemeSymbols.Close, contentDescription = "清除搜索词")
+                            }
+                        }
+                    },
+                    singleLine = true,
+                )
+            }
+
+            item(key = "date-filter") {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    OutlinedButton(
+                        onClick = { calendarEndpoint = CalendarEndpoint.Start },
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Icon(AmemeSymbols.CalendarMonth, contentDescription = null)
+                        Text(
+                            selectedStartDate?.displayDate() ?: "起始",
+                            modifier = Modifier.padding(start = 8.dp),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
                     }
-                },
-                modifier = Modifier.fillMaxWidth().testTag("search-query"),
-                label = { Text("搜索历史记录") },
-                leadingIcon = { Icon(AmemeSymbols.Search, contentDescription = null) },
-                trailingIcon = {
-                    if (query.isNotEmpty()) {
-                        IconButton(onClick = {
-                            query = ""
-                            invalidateFor(SearchRequestIdentity(repository, "", selectedStartDate, selectedEndDate))
-                        }) {
-                            Icon(AmemeSymbols.Close, contentDescription = "清除搜索词")
+                    OutlinedButton(
+                        onClick = { calendarEndpoint = CalendarEndpoint.End },
+                        modifier = Modifier.weight(1f),
+                        enabled = selectedStartDate != null,
+                    ) {
+                        Text(
+                            selectedEndDate?.displayDate() ?: "结束",
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    if (selectedStartDate != null || selectedEndDate != null) {
+                        IconButton(
+                            onClick = {
+                                selectedStartDate = null
+                                selectedEndDate = null
+                                invalidateFor(
+                                    SearchRequestIdentity(repository, query, null, null),
+                                )
+                            },
+                        ) {
+                            Icon(AmemeSymbols.Close, contentDescription = "清除日期")
                         }
                     }
-                },
-                singleLine = true,
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                OutlinedButton(onClick = { calendarEndpoint = CalendarEndpoint.Start }) {
-                    Icon(AmemeSymbols.CalendarMonth, contentDescription = null)
-                    Text(
-                        selectedStartDate?.displayDate() ?: "开始日期",
-                        modifier = Modifier.padding(start = 8.dp),
+                }
+            }
+
+            item(key = "range-description") {
+                Text(
+                    rangeDescription(experienceMode, selectedStartDate, selectedEndDate),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            item(key = "state-notice") {
+                StateNotice(
+                    mode = experienceMode,
+                    modifier = Modifier.padding(top = 10.dp),
+                )
+            }
+
+            if (demoMode) {
+                item(key = "demo-notice") {
+                    DemoModeNotice(modifier = Modifier.padding(top = 10.dp))
+                }
+            }
+
+            if (reuseRepository != null && !demoMode) {
+                item(key = "reuse-launcher") {
+                    ReuseJourneyLauncher(
+                        enabled = !reuseInFlight,
+                        onClick = {
+                            reuseFailure = null
+                            showingReuseIntentPicker = true
+                        },
                     )
                 }
-                OutlinedButton(
-                    onClick = { calendarEndpoint = CalendarEndpoint.End },
-                    enabled = selectedStartDate != null,
-                ) {
-                    Text(selectedEndDate?.displayDate() ?: "结束日期", modifier = Modifier.padding(start = 8.dp))
-                }
-                if (selectedStartDate != null || selectedEndDate != null) {
-                    TextButton(onClick = {
-                        selectedStartDate = null
-                        selectedEndDate = null
-                        invalidateFor(SearchRequestIdentity(repository, query, null, null))
-                    }) { Text("清除日期") }
-                }
             }
-            Text(
-                rangeDescription(experienceMode, selectedStartDate, selectedEndDate),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            StateNotice(
-                mode = experienceMode,
-                modifier = Modifier.padding(top = 10.dp),
-            )
-            if (demoMode) {
-                DemoModeNotice(modifier = Modifier.padding(top = 10.dp))
-            }
-            if (searchFailed) {
-                Column(
-                    modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
+
+            reuseFailure?.let { failure ->
+                item(key = "reuse-failure") {
                     Text(
-                        "搜索暂不可用",
-                        style = MaterialTheme.typography.titleSmall,
+                        failure,
+                        modifier = Modifier.padding(top = 6.dp),
+                        style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error,
                     )
-                    Text(
-                        "已有内容保持安全；可以重试当前搜索。",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    OutlinedButton(
-                        onClick = ::retrySearch,
-                        enabled = !searchInFlight,
-                    ) { Text("重试搜索") }
                 }
             }
-            Text(
-                "按日期从新到旧浏览，底部可加载更早记录",
-                modifier = Modifier.padding(top = 10.dp),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.primary,
-            )
+
+            if (searchFailed) {
+                item(key = "search-failure") {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Text(
+                            "搜索暂不可用",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                        Text(
+                            "已有内容保持安全；可以重试当前搜索。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        OutlinedButton(
+                            onClick = ::retrySearch,
+                            enabled = !searchInFlight,
+                        ) { Text("重试搜索") }
+                    }
+                }
+            }
+
+            item(key = "result-order") {
+                Text(
+                    "按日期从新到旧浏览，底部可加载更早记录",
+                    modifier = Modifier.padding(top = 10.dp),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+
             if (groups.isEmpty()) {
-                if (searchFailed) {
-                    androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
-                } else {
+                if (!searchFailed) {
+                    item(key = "empty-results") {
                     EmptyMessage(
                         title = if (searchInFlight) {
                             "正在读取本机索引"
@@ -274,81 +448,94 @@ fun SearchScreen(
                         } else {
                             "未找到“$query”；可以清除搜索词或日期，不代表这件事从未发生。"
                         },
-                        modifier = Modifier.weight(1f),
-                    )
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp),
+                        )
+                    }
                 }
             } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxWidth().weight(1f),
-                    contentPadding = PaddingValues(vertical = 12.dp),
-                ) {
-                    groups.forEach { group ->
-                        item(key = "day-${group.date}") {
-                            Column(Modifier.fillMaxWidth()) {
-                                Text(
-                                    group.date.displayDate(),
-                                    modifier = Modifier.padding(top = 20.dp, bottom = 6.dp),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.SemiBold,
-                                )
-                                group.events.forEach { event ->
-                                    EventRow(event = event, onClick = { onEvent(event.id) })
-                                }
+                groups.forEach { group ->
+                    item(key = "day-${group.date}") {
+                        Column(Modifier.fillMaxWidth()) {
+                            Text(
+                                group.date.displayDate(),
+                                modifier = Modifier.padding(top = 20.dp, bottom = 6.dp),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            group.events.forEach { event ->
+                                EventRow(event = event, onClick = { onEvent(event.id) })
                             }
                         }
                     }
-                    item(key = "load-more") {
-                        if (page?.nextCursor != null) {
-                            OutlinedButton(
-                                onClick = {
-                                    val current = page ?: return@OutlinedButton
-                                    if (!initialSearchInFlight && !loadMoreInFlight) {
-                                        val identity = SearchRequestIdentity(repository, query, selectedStartDate, selectedEndDate)
-                                        val token = coordinator.current(identity) ?: return@OutlinedButton
-                                        loadMoreInFlight = true
-                                        loadMoreJob = scope.launch {
-                                            try {
-                                                val next = ioExecutor.searchPage(
-                                                    repository,
-                                                    query,
-                                                    selectedStartDate,
-                                                    selectedEndDate,
-                                                    current.nextCursor,
-                                                    PAGE_SIZE,
+                }
+                item(key = "load-more") {
+                    if (page?.nextCursor != null) {
+                        OutlinedButton(
+                            onClick = {
+                                val current = page ?: return@OutlinedButton
+                                if (!initialSearchInFlight && !loadMoreInFlight) {
+                                    val identity = SearchRequestIdentity(
+                                        repository,
+                                        query,
+                                        selectedStartDate,
+                                        selectedEndDate,
+                                    )
+                                    val token = coordinator.current(identity)
+                                        ?: return@OutlinedButton
+                                    loadMoreInFlight = true
+                                    loadMoreJob = scope.launch {
+                                        try {
+                                            val next = ioExecutor.searchPage(
+                                                repository,
+                                                query,
+                                                selectedStartDate,
+                                                selectedEndDate,
+                                                current.nextCursor,
+                                                PAGE_SIZE,
+                                            )
+                                            coordinator.commitIfCurrent(
+                                                token,
+                                                latestIdentity(),
+                                            ) {
+                                                page = current.copy(
+                                                    events = current.events + next.events,
+                                                    nextCursor = next.nextCursor,
+                                                    searchBackend = next.searchBackend,
                                                 )
-                                                coordinator.commitIfCurrent(token, latestIdentity()) {
-                                                    page = current.copy(
-                                                        events = current.events + next.events,
-                                                        nextCursor = next.nextCursor,
-                                                        searchBackend = next.searchBackend,
-                                                    )
-                                                }
-                                            } catch (cancelled: CancellationException) {
-                                                throw cancelled
-                                            } catch (_: Throwable) {
-                                                coordinator.commitIfCurrent(token, latestIdentity()) {
-                                                    searchFailed = true
-                                                }
-                                            } finally {
-                                                if (coordinator.isCurrent(token, latestIdentity())) {
-                                                    loadMoreInFlight = false
-                                                    loadMoreJob = null
-                                                }
+                                            }
+                                        } catch (cancelled: CancellationException) {
+                                            throw cancelled
+                                        } catch (_: Throwable) {
+                                            coordinator.commitIfCurrent(
+                                                token,
+                                                latestIdentity(),
+                                            ) {
+                                                searchFailed = true
+                                            }
+                                        } finally {
+                                            if (
+                                                coordinator.isCurrent(
+                                                    token,
+                                                    latestIdentity(),
+                                                )
+                                            ) {
+                                                loadMoreInFlight = false
+                                                loadMoreJob = null
                                             }
                                         }
                                     }
-                                },
-                                modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
-                                enabled = !searchInFlight,
-                            ) { Text(if (searchInFlight) "正在加载…" else "加载更早") }
-                        } else {
-                            Text(
-                                "当前范围已加载完毕",
-                                modifier = Modifier.fillMaxWidth().padding(24.dp),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
+                            enabled = !searchInFlight,
+                        ) { Text(if (searchInFlight) "正在加载…" else "加载更早") }
+                    } else {
+                        Text(
+                            "当前范围已加载完毕",
+                            modifier = Modifier.fillMaxWidth().padding(24.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                 }
             }
@@ -377,10 +564,110 @@ fun SearchScreen(
             },
         )
     }
+    if (showingReuseIntentPicker) {
+        ReuseIntentPickerDialog(
+            onSelect = { intent ->
+                showingReuseIntentPicker = false
+                startReuse(intent)
+            },
+            onDismiss = { showingReuseIntentPicker = false },
+        )
+    }
+    reuseResolved?.let { resolved ->
+        ReuseJourneyDialog(
+            resolved = resolved,
+            feedbackInFlight = reuseFeedbackInFlight,
+            feedbackRecorded = reuseFeedbackRecorded,
+            onOpenEvent = { eventId ->
+                reuseResolved = null
+                onEvent(eventId)
+            },
+            onFeedback = ::submitReuseFeedback,
+            onDismiss = {
+                reuseResolved = null
+                reuseFeedbackRecorded = false
+            },
+        )
+    }
 }
 
 private const val PAGE_SIZE = 20
 private const val SEARCH_DEBOUNCE_MS = 200L
+private val reuseActions = listOf(
+    "历史找回" to ReuseIntent.HistoricalSearch,
+    "继续项目" to ReuseIntent.ProjectResume,
+    "准备会面" to ReuseIntent.PreMeetingContext,
+    "决定与承诺" to ReuseIntent.DecisionCommitmentRecall,
+)
+
+@Composable
+private fun ReuseJourneyLauncher(
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 8.dp)
+            .alpha(if (enabled) 1f else 0.6f)
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(vertical = 12.dp)
+            .testTag("reuse-journey-launcher"),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(3.dp),
+        ) {
+            Text(
+                "把记忆用起来",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                "继续项目、准备会面或找回决定",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Icon(AmemeSymbols.ChevronRight, contentDescription = null)
+    }
+}
+
+@Composable
+private fun ReuseIntentPickerDialog(
+    onSelect: (ReuseIntent) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("把记忆用起来") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    "使用当前搜索词和日期范围；不会把搜索词或正文写入反馈记录。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                reuseActions.forEach { (label, intent) ->
+                    TextButton(
+                        onClick = { onSelect(intent) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("reuse-${intent.wireValue}"),
+                    ) {
+                        Text(label, modifier = Modifier.fillMaxWidth())
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消")
+            }
+        },
+    )
+}
 
 private enum class CalendarEndpoint {
     Start,

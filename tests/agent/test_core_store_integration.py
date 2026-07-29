@@ -36,6 +36,61 @@ def operation_slot(kind: str, key: str) -> str:
 
 
 class CoreStoreIntegrationTests(unittest.TestCase):
+    def test_verified_event_is_reused_in_later_task_and_outcome_is_recorded(self) -> None:
+        harness = Harness(backend="core", seed=False)
+        try:
+            grant = harness.exact_grant()
+            captured = harness.mock.call(
+                "capture",
+                capture_arguments(
+                    grant["grant_id"],
+                    content="Synthetic API decision was verified by a tool result.",
+                    evidence_kind="direct_evidence",
+                    long_term_memory_type="decision",
+                    idempotency_key="reuse-capture-0001",
+                ),
+            )
+            self.assertEqual(
+                "eligible_for_memory_compiler",
+                captured["long_term_memory_state"],
+            )
+            harness.restart()
+            pack = harness.mock.call(
+                "get_context",
+                {
+                    "caller_id": "agent_codex_test",
+                    "grant_id": grant["grant_id"],
+                    "purpose": "autonomous_memory",
+                    "space": "space_work",
+                    "memory_types": ["event"],
+                    "query": "API decision",
+                    "invocation": "autonomous",
+                },
+            )
+            self.assertIn(
+                captured["event_id"],
+                {item["object_id"] for item in pack["items"]},
+            )
+            outcome = harness.mock.call(
+                "feedback",
+                {
+                    "caller_id": "agent_codex_test",
+                    "grant_id": grant["grant_id"],
+                    "purpose": "autonomous_memory",
+                    "space": "space_work",
+                    "memory_type": "event",
+                    "target_id": pack["context_pack_id"],
+                    "action": "context_useful",
+                    "idempotency_key": "reuse-outcome-0001",
+                },
+            )
+            self.assertEqual("accepted", outcome["state"])
+            feedback = harness.store.state["feedback"][outcome["feedback_id"]]
+            self.assertEqual(pack["context_pack_id"], feedback["target_id"])
+            self.assertEqual("context_useful", feedback["action"])
+        finally:
+            harness.close()
+
     def test_exact_grant_offline_idempotency_and_restart_restore_projection(self) -> None:
         harness = Harness(backend="core", seed=False, offline=True)
         try:

@@ -111,6 +111,14 @@ class AmemeUiSmokeTest {
         composeRule.onNodeWithContentDescription("搜索历史记录").performClick()
         composeRule.onNodeWithText("搜索历史记录").assertIsDisplayed()
         composeRule.onNodeWithText("按日期从新到旧浏览，底部可加载更早记录").assertIsDisplayed()
+        composeRule.onNodeWithTag("reuse-journey-launcher")
+            .performScrollTo()
+            .assertIsDisplayed()
+            .performClick()
+        composeRule.onNodeWithText("历史找回").assertIsDisplayed()
+        composeRule.onNodeWithText("继续项目").assertIsDisplayed()
+        composeRule.onNodeWithText("准备会面").assertIsDisplayed()
+        composeRule.onNodeWithText("决定与承诺").assertIsDisplayed()
     }
 
     @Test
@@ -397,7 +405,9 @@ class AmemeUiSmokeTest {
     fun agentConnection_offersThreeOrdinaryUserEntrances() {
         composeRule.onNodeWithText("查看今天").performClick()
         composeRule.onNodeWithContentDescription("打开设置").performClick()
-        composeRule.onNodeWithTag("connect-device-button").performScrollTo().performClick()
+        composeRule.onNodeWithTag("settings-list")
+            .performScrollToNode(hasTestTag("connect-device-button"))
+        composeRule.onNodeWithTag("connect-device-button").performClick()
 
         composeRule.onNodeWithText("自动发现电脑").assertIsDisplayed()
         composeRule.onNodeWithText("扫描二维码").assertIsDisplayed()
@@ -409,7 +419,9 @@ class AmemeUiSmokeTest {
         composeRule.onNodeWithText("查看今天").performClick()
         waitForCaptureEntry()
         composeRule.onNodeWithContentDescription("打开设置").performClick()
-        composeRule.onNodeWithTag("create-pairing-qr-button").performScrollTo().performClick()
+        composeRule.onNodeWithTag("settings-list")
+            .performScrollToNode(hasTestTag("create-pairing-qr-button"))
+        composeRule.onNodeWithTag("create-pairing-qr-button").performClick()
 
         composeRule.waitUntil(timeoutMillis = 15_000) {
             composeRule.onAllNodesWithText("设备配对二维码").fetchSemanticsNodes().isNotEmpty()
@@ -430,13 +442,18 @@ class AmemeUiSmokeTest {
     fun agentConnection_requiresAuthorizationAndCanBeDisconnected() {
         composeRule.onNodeWithText("查看今天").performClick()
         composeRule.onNodeWithContentDescription("打开设置").performClick()
-        composeRule.onNodeWithTag("connect-device-button").performScrollTo().performClick()
+        composeRule.onNodeWithTag("settings-list")
+            .performScrollToNode(hasTestTag("connect-device-button"))
+        composeRule.onNodeWithTag("connect-device-button").performClick()
         composeRule.onNodeWithTag("pairing-method-lan").performClick()
 
         composeRule.waitUntil(timeoutMillis = 5_000) {
             composeRule.onAllNodesWithText("允许 Agent 连接？").fetchSemanticsNodes().isNotEmpty()
         }
-        composeRule.onNodeWithText("拟授权范围：Personal 空间 · autonomous_memory · 结构化 event · 30 天")
+        composeRule.onNodeWithText(
+            "拟授权范围：Personal 空间 · autonomous_memory · " +
+                "获准结构化事件读取、event/revision 写入与 10 分钟撤销 · 30 天",
+        )
             .assertIsDisplayed()
         composeRule.onNodeWithText("体验模式 · 不建立真实网络连接").assertIsDisplayed()
         composeRule.onNodeWithText("允许并连接").performClick()

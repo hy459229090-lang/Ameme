@@ -97,7 +97,7 @@ python scripts/dev/agent/start_android_local_node_host.py `
 
 证书 pin、pairing/device/session binding 任一不匹配，或 TLS 低于 1.3，Host 都会在发送应用请求前关闭连接。凭据值、证书、endpoint 和记忆正文均不进入异常文本、对象 repr 或 MCP control JSON。
 
-共享协议允许六种 EventNode operation，但具体 adapter 和 channel 都必须声明实际 capability。当前 MCP Android adapter 以 `IMPLEMENTED_OPERATIONS={"create_event"}` 硬限制实现面，capture/create endpoint 也只承诺 `create_event`；即使 channel 多报 append、undo 或 read capability，其他合法 operation 仍稳定返回 `OPERATION_UNSUPPORTED`，不得伪装成已支持。`create_event` 成功响应只接受 `object_type/event_id/revision` 三个控制字段，不接受正文、空间或其他额外字段。超时、畸形响应、request-id/protocol 不匹配、会话绑定错误和非法成功响应均在五秒内失败关闭并毒化当前 channel，后续请求不会继续进入同一失效会话。
+共享协议允许六种 EventNode operation，但具体 adapter 和 channel 都必须声明实际 capability。当前 MCP Android adapter 只实现 `create_event`、`append_revision`、`undo_capture` 和 `visible_events`；`get_event` 与 `set_policy_blocked` 即使被 channel 多报也稳定返回 `OPERATION_UNSUPPORTED`。`visible_events` 只发送 payload 派生的 sorted space/type、query/time、high-risk flag 与 1–100 limit；成功结果必须只有 `events/risk_filtered`，每个 Event 精确绑定请求 space/Event/structured，title/description≤240/1,000，Restricted 不能越过本次请求。重复 ID、未知字段、额外内容、越界数量或 scope 均毒化会话。Host `recall/get_context` 通过该操作读取，并继续执行 injection、item/token budget；不使用任意目标 `get_event`。写入/撤销结果仍精确绑定原请求，Host 不为写入或撤销暗中发起 read。超时、畸形响应、request-id/protocol 不匹配、会话绑定错误和非法成功响应均在五秒内失败关闭并毒化当前 channel。
 
 离线队列语义可使用 `--offline` 或 `AMEME_MCP_MOCK_OFFLINE=true`。服务按一行一个 JSON-RPC 消息读写 stdio，stdout 不输出诊断文本。
 
@@ -111,7 +111,7 @@ python scripts/dev/agent/smoke_paired_android.py `
   --android-sdk C:\Users\N33131\AppData\Local\Android\Sdk
 ```
 
-成功 JSON 必须同时包含 `capture_persistence_state=durable`、`visible_in_today=true`、`persistent_after_restart=true` 和 `adb_used_for_event_injection=false`。这证明 Host→Android 的配对加密传输与本地持久化，不证明 NSD、物理 LAN、后台常驻或第三方真实 Codex/Claude Code/Cursor 宿主已经发布。
+成功 JSON 必须同时包含 `capture_persistence_state=durable`、`visible_in_today=true`、`persistent_after_restart=true` 和 `adb_used_for_event_injection=false`。这份既有 smoke 只证明 `create_event` 的 Host→Android 配对加密传输与本地持久化；`append_revision`、exact Event/Revision undo 与 `visible_events` 当前由 JVM/adapter/MCP/TLS 合成回归和编译后的 Android SQLCipher instrumentation source 覆盖，尚无本轮 AVD/物理设备实跑证据。它们都不证明 NSD、物理 LAN、后台常驻、真实 ContextPack、跨端撤销传播或第三方真实 Codex/Claude Code/Cursor 宿主已经发布。
 
 MCP 宿主的最小配置语义如下；具体配置键由宿主 adapter 决定：
 

@@ -1,0 +1,329 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.ameme.local/v1/ameme-coverage.schema.json",
+  "title": "Ameme context coverage planning and runtime contracts",
+  "type": "object",
+  "required": ["fixture_version", "evidence_status", "context_types", "segments", "capabilities", "synthetic_days"],
+  "properties": {
+    "fixture_version": {"const": 1},
+    "evidence_status": {"const": "synthetic_planning_baseline_not_market_evidence"},
+    "context_types": {
+      "type": "array",
+      "minItems": 10,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/ContextType"}
+    },
+    "segments": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/TargetSegment"}
+    },
+    "capabilities": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/SourceCapability"}
+    },
+    "synthetic_days": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/SyntheticCoverageDay"}
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "Id": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 128,
+      "pattern": "^[a-z][a-z0-9_:-]+$"
+    },
+    "Timestamp": {"type": "string", "format": "date-time"},
+    "LocalDate": {"type": "string", "format": "date"},
+    "ContextType": {
+      "type": "string",
+      "enum": [
+        "time_schedule",
+        "activity_result",
+        "content_consumption",
+        "content_creation",
+        "communication_relationship",
+        "decision_commitment",
+        "place_mobility",
+        "body_state",
+        "consumption_entertainment",
+        "intent_feeling"
+      ]
+    },
+    "EvidenceField": {
+      "type": "string",
+      "enum": ["time", "place", "people", "action", "result", "intent", "emotion", "relationship", "description"]
+    },
+    "TimeRange": {
+      "type": "object",
+      "required": ["start", "precision"],
+      "properties": {
+        "start": {"$ref": "#/$defs/Timestamp"},
+        "end": {"$ref": "#/$defs/Timestamp"},
+        "timezone": {"type": "string", "minLength": 1, "maxLength": 64},
+        "precision": {"type": "string", "enum": ["exact", "minute", "hour", "part_of_day", "day", "range", "unknown"]}
+      },
+      "additionalProperties": false
+    },
+    "FieldClaim": {
+      "type": "object",
+      "required": ["field", "authority", "limitation"],
+      "properties": {
+        "field": {"$ref": "#/$defs/EvidenceField"},
+        "authority": {"type": "string", "enum": ["strong", "supporting", "weak", "none"]},
+        "limitation": {"type": "string", "minLength": 1, "maxLength": 300}
+      },
+      "additionalProperties": false
+    },
+    "TargetSegment": {
+      "type": "object",
+      "required": ["segment_id", "priority", "label", "important_contexts", "minimum_capability_ids", "scale_status", "scale_blockers"],
+      "properties": {
+        "segment_id": {"$ref": "#/$defs/Id"},
+        "priority": {"type": "string", "enum": ["T0", "T1", "T2"]},
+        "label": {"type": "string", "minLength": 1, "maxLength": 120},
+        "important_contexts": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/ContextType"}
+        },
+        "minimum_capability_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/Id"}
+        },
+        "scale_status": {
+          "type": "string",
+          "enum": ["not_estimated_market_scope_missing", "planning_assumption", "externally_verified"]
+        },
+        "scale_blockers": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": ["launch_region", "platform_mix", "reachable_channel", "authorization_rate", "daily_source_use", "retention_evidence"]
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "SourceCapability": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "capability_id",
+        "source_type",
+        "acquisition_mode",
+        "context_types",
+        "field_claims",
+        "eligible_segment_ids",
+        "priority",
+        "permission_tier",
+        "bystander_risk",
+        "validation_status",
+        "hard_gates"
+      ],
+      "properties": {
+        "schema_version": {"const": 1},
+        "capability_id": {"$ref": "#/$defs/Id"},
+        "source_type": {
+          "type": "string",
+          "enum": ["text", "audio", "photo", "share", "calendar", "agent", "browser", "file", "meeting", "email", "location", "health", "life_service", "continuous_screen", "continuous_audio"]
+        },
+        "acquisition_mode": {
+          "type": "string",
+          "enum": ["automatic", "scene_triggered", "one_action", "import_or_forward", "gap_prompt", "continuous_opt_in"]
+        },
+        "context_types": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/ContextType"}
+        },
+        "field_claims": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/FieldClaim"}
+        },
+        "eligible_segment_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/Id"}
+        },
+        "priority": {"type": "string", "enum": ["P0", "P1", "P2", "P3"]},
+        "permission_tier": {"type": "string", "enum": ["none", "low", "medium", "high", "very_high"]},
+        "bystander_risk": {"type": "string", "enum": ["none", "low", "medium", "high"]},
+        "validation_status": {"type": "string", "enum": ["implemented_partial", "official_path_only", "synthetic_only", "research_needed", "deferred"]},
+        "hard_gates": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": ["source_explanation", "explicit_permission", "pause_and_revoke", "lineage", "cascade_delete", "retention_limit", "bystander_notice", "platform_policy", "recovery", "real_device", "real_user"]
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "GapHint": {
+      "type": "object",
+      "required": ["context_type", "reason", "value_level"],
+      "properties": {
+        "context_type": {"$ref": "#/$defs/ContextType"},
+        "reason": {
+          "type": "string",
+          "enum": ["actuality_unconfirmed", "result_missing", "meaning_missing", "identity_ambiguous", "source_not_authorized", "source_failed", "capability_unavailable"]
+        },
+        "value_level": {"type": "string", "enum": ["low", "medium", "high"]}
+      },
+      "additionalProperties": false
+    },
+    "SyntheticSignal": {
+      "type": "object",
+      "required": ["signal_id", "capability_id", "source_state", "context_types", "observed_fields", "fact_status", "confidence", "importance", "source_object_ids", "observed_at", "gap_hints"],
+      "properties": {
+        "signal_id": {"$ref": "#/$defs/Id"},
+        "capability_id": {"$ref": "#/$defs/Id"},
+        "source_state": {"type": "string", "enum": ["available", "not_authorized", "failed", "unavailable"]},
+        "context_types": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/ContextType"}
+        },
+        "observed_fields": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/EvidenceField"}
+        },
+        "fact_status": {"type": "string", "enum": ["observed", "user_asserted", "planned", "inferred"]},
+        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+        "importance": {"type": "string", "enum": ["low", "medium", "high"]},
+        "source_object_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/Id"}
+        },
+        "observed_at": {"$ref": "#/$defs/Timestamp"},
+        "time_range": {"$ref": "#/$defs/TimeRange"},
+        "event_hint": {
+          "type": "object",
+          "required": ["event_type", "title"],
+          "properties": {
+            "event_type": {"type": "string", "enum": ["activity", "communication", "decision", "result", "state_change", "milestone", "experience"]},
+            "title": {"type": "string", "minLength": 1, "maxLength": 200}
+          },
+          "additionalProperties": false
+        },
+        "gap_hints": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/GapHint"}
+        }
+      },
+      "additionalProperties": false
+    },
+    "SyntheticCoverageDay": {
+      "type": "object",
+      "required": ["day_id", "segment_id", "owner_id", "space_id", "local_date", "timezone", "signals", "expected"],
+      "properties": {
+        "day_id": {"$ref": "#/$defs/Id"},
+        "segment_id": {"$ref": "#/$defs/Id"},
+        "owner_id": {"$ref": "#/$defs/Id"},
+        "space_id": {"$ref": "#/$defs/Id"},
+        "local_date": {"$ref": "#/$defs/LocalDate"},
+        "timezone": {"type": "string", "minLength": 1, "maxLength": 64},
+        "signals": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/SyntheticSignal"}
+        },
+        "expected": {
+          "type": "object",
+          "required": ["candidate_count", "gap_reasons", "must_not_emit_coverage_percentage"],
+          "properties": {
+            "candidate_count": {"type": "integer", "minimum": 0},
+            "gap_reasons": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {"$ref": "#/$defs/ContextGapReason"}
+            },
+            "must_not_emit_coverage_percentage": {"const": true}
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "ContextGapReason": {
+      "type": "string",
+      "enum": ["actuality_unconfirmed", "result_missing", "meaning_missing", "identity_ambiguous", "source_not_authorized", "source_failed", "capability_unavailable"]
+    },
+    "CoverageObservation": {
+      "type": "object",
+      "required": ["schema_version", "coverage_observation_id", "owner_id", "space_id", "local_date", "capability_id", "source_object_ids", "context_types", "observed_fields", "fact_status", "state", "observed_at"],
+      "properties": {
+        "schema_version": {"const": 1},
+        "coverage_observation_id": {"$ref": "#/$defs/Id"},
+        "owner_id": {"$ref": "#/$defs/Id"},
+        "space_id": {"$ref": "#/$defs/Id"},
+        "local_date": {"$ref": "#/$defs/LocalDate"},
+        "capability_id": {"$ref": "#/$defs/Id"},
+        "source_object_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/Id"}
+        },
+        "context_types": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/ContextType"}
+        },
+        "observed_fields": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/EvidenceField"}
+        },
+        "fact_status": {"type": "string", "enum": ["observed", "user_asserted", "planned", "inferred"]},
+        "state": {"type": "string", "enum": ["observed", "partial", "not_authorized", "failed", "unavailable"]},
+        "observed_at": {"$ref": "#/$defs/Timestamp"},
+        "time_range": {"$ref": "#/$defs/TimeRange"}
+      },
+      "additionalProperties": false
+    },
+    "ContextGap": {
+      "type": "object",
+      "required": ["schema_version", "context_gap_id", "owner_id", "space_id", "local_date", "context_type", "reason", "value_level", "prompt_policy", "capability_ids", "state", "created_at"],
+      "properties": {
+        "schema_version": {"const": 1},
+        "context_gap_id": {"$ref": "#/$defs/Id"},
+        "owner_id": {"$ref": "#/$defs/Id"},
+        "space_id": {"$ref": "#/$defs/Id"},
+        "local_date": {"$ref": "#/$defs/LocalDate"},
+        "context_type": {"$ref": "#/$defs/ContextType"},
+        "reason": {"$ref": "#/$defs/ContextGapReason"},
+        "value_level": {"type": "string", "enum": ["low", "medium", "high"]},
+        "prompt_policy": {"type": "string", "enum": ["do_not_prompt", "optional", "prompt_once", "source_status_only"]},
+        "capability_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/Id"}
+        },
+        "state": {"type": "string", "enum": ["open", "dismissed", "resolved", "expired"]},
+        "created_at": {"$ref": "#/$defs/Timestamp"},
+        "time_range": {"$ref": "#/$defs/TimeRange"}
+      },
+      "additionalProperties": false
+    }
+  }
+}
