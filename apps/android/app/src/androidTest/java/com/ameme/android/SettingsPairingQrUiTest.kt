@@ -1,8 +1,11 @@
 package com.ameme.android
 
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
-import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
@@ -237,8 +240,13 @@ class SettingsPairingQrUiTest {
         composeRule.onNodeWithTag("manual-pairing-code-input").performTextInput(payload)
         composeRule.onNodeWithTag("validate-manual-pairing-code-button").performClick()
 
-        composeRule.onNodeWithTag("manual-pairing-code-input").assertTextEquals("")
-        composeRule.onNodeWithText("配对码无效或已过期", substring = true)
+        composeRule.onNodeWithTag("manual-pairing-code-input").assert(
+            SemanticsMatcher.expectValue(
+                SemanticsProperties.EditableText,
+                AnnotatedString(""),
+            ),
+        )
+        composeRule.onNodeWithText("连接体验暂时不可用，请重试。", substring = true)
             .assertIsDisplayed()
         composeRule.onNodeWithTag("connected-device-card").assertDoesNotExist()
         composeRule.runOnIdle { assertEquals(payload, resolvedPayload) }
