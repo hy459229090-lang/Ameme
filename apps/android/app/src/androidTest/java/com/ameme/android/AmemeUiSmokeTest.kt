@@ -371,7 +371,11 @@ class AmemeUiSmokeTest {
                 .fetchSemanticsNodes()
                 .isEmpty()
         }
-        composeRule.onNodeWithContentDescription(title, substring = true).performClick()
+        composeRule.onNodeWithTag("today-list")
+            .performScrollToNode(hasContentDescription(title, substring = true))
+        composeRule.onNodeWithContentDescription(title, substring = true)
+            .assertIsDisplayed()
+            .performClick()
         composeRule.onNodeWithText("事件详情").assertIsDisplayed()
         composeRule.onNodeWithText("查看删除影响").performScrollTo().performClick()
         composeRule.onNodeWithText("删除影响与进度").assertIsDisplayed()
