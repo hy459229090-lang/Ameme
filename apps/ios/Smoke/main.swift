@@ -192,6 +192,11 @@ struct AmemeSharedSmoke {
             !fileManager.fileExists(atPath: staleCandidate.path),
             "rejected stale recovery left a partial destination"
         )
+        let recoveryMediaEvent = reloaded.addMedia(
+            Data("same-install-recovery-media".utf8),
+            kind: .voice,
+            fileExtension: "m4a"
+        )
         let currentRecoveryBackup = recoverySandbox.appendingPathComponent("current-backup", isDirectory: true)
         let currentRecoveryManifest = try! reloaded.createLocalRecoveryBackup(at: currentRecoveryBackup)
         precondition(
@@ -218,6 +223,14 @@ struct AmemeSharedSmoke {
                 $0.objectID == recoveryDeletionEvent.id.uuidString.lowercased()
             }),
             "recovery candidate lost the deletion tombstone"
+        )
+        let recoveredMediaLocator = recoveredCandidateStore.event(id: recoveryMediaEvent.id)?
+            .sourceLocator
+        precondition(
+            recoveredCandidateStore.storageState == .ready &&
+                recoveredMediaLocator?.hasPrefix(recoveryCandidateRoot.path + "/media/") == true &&
+                fileManager.fileExists(atPath: recoveredMediaLocator!),
+            "recovery candidate retained a transient staging media locator"
         )
         let nonemptyRecoveryTarget = recoverySandbox.appendingPathComponent("nonempty", isDirectory: true)
         try! fileManager.createDirectory(at: nonemptyRecoveryTarget, withIntermediateDirectories: true)
@@ -283,6 +296,12 @@ struct AmemeSharedSmoke {
                     $0.objectID == recoveryDeletionEvent.id.uuidString.lowercased()
                 }),
             "activated recovery candidate resurrected deleted data"
+        )
+        let activatedMediaLocator = reloaded.event(id: recoveryMediaEvent.id)?.sourceLocator
+        precondition(
+            activatedMediaLocator?.hasPrefix(root.path + "/media/") == true &&
+                fileManager.fileExists(atPath: activatedMediaLocator!),
+            "activated recovery did not rewrite owned media to the live root"
         )
         precondition(
             fileManager.fileExists(atPath: recoveryCandidate.directory.path),

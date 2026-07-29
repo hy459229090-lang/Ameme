@@ -64,7 +64,7 @@ final class SourceDeletionTests: XCTestCase {
 
         let result = store.deleteSourceCascade(sourceObjectID: source.sourceObjectID)
 
-        XCTAssertEqual(result.status, .completed)
+        XCTAssertEqual(result.status, .completedLocalOnly)
         XCTAssertEqual(result.affectedEventCount, 1)
         XCTAssertNil(store.event(id: event.id))
         XCTAssertTrue(store.deletionTombstones.contains {

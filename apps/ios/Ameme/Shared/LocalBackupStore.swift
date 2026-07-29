@@ -439,6 +439,10 @@ enum LocalBackupStore {
         try fileManager.createDirectory(at: staging, withIntermediateDirectories: false)
         do {
             let restoredMediaDirectory = staging.appendingPathComponent("media", isDirectory: true)
+            let finalMediaDirectory = destinationDirectory.appendingPathComponent(
+                "media",
+                isDirectory: true
+            )
             try fileManager.createDirectory(
                 at: restoredMediaDirectory,
                 withIntermediateDirectories: true
@@ -457,14 +461,14 @@ enum LocalBackupStore {
                 restoredEvent(
                     event,
                     backedUpMediaNames: backedUpMediaNames,
-                    destinationMediaDirectory: restoredMediaDirectory
+                    destinationMediaDirectory: finalMediaDirectory
                 )
             }
             let restoredSources = try verified.envelope.sourceObjects.map { source in
                 try restoredSourceObject(
                     source,
                     backedUpMediaNames: backedUpMediaNames,
-                    destinationMediaDirectory: restoredMediaDirectory
+                    destinationMediaDirectory: finalMediaDirectory
                 )
             }
             let restoredEnvelope = LocalStoreEnvelope(
