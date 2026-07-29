@@ -48,6 +48,25 @@ KOTLIN_QR_UI = (
 KOTLIN_SETTINGS = (
     ROOT / "apps/android/app/src/main/java/com/ameme/android/ui/screens/SettingsScreen.kt"
 )
+KOTLIN_MAIN_ACTIVITY = ROOT / "apps/android/app/src/main/java/com/ameme/android/MainActivity.kt"
+KOTLIN_OUTBOUND_CONNECTOR = (
+    ROOT
+    / "apps/android/app/src/main/java/com/ameme/android/data/transport/ProductionPairingExperienceConnector.kt"
+)
+KOTLIN_OUTBOUND_NETWORK = (
+    ROOT
+    / "apps/android/app/src/main/java/com/ameme/android/data/transport/channel/AndroidPairingNetworkClient.kt"
+)
+KOTLIN_OUTBOUND_STORE = (
+    ROOT
+    / "apps/android/app/src/main/java/com/ameme/android/data/transport/AndroidPairingCredentialStore.kt"
+)
+ANDROID_MANIFEST = ROOT / "apps/android/app/src/main/AndroidManifest.xml"
+ANDROID_VERSION_CATALOG = ROOT / "apps/android/gradle/libs.versions.toml"
+ANDROID_OUTBOUND_STORE_TEST = (
+    ROOT
+    / "apps/android/app/src/androidTest/java/com/ameme/android/data/transport/AndroidPairingCredentialStoreInstrumentedTest.kt"
+)
 KOTLIN_TEST = (
     ROOT
     / "apps/android/app/src/test/java/com/ameme/android/data/transport/channel/AgentPairingEnvelopeTest.kt"
@@ -104,6 +123,13 @@ def main() -> int:
     kotlin_listener = read(KOTLIN_LISTENER)
     kotlin_qr_ui = read(KOTLIN_QR_UI)
     kotlin_settings = read(KOTLIN_SETTINGS)
+    kotlin_main_activity = read(KOTLIN_MAIN_ACTIVITY)
+    kotlin_outbound_connector = read(KOTLIN_OUTBOUND_CONNECTOR)
+    kotlin_outbound_network = read(KOTLIN_OUTBOUND_NETWORK)
+    kotlin_outbound_store = read(KOTLIN_OUTBOUND_STORE)
+    android_manifest = read(ANDROID_MANIFEST)
+    android_version_catalog = read(ANDROID_VERSION_CATALOG)
+    android_outbound_store_test = read(ANDROID_OUTBOUND_STORE_TEST)
     kotlin_test = read(KOTLIN_TEST)
     kotlin_manager_test = read(KOTLIN_MANAGER_TEST)
     swift_bootstrap_test = read(SWIFT_BOOTSTRAP_TEST)
@@ -292,8 +318,64 @@ def main() -> int:
         checks,
     )
     require(
-        "PairingExperienceConnector? = null" in release_provider,
-        "Android Release does not present unauthenticated discovery as a usable connection",
+        "ProductionPairingExperienceConnector(context)" in release_provider,
+        "Android Release selects the authenticated production connector",
+        checks,
+    )
+    require(
+        "GmsBarcodeScanning.getClient" in kotlin_main_activity
+        and "Barcode.FORMAT_QR_CODE" in kotlin_main_activity
+        and "GoogleApiAvailability" in kotlin_main_activity
+        and "payload.length > 16_384" in kotlin_main_activity,
+        "Android wires a QR-only bounded system scanner with a visible Play-services failure",
+        checks,
+    )
+    require(
+        "play-services-code-scanner" in android_version_catalog
+        and 'android:name="com.google.mlkit.vision.DEPENDENCIES"' in android_manifest
+        and 'android:value="barcode_ui"' in android_manifest
+        and "android.permission.CAMERA" not in android_manifest,
+        "Android requests the on-demand system scanner module without app camera permission",
+        checks,
+    )
+    require(
+        "AndroidPairingBootstrapNetworkClient" in kotlin_outbound_connector
+        and "AndroidLocalNodeNetworkClient" in kotlin_outbound_connector
+        and "restoreConnection()" in kotlin_outbound_connector
+        and "clearLocalCredentials()" in kotlin_outbound_connector
+        and "OPERATION_CREATE_EVENT" in kotlin_outbound_connector,
+        "Android publishes connection state only after QR bootstrap and application authentication",
+        checks,
+    )
+    require(
+        "TLSv1.3" in kotlin_outbound_network
+        and "CertificatePinTrustManager" in kotlin_outbound_network
+        and "tlsCertificateSha256" in kotlin_outbound_network
+        and "verifyServerHello" in kotlin_outbound_network,
+        "Android outbound transport requires TLS 1.3, certificate pinning, and server proof",
+        checks,
+    )
+    require(
+        "AliasPinnedServerKeyManager" in kotlin_manager
+        and "TLS_KEY_ALIAS" in kotlin_manager
+        and "chooseEngineServerAlias" in kotlin_manager,
+        "Android Local Node TLS cannot select the unrelated client-possession key alias",
+        checks,
+    )
+    require(
+        "KeyProperties.KEY_ALGORITHM_EC" in kotlin_outbound_store
+        and 'setAlgorithmParameterSpec(ECGenParameterSpec("secp256r1"))' in kotlin_outbound_store
+        and "noBackupFilesDir" in kotlin_outbound_store
+        and "AtomicFile" in kotlin_outbound_store
+        and "AES/GCM/NoPadding" in kotlin_outbound_store,
+        "Android stores the same P-256 client key and encrypted retry state in device-local storage",
+        checks,
+    )
+    require(
+        "pendingAndActiveRoundTripUseNonExportableKeyAndEncryptedNoBackupRecord"
+        in android_outbound_store_test
+        and "corruptOrExpiredRecordFailsClosedAndIsRemoved" in android_outbound_store_test,
+        "Android instrumentation source covers encrypted lifecycle, corruption, and expiry",
         checks,
     )
 
@@ -398,7 +480,8 @@ def main() -> int:
                 "server_enforced_one_time_secret_claim": True,
                 "persistent_reconnect_credential_rotation_claim": True,
                 "release_developer_bearer_absent_claim": True,
-                "android_camera_scanner_claim": False,
+                "android_permissionless_system_scanner_wiring_claim": True,
+                "android_physical_scanner_execution_claim": False,
                 "account_or_shared_grant_registry_claim": False,
                 "physical_device_execution_claim": False,
                 "errors": [],

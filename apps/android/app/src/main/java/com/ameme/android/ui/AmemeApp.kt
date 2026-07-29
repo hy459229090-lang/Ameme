@@ -65,6 +65,7 @@ import com.ameme.android.data.transport.PairingExperienceConnection
 import com.ameme.android.data.transport.PairingExperienceConnector
 import com.ameme.android.data.transport.PairingExperienceConnectorProvider
 import com.ameme.android.data.transport.PairingExperienceStore
+import com.ameme.android.data.transport.PairingQrScanFailure
 import com.ameme.android.data.source.ContentUriGrantResolver
 import com.ameme.android.data.source.AndroidCalendarProviderDataSource
 import com.ameme.android.data.source.CalendarImportCancellation
@@ -122,6 +123,11 @@ fun AmemeApp(
     pairingExperienceConnectorOverride: PairingExperienceConnector? = null,
     incomingShare: SourceCaptureRequest? = null,
     onIncomingShareConsumed: () -> Unit = {},
+    pairingQrScannerAvailable: Boolean = false,
+    pairingQrScanPayload: String? = null,
+    pairingQrScanFailure: PairingQrScanFailure? = null,
+    onStartPairingQrScan: () -> Unit = {},
+    onPairingQrScanConsumed: () -> Unit = {},
 ) {
     val navController = rememberNavController()
     val appContext = LocalContext.current.applicationContext
@@ -219,10 +225,11 @@ fun AmemeApp(
             ioExecutor.runSourceIo { pairingManager.revoke() }
         },
         closeOutgoingAgentTransport = {
-            pairingExperienceConnection?.let { connected ->
-                if (!connected.simulated) {
-                    requireNotNull(pairingExperienceConnector).disconnect(connected)
-                }
+            val connected = pairingExperienceConnection
+            if (connected != null) {
+                requireNotNull(pairingExperienceConnector).disconnect(connected)
+            } else {
+                pairingExperienceConnector?.clearLocalCredentials()
             }
         },
         clearStoredConnectionMetadata = {
@@ -390,6 +397,31 @@ fun AmemeApp(
                     ioExecutor.closeInBackground(owned)
                 }
             }
+        }
+    }
+    LaunchedEffect(repository, pairingExperienceConnector, localSpaceDeleted) {
+        if (
+            repository == null ||
+            localSpaceDeleted ||
+            pairingExperienceConnector == null ||
+            pairingExperienceConnector.simulated ||
+            pairingExperienceConnection != null
+        ) {
+            return@LaunchedEffect
+        }
+        runCatchingCancellable {
+            pairingExperienceConnector.restoreConnection()
+        }.onSuccess { restored ->
+            if (restored != null) {
+                ioExecutor.runSourceIo { pairingExperienceStore.save(restored) }
+                pairingExperienceConnection = restored
+                persistenceError = null
+            }
+        }.onFailure {
+            ioExecutor.runSourceIo { pairingExperienceStore.clear() }
+            pairingExperienceConnection = null
+            persistenceError =
+                "设备授权连接未能恢复；没有回退为未认证连接，请重新扫描二维码。"
         }
     }
     LaunchedEffect(repository, pairingGeneration, localSpaceDeleted) {
@@ -862,8 +894,19 @@ fun AmemeApp(
                 showExperienceControls = repositoryOverride != null,
                 pairingExperienceAvailable = pairingExperienceConnector != null,
                 pairingExperienceConnection = pairingExperienceConnection,
+                pairingQrScannerAvailable =
+                    pairingQrScannerAvailable &&
+                        pairingExperienceConnector?.simulated == false,
+                pairingQrScanPayload = pairingQrScanPayload,
+                pairingQrScanFailure = pairingQrScanFailure,
+                onStartPairingQrScan = onStartPairingQrScan,
+                onPairingQrScanConsumed = onPairingQrScanConsumed,
                 onResolvePairingCandidate = { method ->
                     requireNotNull(pairingExperienceConnector).resolve(method)
+                },
+                onResolvePairingPayload = { payload ->
+                    requireNotNull(pairingExperienceConnector)
+                        .resolvePairingPayload(payload)
                 },
                 onConnectPairingCandidate = { candidate ->
                     val connected = requireNotNull(pairingExperienceConnector).connect(candidate)

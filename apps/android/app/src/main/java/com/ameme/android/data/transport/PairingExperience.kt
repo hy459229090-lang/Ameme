@@ -11,6 +11,13 @@ enum class PairingExperienceMethod(val wireValue: String) {
     AccountDevice("account_device"),
 }
 
+enum class PairingQrScanFailure {
+    Cancelled,
+    ModuleUnavailable,
+    InvalidResult,
+    Failed,
+}
+
 data class PairingExperienceCandidate(
     val id: String,
     val deviceName: String,
@@ -18,6 +25,7 @@ data class PairingExperienceCandidate(
     val method: PairingExperienceMethod,
     val capabilities: List<String>,
     val simulated: Boolean,
+    val authorizationExpiresAt: Instant? = null,
 ) {
     init {
         require(PAIRING_EXPERIENCE_ID.matches(id))
@@ -25,6 +33,7 @@ data class PairingExperienceCandidate(
         require(agentName.isNotBlank() && agentName.length <= 80)
         require(capabilities.isNotEmpty() && capabilities.size <= 8)
         require(capabilities.all { it.isNotBlank() && it.length <= 80 })
+        require(authorizationExpiresAt == null || authorizationExpiresAt.toEpochMilli() > 0)
     }
 }
 
@@ -59,17 +68,28 @@ interface PairingExperienceConnector {
 
     suspend fun resolve(method: PairingExperienceMethod): PairingExperienceCandidate
 
+    suspend fun resolvePairingPayload(payload: String): PairingExperienceCandidate =
+        throw PairingExperienceException(PairingExperienceFailure.QrScannerUnavailable)
+
     suspend fun connect(candidate: PairingExperienceCandidate): PairingExperienceConnection
 
     suspend fun disconnect(connection: PairingExperienceConnection)
+
+    suspend fun restoreConnection(): PairingExperienceConnection? = null
+
+    suspend fun clearLocalCredentials() = Unit
 }
 
 enum class PairingExperienceFailure(val wireValue: String) {
     DiscoveryUnavailable("discovery_unavailable"),
     NoDeviceFound("no_device_found"),
     QrScannerUnavailable("qr_scanner_unavailable"),
+    QrScannerModuleUnavailable("qr_scanner_module_unavailable"),
+    InvalidPairingPayload("invalid_pairing_payload"),
     AccountSignInRequired("account_sign_in_required"),
     AuthorizationRequired("authorization_required"),
+    CandidateUnavailable("candidate_unavailable"),
+    ConnectionFailed("connection_failed"),
 }
 
 class PairingExperienceException(

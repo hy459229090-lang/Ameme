@@ -43,7 +43,8 @@ Ameme 已完成 MVP 研发前本地可完善准备、D1–D10 最终拍板和 M2
 | P0 iOS 生产 Agent 四操作客户端与响应校验 | `quality/P0-iOS生产Agent-四操作客户端与响应校验-20260729.md` | conditional_pass；四项生产 v1 operation 的 canonical/minimal-Grant/typed-response 边界与 Swift→Android API 36 / 16 KB AVD 纵向闭环通过，普通用户默认仍 event-only；物理设备、共享 Grant、真实 Host 与发布 hold |
 | P0 Android 生产 Agent 访问审计与只读投影 | `quality/P0-Android生产Agent-访问审计与只读投影-20260729.md` | conditional_pass；schema v14 的 STARTED/COMPLETED content-free audit、180 天保留、失败关闭、幂等重试、设置页投影与同安装恢复未过期账本单调 union 已实现；API 36 / 16 KB AVD 全量 96/89/7/0，iOS Host/账户审计、真实用户与物理设备 hold |
 | P0 QR 配对一次性凭据安全审计（历史） | `quality/P0-QR配对一次性凭据安全审计-20260729.md` | 历史 hold；记录 v1 长期 bearer 缺口，已由后续 v2 实现报告更新 |
-| P0 QR 一次性 Bootstrap 与设备凭据轮换 | `quality/P0-QR一次性Bootstrap与设备凭据轮换验证-20260729.md` | conditional_pass；服务端消费、签发时 P-256 key binding、独立 credential、Release 隔离与设备专属恢复已实现；Android scanner client、共享 Grant、最终 head XCTest、物理扫码/LAN hold |
+| P0 QR 一次性 Bootstrap 与设备凭据轮换 | `quality/P0-QR一次性Bootstrap与设备凭据轮换验证-20260729.md` | conditional_pass；服务端消费、签发时 P-256 key binding、独立 credential、Release 隔离与设备专属恢复已实现；Android scanner client 由下一项补齐，共享 Grant、最终 head XCTest、物理扫码/LAN hold |
+| P0 Android 普通用户 QR v2 生产扫码与认证 | `quality/P0-Android普通用户QRv2生产扫码与认证验证-20260729.md` | conditional_pass；Release 系统扫码、设备 P-256 key、TLS 1.3/pin、独立 credential、真实重连与 event-only UI 已实现；API 36 / 16 KB AVD 112/105/7/0，物理扫码/LAN、无 Play services 替代、共享 Grant 与发布 hold |
 | R0 用户任务与竞品证据 | `research/R0用户任务与竞品证据_20260713.md` | 桌面研究完成 |
 | R0 访谈与行为验证 | `research/R0用户访谈与行为验证计划.md` | 等待招募确认 |
 | R0 FORMALdoc 真实样本 | `research/R0-FORMALdoc真实工作样本实验.md` | 专业桌面来源快照完成，不代表通用产品 |

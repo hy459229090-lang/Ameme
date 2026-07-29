@@ -54,6 +54,7 @@ import com.ameme.android.data.transport.PairingExperienceConnection
 import com.ameme.android.data.transport.PairingExperienceException
 import com.ameme.android.data.transport.PairingExperienceFailure
 import com.ameme.android.data.transport.PairingExperienceMethod
+import com.ameme.android.data.transport.PairingQrScanFailure
 import com.ameme.android.domain.ExperienceMode
 import com.ameme.android.ui.components.PairingQrCode
 import com.ameme.android.ui.icons.AmemeSymbols
@@ -72,8 +73,16 @@ fun SettingsScreen(
     showExperienceControls: Boolean = false,
     pairingExperienceAvailable: Boolean = false,
     pairingExperienceConnection: PairingExperienceConnection? = null,
+    pairingQrScannerAvailable: Boolean = false,
+    pairingQrScanPayload: String? = null,
+    pairingQrScanFailure: PairingQrScanFailure? = null,
+    onStartPairingQrScan: () -> Unit = {},
+    onPairingQrScanConsumed: () -> Unit = {},
     onResolvePairingCandidate: suspend (PairingExperienceMethod) -> PairingExperienceCandidate = {
         error("Pairing experience is unavailable")
+    },
+    onResolvePairingPayload: suspend (String) -> PairingExperienceCandidate = {
+        error("QR pairing is unavailable")
     },
     onConnectPairingCandidate: suspend (PairingExperienceCandidate) -> PairingExperienceConnection = {
         error("Pairing experience is unavailable")
@@ -141,6 +150,32 @@ fun SettingsScreen(
         val remainingMillis = expiresAt.toEpochMilli() - System.currentTimeMillis()
         if (remainingMillis > 0) delay(remainingMillis)
         pairingQrExpired = true
+    }
+
+    LaunchedEffect(pairingQrScanPayload, pairingQrScanFailure) {
+        val payload = pairingQrScanPayload
+        val failure = pairingQrScanFailure
+        if (payload == null && failure == null) return@LaunchedEffect
+        if (payload != null) {
+            pairingBusy = true
+            pairingError = null
+            runCatching { onResolvePairingPayload(payload) }
+                .onSuccess { pairingCandidate = it }
+                .onFailure { pairingError = it.pairingExperienceMessage() }
+            pairingBusy = false
+        } else {
+            pairingError = when (failure) {
+                PairingQrScanFailure.Cancelled -> null
+                PairingQrScanFailure.ModuleUnavailable ->
+                    "此设备的 Google Play 扫码服务不可用；本机没有获得相机权限，也没有建立连接。"
+                PairingQrScanFailure.InvalidResult ->
+                    "没有读到有效二维码；本机没有建立连接。"
+                PairingQrScanFailure.Failed ->
+                    "扫码没有完成；本机没有建立连接，请重试。"
+                null -> null
+            }
+        }
+        onPairingQrScanConsumed()
     }
 
     fun resolve(method: PairingExperienceMethod) {
@@ -721,7 +756,13 @@ fun SettingsScreen(
                         resolve(PairingExperienceMethod.LanDiscovery)
                     }
                     PairingMethodRow("扫描二维码", "适合电脑已显示配对码", "pairing-method-qr") {
-                        resolve(PairingExperienceMethod.QrCode)
+                        if (pairingQrScannerAvailable) {
+                            showPairingChooser = false
+                            pairingError = null
+                            onStartPairingQrScan()
+                        } else {
+                            resolve(PairingExperienceMethod.QrCode)
+                        }
                     }
                     PairingMethodRow("账户设备", "适合同一账户下的已登录设备", "pairing-method-account") {
                         resolve(PairingExperienceMethod.AccountDevice)
@@ -850,8 +891,19 @@ fun SettingsScreen(
                     Text(candidate.deviceName, fontWeight = FontWeight.SemiBold)
                     Text("Agent：${candidate.agentName}")
                     Text("连接方式：${candidate.method.label()}")
-                    Text("拟授权范围：Personal 空间 · autonomous_memory · 获准结构化事件读取、event/revision 写入与 10 分钟撤销 · 30 天")
+                    Text(
+                        "拟授权范围：Personal 空间 · autonomous_memory · 仅写入结构化事件；" +
+                            "不会读取、修订、撤销或确认长期 Memory。",
+                    )
                     Text("允许：${candidate.capabilities.joinToString("、")}")
+                    candidate.authorizationExpiresAt?.let { expiresAt ->
+                        Text(
+                            "二维码授权须在 ${expiresAt.atZone(ZoneId.systemDefault()).toLocalTime()} 前确认；" +
+                                "过期不会建立连接。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     if (candidate.simulated) {
                         Text(
                             "体验模式 · 不建立真实网络连接",
@@ -1120,6 +1172,15 @@ private fun Throwable.pairingExperienceMessage(): String = when {
         "已发现设备，但授权通道尚未完成；本机没有建立连接。"
     this is PairingExperienceException && failure == PairingExperienceFailure.QrScannerUnavailable ->
         "二维码入口尚未接入扫描器；本机没有建立连接。"
+    this is PairingExperienceException &&
+        failure == PairingExperienceFailure.QrScannerModuleUnavailable ->
+        "此设备的扫码服务不可用；本机没有获得相机权限，也没有建立连接。"
+    this is PairingExperienceException && failure == PairingExperienceFailure.InvalidPairingPayload ->
+        "二维码无效、已过期或不是 Ameme QR v2；本机没有建立连接。"
+    this is PairingExperienceException && failure == PairingExperienceFailure.CandidateUnavailable ->
+        "该配对候选已过期或被替换，请重新扫描二维码。"
+    this is PairingExperienceException && failure == PairingExperienceFailure.ConnectionFailed ->
+        "未能完成 TLS 证书校验和授权通道认证；本机没有建立连接。"
     this is PairingExperienceException && failure == PairingExperienceFailure.AccountSignInRequired ->
         "账户设备需要先完成账户授权；本机没有建立连接。"
     else -> "连接体验暂时不可用，请重试。"

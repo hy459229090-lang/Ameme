@@ -33,7 +33,8 @@
 | P0 iOS 生产 Agent 四操作客户端与响应校验 | `P0-iOS生产Agent-四操作客户端与响应校验-20260729.md` | conditional_pass；iOS 四项 Android 生产 v1 operation 已有最小 Grant builder、握手 capability、typed result、canonical/result-digest/error-shape fail-closed，并在 API 36 / 16 KB AVD 完成 Swift→Android 四操作纵向 Smoke；普通用户默认仍 event-only，物理设备、共享 Grant 与发布 hold |
 | P0 Android 生产 Agent 访问审计与只读投影 | `P0-Android生产Agent-访问审计与只读投影-20260729.md` | conditional_pass；SQLCipher schema v14 增加 STARTED/COMPLETED content-free access audit、180 天保留、append-only/提前删除保护、审计故障失败关闭、幂等重试和设置页最近 20 条；同安装恢复单调保全未过期账本，相关 instrumentation 已在 API 36 / 16 KB AVD 全量 100/93/7/0 执行；iOS Host/账户审计、真实用户/物理设备 hold |
 | P0 QR 配对一次性凭据安全审计（历史） | `P0-QR配对一次性凭据安全审计-20260729.md` | 历史 hold；记录 v1 QR 与 30 天 channel 共用 bearer 的发现，当前实现以后一项 v2 报告为准 |
-| P0 QR 一次性 Bootstrap 与设备凭据轮换 | `P0-QR一次性Bootstrap与设备凭据轮换验证-20260729.md` | conditional_pass；Android server 原子消费、P-256 签发绑定、独立 credential、Release 无 developer bearer与 iOS device-only pending/active 恢复已实现；Android scanner client、共享 Grant、最终 head XCTest、物理扫码/LAN hold |
+| P0 QR 一次性 Bootstrap 与设备凭据轮换 | `P0-QR一次性Bootstrap与设备凭据轮换验证-20260729.md` | conditional_pass；Android server 原子消费、P-256 签发绑定、独立 credential、Release 无 developer bearer与 iOS device-only pending/active 恢复已实现；Android scanner client 由下一项补齐，共享 Grant、最终 head XCTest、物理扫码/LAN hold |
+| P0 Android 普通用户 QR v2 生产扫码与认证 | `P0-Android普通用户QRv2生产扫码与认证验证-20260729.md` | conditional_pass；Release 系统扫码、设备 P-256 key、TLS 1.3/pin、独立应用 credential、真实重连和 event-only UI 已实现；API 36 / 16 KB AVD 112/105/7/0，物理扫码/LAN、无 Play services 替代、共享 Grant 和发布 hold |
 
 ## 当前正本
 
@@ -102,3 +103,4 @@
 | 2026-07-29 | 审计/Gate | QR 配对安全复核确认 5 分钟 envelope 只由 parser/UI 限时，Android server 在 30 天 pairing 内复用同一 secret，iOS 仅本进程消费；QR 静态门扩为 34 项并机器可读保持 server-enforced one-time、credential rotation、Android scanner、共享 Grant 与物理设备 claim 为 false，安全闭环 hold |
 | 2026-07-29 | 新增/验证 | 以 `ameme.agent-pairing-bootstrap.v2` 收敛前项审计：Android 原子消费 5 分钟 bootstrap、验证 P-256 key possession、签发独立 30 天 credential、同 key 有界响应恢复，Release 无 developer bearer；iOS device-only Keychain 保存 pending/active 并实际认证后恢复。QR Gate 54/54、Android manager AVD 7/7、Swift→Android v2 与独立 Debug Host smoke、workspace 28/28 通过；Android scanner client、共享 Grant、最终 head XCTest、物理设备/LAN hold |
 | 2026-07-29 | 新增/验证 | 双端普通用户同安装恢复：设置页可创建/更新 current/previous 有界点，以实际隔离恢复判定健康，展示创建/验证/最近成功并要求逐字 `恢复`；Android JVM 112/112、API 36 / 16 KB AVD 105/98/7/0、UI 14/14，iOS Debug/Release build + Smoke 与跨端静态 Gate 210 通过。该路径依赖当前安装设备 key，卸载/换机/物理恢复和真实用户 Gate 保持 hold |
+| 2026-07-29 | 新增/验证 | Android Release 普通用户 QR v2 client：Google Play 系统扫码不向 App 授予 camera permission，Keystore P-256 possession、AES-GCM pending/active、TLS 1.3 certificate pin、独立应用 credential、真实重连和 event-only 授权已接通；修复同 Keystore 多 key 导致 TLS server alias 误选。QR 静态门 61/61，API 36 / 16 KB AVD 112/105/7/0；物理光学、真实 LAN/用户、无 Play services 替代和发布 hold |

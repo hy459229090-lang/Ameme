@@ -126,6 +126,7 @@ class ParsedAgentLocalNodeResponseFrame internal constructor(
 object AndroidLocalNodeChannelCodec {
     const val CHANNEL_PROTOCOL_VERSION = "ameme.agent-local-node.channel.v1"
     const val APPLICATION_PROTOCOL_VERSION = "ameme.agent-local-node.v1"
+    const val OPERATION_CREATE_EVENT = "create_event"
     const val MAX_PAIRING_MATERIAL_BYTES = 8_192
     const val MAX_CHANNEL_LINE_BYTES = 786_432
     private const val MAX_REQUEST_BYTES = 65_536
@@ -140,7 +141,7 @@ object AndroidLocalNodeChannelCodec {
     private val hostPattern = Regex("[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?")
     private val operations = setOf(
         "get_event",
-        "create_event",
+        OPERATION_CREATE_EVENT,
         "append_revision",
         "undo_capture",
         "visible_events",

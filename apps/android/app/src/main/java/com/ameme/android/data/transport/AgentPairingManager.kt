@@ -9,10 +9,14 @@ import java.io.File
 import java.math.BigInteger
 import java.net.Inet4Address
 import java.net.NetworkInterface
+import java.net.Socket
 import java.security.KeyPairGenerator
 import java.security.KeyStore
 import java.security.MessageDigest
+import java.security.Principal
+import java.security.PrivateKey
 import java.security.SecureRandom
+import java.security.cert.X509Certificate
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
@@ -24,8 +28,10 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 import javax.net.ssl.KeyManagerFactory
+import javax.net.ssl.SSLEngine
 import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLServerSocketFactory
+import javax.net.ssl.X509ExtendedKeyManager
 import javax.security.auth.x500.X500Principal
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -870,10 +876,16 @@ private class AndroidAgentTlsIdentity {
     }
 
     fun sslServerSocketFactory(): SSLServerSocketFactory {
-        val keyManager = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm())
-        keyManager.init(keyStore, null)
+        val keyManagerFactory =
+            KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm())
+        keyManagerFactory.init(keyStore, null)
+        val delegate = keyManagerFactory.keyManagers
+            .filterIsInstance<X509ExtendedKeyManager>()
+            .singleOrNull()
+            ?: error("android_agent_tls_key_manager_unavailable")
+        val keyManager = AliasPinnedServerKeyManager(delegate, TLS_KEY_ALIAS)
         return SSLContext.getInstance("TLSv1.3").apply {
-            init(keyManager.keyManagers, null, SecureRandom())
+            init(arrayOf(keyManager), null, SecureRandom())
         }.serverSocketFactory
     }
 
@@ -883,4 +895,64 @@ private class AndroidAgentTlsIdentity {
         const val ANDROID_KEYSTORE = "AndroidKeyStore"
         const val TLS_KEY_ALIAS = "ameme-agent-tls-v4"
     }
+}
+
+/**
+ * Android Keystore may contain unrelated EC client-possession keys. Restrict the Local Node
+ * server to its dedicated RSA identity so TLS alias selection cannot cross credential domains.
+ */
+private class AliasPinnedServerKeyManager(
+    private val delegate: X509ExtendedKeyManager,
+    private val serverAlias: String,
+) : X509ExtendedKeyManager() {
+    override fun getClientAliases(
+        keyType: String?,
+        issuers: Array<out Principal>?,
+    ): Array<String>? = null
+
+    override fun chooseClientAlias(
+        keyType: Array<out String>?,
+        issuers: Array<out Principal>?,
+        socket: Socket?,
+    ): String? = null
+
+    override fun chooseEngineClientAlias(
+        keyType: Array<out String>?,
+        issuers: Array<out Principal>?,
+        engine: SSLEngine?,
+    ): String? = null
+
+    override fun getServerAliases(
+        keyType: String?,
+        issuers: Array<out Principal>?,
+    ): Array<String>? =
+        serverAlias.takeIf { supports(keyType, issuers) }?.let { arrayOf(it) }
+
+    override fun chooseServerAlias(
+        keyType: String?,
+        issuers: Array<out Principal>?,
+        socket: Socket?,
+    ): String? = serverAlias.takeIf { supports(keyType, issuers) }
+
+    override fun chooseEngineServerAlias(
+        keyType: String?,
+        issuers: Array<out Principal>?,
+        engine: SSLEngine?,
+    ): String? = serverAlias.takeIf { supports(keyType, issuers) }
+
+    override fun getCertificateChain(alias: String?): Array<X509Certificate>? =
+        alias.takeIf { it == serverAlias }?.let(delegate::getCertificateChain)
+
+    override fun getPrivateKey(alias: String?): PrivateKey? =
+        alias.takeIf { it == serverAlias }?.let(delegate::getPrivateKey)
+
+    private fun supports(
+        keyType: String?,
+        issuers: Array<out Principal>?,
+    ): Boolean =
+        keyType != null &&
+            delegate.getServerAliases(keyType, issuers)
+                ?.contains(serverAlias) == true &&
+            delegate.getPrivateKey(serverAlias) != null &&
+            !delegate.getCertificateChain(serverAlias).isNullOrEmpty()
 }

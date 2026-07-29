@@ -554,8 +554,8 @@ class AmemeUiSmokeTest {
             composeRule.onAllNodesWithText("允许 Agent 连接？").fetchSemanticsNodes().isNotEmpty()
         }
         composeRule.onNodeWithText(
-            "拟授权范围：Personal 空间 · autonomous_memory · " +
-                "获准结构化事件读取、event/revision 写入与 10 分钟撤销 · 30 天",
+            "拟授权范围：Personal 空间 · autonomous_memory · 仅写入结构化事件；" +
+                "不会读取、修订、撤销或确认长期 Memory。",
         )
             .assertIsDisplayed()
         composeRule.onNodeWithText("体验模式 · 不建立真实网络连接").assertIsDisplayed()
