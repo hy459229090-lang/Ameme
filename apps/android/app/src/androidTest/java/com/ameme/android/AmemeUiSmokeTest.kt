@@ -150,6 +150,31 @@ class AmemeUiSmokeTest {
     }
 
     @Test
+    fun settingsAgentAudit_explainsContentFreeRetentionAndUsesProductionProjection() {
+        composeRule.onNodeWithText("查看今天").performClick()
+        waitForCaptureEntry()
+        composeRule.onNodeWithContentDescription("打开设置").performClick()
+        composeRule.onNodeWithTag("settings-list")
+            .performScrollToNode(hasTestTag("agent-access-audit-card"))
+
+        composeRule.onNodeWithTag("agent-access-audit-card").assertIsDisplayed()
+        composeRule.onNodeWithText("安全审计保留 180 天", substring = true).assertIsDisplayed()
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            composeRule.onAllNodesWithText("尚无 Agent 访问记录。").fetchSemanticsNodes().isNotEmpty() ||
+                composeRule.onAllNodesWithText("autonomous_memory", substring = true)
+                    .fetchSemanticsNodes()
+                    .isNotEmpty()
+        }
+        assertTrue(
+            "Agent audit must expose a real empty or persisted production projection",
+            composeRule.onAllNodesWithText("尚无 Agent 访问记录。").fetchSemanticsNodes().isNotEmpty() ||
+                composeRule.onAllNodesWithText("autonomous_memory", substring = true)
+                    .fetchSemanticsNodes()
+                    .isNotEmpty(),
+        )
+    }
+
+    @Test
     fun incomingTextShare_requiresConfirmationBeforeLocalSave() {
         composeRule.onNodeWithText("查看今天").performClick()
         waitForCaptureEntry()

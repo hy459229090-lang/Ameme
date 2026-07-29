@@ -1498,9 +1498,18 @@ struct AmemeSharedSmoke {
             .appendingPathComponent("AmemeSharedSmoke-SpaceDeletion-\(UUID().uuidString)", isDirectory: true)
         let spaceDeletionBackup = fileManager.temporaryDirectory
             .appendingPathComponent("AmemeSharedSmoke-SpaceDeletionBackup-\(UUID().uuidString)", isDirectory: true)
+        let spaceDeletionPendingExportRoot = fileManager.temporaryDirectory
+            .appendingPathComponent("AmemeSharedSmoke-SpaceDeletionExport-\(UUID().uuidString)", isDirectory: true)
+        let spaceDeletionIncomingShareRoot = fileManager.temporaryDirectory
+            .appendingPathComponent("AmemeSharedSmoke-SpaceDeletionShare-\(UUID().uuidString)", isDirectory: true)
+        let spaceDeletionDefaultsName = "AmemeSharedSmoke-SpaceDeletion-\(UUID().uuidString)"
+        let spaceDeletionDefaults = UserDefaults(suiteName: spaceDeletionDefaultsName)!
         defer {
             try? fileManager.removeItem(at: spaceDeletionRoot)
             try? fileManager.removeItem(at: spaceDeletionBackup)
+            try? fileManager.removeItem(at: spaceDeletionPendingExportRoot)
+            try? fileManager.removeItem(at: spaceDeletionIncomingShareRoot)
+            spaceDeletionDefaults.removePersistentDomain(forName: spaceDeletionDefaultsName)
         }
         let spaceDeletionStore = LocalMemoryStore(
             fileManager: fileManager,
@@ -1521,18 +1530,106 @@ struct AmemeSharedSmoke {
             at: spaceDeletionBackup,
             createdAt: Date(timeIntervalSince1970: 1_759_100_400)
         )
-        let spaceDeletionResult = spaceDeletionStore.deleteLocalSpace(
+        let spaceDeletionPendingExportStore = PendingExportStore(
+            fileManager: fileManager,
+            keyStore: keyStore,
+            rootDirectory: spaceDeletionPendingExportRoot
+        )
+        try! spaceDeletionPendingExportStore.save(Data("pending export to clear".utf8))
+        try! Data("orphaned pending export".utf8).write(
+            to: spaceDeletionPendingExportRoot.appendingPathComponent(".orphan-export.tmp")
+        )
+        let spaceDeletionIncomingShareStore = IncomingShareHandoffStore(
+            rootDirectory: spaceDeletionIncomingShareRoot,
+            fileManager: fileManager
+        )
+        _ = try! spaceDeletionIncomingShareStore.writeText("pending share to clear")
+        try! Data("orphaned incoming share".utf8).write(
+            to: spaceDeletionIncomingShareRoot.appendingPathComponent(".orphan-share.tmp")
+        )
+        let spaceDeletionAgentStore = AgentExperienceStore(
+            defaults: spaceDeletionDefaults,
+            now: { Date(timeIntervalSince1970: 1_759_100_450) }
+        )
+        try! spaceDeletionAgentStore.save(.simulatedDemo(
+            method: .qrCode,
+            connectedAt: Date(timeIntervalSince1970: 1_759_100_450)
+        ))
+        var activeAgentTransportClosed = false
+        let spaceDeletionCoordinator = LocalSpaceDeletionConvergenceCoordinator(
+            closeActiveAgentTransport: {
+                activeAgentTransportClosed = true
+            },
+            deleteLocalSpace: { requestedAt in
+                spaceDeletionStore.deleteLocalSpace(requestedAt: requestedAt)
+            },
+            clearStoredConnectionMetadata: {
+                try spaceDeletionAgentStore.clearAndVerify()
+            },
+            freezePendingExportResurrection: {
+                try spaceDeletionPendingExportStore.freezeForDeletedSpaceAndClear()
+            },
+            clearPendingExportSnapshot: {
+                try spaceDeletionPendingExportStore.clear()
+            },
+            freezeIncomingShareResurrection: {
+                try spaceDeletionIncomingShareStore.freezeForDeletedSpaceAndClear()
+            },
+            clearIncomingShareHandoffs: {
+                try spaceDeletionIncomingShareStore.clearPendingHandoffs()
+            }
+        )
+        let spaceDeletionConvergence = await spaceDeletionCoordinator.delete(
             requestedAt: Date(timeIntervalSince1970: 1_759_100_500)
         )
+        let spaceDeletionResult = spaceDeletionConvergence.spaceDeletion!
         precondition(
-            spaceDeletionResult.status == .completedLocalOnly &&
+            spaceDeletionConvergence.status == .completedLocalOnly &&
+                spaceDeletionConvergence.completedSteps ==
+                    Set(LocalSpaceDeletionConvergenceStep.allCases) &&
+                spaceDeletionConvergence.pendingRetrySteps.isEmpty &&
+                spaceDeletionConvergence.localSpaceFrozen &&
+                spaceDeletionConvergence.localAgentAccessClosed &&
+                spaceDeletionConvergence.pendingUserPayloadsCleared &&
+                spaceDeletionConvergence.pendingUserPayloadResurrectionFrozen &&
+                activeAgentTransportClosed &&
+                spaceDeletionResult.status == .completedLocalOnly &&
                 spaceDeletionResult.affectedEventCount == 2 &&
                 spaceDeletionResult.affectedSourceCount == 2 &&
                 spaceDeletionResult.externalOriginalsRetained &&
+                !spaceDeletionConvergence.accountDeletionClaim &&
+                !spaceDeletionConvergence.peerDeletionProofClaim &&
                 !spaceDeletionResult.accountDeletionClaim &&
                 !spaceDeletionResult.peerDeletionProofClaim,
-            "local-space deletion overclaimed or failed to converge"
+            "local-space deletion convergence overclaimed or left a local checkpoint pending"
         )
+        precondition(
+            !spaceDeletionPendingExportStore.exists &&
+                spaceDeletionPendingExportStore.isFrozenForDeletedSpace &&
+                (try! spaceDeletionPendingExportStore.load()) == nil &&
+                spaceDeletionIncomingShareStore.isFrozenForDeletedSpace &&
+                spaceDeletionIncomingShareStore.pendingIDs().isEmpty &&
+                spaceDeletionDefaults.object(
+                    forKey: AgentExperienceStore.userDefaultsKey
+                ) == nil,
+            "local-space deletion retained pending payload or connection metadata"
+        )
+        do {
+            try spaceDeletionPendingExportStore.save(Data("must stay frozen".utf8))
+            preconditionFailure("Pending export reopened after local-space deletion")
+        } catch PendingExportStoreError.localSpaceDeleted {
+            // Expected: the marker prevents post-delete export resurrection.
+        } catch {
+            preconditionFailure("post-delete export failed for the wrong reason: \(error)")
+        }
+        do {
+            _ = try spaceDeletionIncomingShareStore.writeText("must stay frozen")
+            preconditionFailure("Share Extension handoff reopened after local-space deletion")
+        } catch IncomingSharePayloadError.localSpaceDeleted {
+            // Expected: the App Group marker prevents post-delete handoff resurrection.
+        } catch {
+            preconditionFailure("post-delete handoff failed for the wrong reason: \(error)")
+        }
         precondition(
             spaceDeletionStore.isLocalSpaceDeleted &&
                 spaceDeletionStore.storageState == .deleted &&
@@ -1576,7 +1673,7 @@ struct AmemeSharedSmoke {
             "local-space deletion watermark did not survive encrypted reload"
         )
 
-        print("AmemeSharedSmoke passed: encrypted local capture/reload, atomic batch import rollback, range/query surface, revision, summary, app-owned Raw-only/external-original boundary/source cascade watermark, encrypted Coverage persistence/explicit candidate acceptance/delete non-resurrection, exact-revision multi-source field evidence/recompute/reload, complete user-confirmation retention/partial-confirmation fail-closed/reload, explicit long-term Memory confirmation/revision invalidation/no resurrection, four bounded reuse journeys/content-free telemetry/revision revalidation, authenticated same-install recovery candidate/deletion-watermark/nonempty-target fail-closed/exact-confirmation activation, local-space root freeze/app-owned Raw cleanup/old-backup rejection, encrypted export recovery, structured agent experience state, delete, demo isolation, opaque incoming-share handoff, and Android/Python Local Node channel golden")
+        print("AmemeSharedSmoke passed: encrypted local capture/reload, atomic batch import rollback, range/query surface, revision, summary, app-owned Raw-only/external-original boundary/source cascade watermark, encrypted Coverage persistence/explicit candidate acceptance/delete non-resurrection, exact-revision multi-source field evidence/recompute/reload, complete user-confirmation retention/partial-confirmation fail-closed/reload, explicit long-term Memory confirmation/revision invalidation/no resurrection, four bounded reuse journeys/content-free telemetry/revision revalidation, authenticated same-install recovery candidate/deletion-watermark/nonempty-target fail-closed/exact-confirmation activation, local-space root freeze/app-owned Raw cleanup/old-backup rejection/local Agent and pending-payload convergence, encrypted export recovery, structured agent experience state, delete, demo isolation, opaque incoming-share handoff, and Android/Python Local Node channel golden")
     }
 }
 

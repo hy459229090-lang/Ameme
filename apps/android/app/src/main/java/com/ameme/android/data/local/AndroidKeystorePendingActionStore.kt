@@ -41,16 +41,26 @@ data class PendingActionSnapshot(
 class PendingActionStoreUnavailableException(message: String, cause: Throwable? = null) :
     IllegalStateException(message, cause)
 
-class AndroidKeystorePendingActionStore(context: Context) {
+class AndroidKeystorePendingActionStore(
+    context: Context,
+    rootDirectoryOverride: File? = null,
+) {
     private val appContext = context.applicationContext
-    private val rootDirectory = File(appContext.noBackupFilesDir, "pending-actions")
+    private val rootDirectory =
+        rootDirectoryOverride ?: File(appContext.noBackupFilesDir, "pending-actions")
     private val snapshotFile = File(rootDirectory, "snapshot-v1.bin")
     private val temporaryFile = File(rootDirectory, "snapshot-v1.bin.tmp")
+    private val deletionMarkerFile = File(rootDirectory, "space-deleted-v1")
+    private val deletionMarkerTemporaryFile = File(rootDirectory, "space-deleted-v1.tmp")
     private val alias = "${appContext.packageName}.pending-actions.v1"
     private val aad = "${appContext.packageName}:pending-actions:v1".toByteArray(StandardCharsets.UTF_8)
 
     @Synchronized
     fun load(): PendingActionSnapshot? {
+        if (isFrozenForDeletedSpace()) {
+            clear()
+            return null
+        }
         if (!snapshotFile.isFile) return null
         return try {
             val encrypted = snapshotFile.readBytes()
@@ -80,6 +90,9 @@ class AndroidKeystorePendingActionStore(context: Context) {
 
     @Synchronized
     fun save(snapshot: PendingActionSnapshot) {
+        check(!isFrozenForDeletedSpace()) {
+            "Pending actions are frozen because the local space is deleted"
+        }
         if (snapshot.incomingShare == null && snapshot.exportContent == null) {
             clear()
             return
@@ -98,6 +111,12 @@ class AndroidKeystorePendingActionStore(context: Context) {
         try {
             require(clear.size <= MAX_CLEAR_BYTES) { "Pending action snapshot is too large" }
             writeAtomic(encrypt(clear))
+            if (isFrozenForDeletedSpace()) {
+                clear()
+                throw PendingActionStoreUnavailableException(
+                    "Pending actions became frozen while saving",
+                )
+            }
         } catch (error: PendingActionStoreUnavailableException) {
             throw error
         } catch (error: Throwable) {
@@ -236,10 +255,52 @@ class AndroidKeystorePendingActionStore(context: Context) {
 
     @Synchronized
     fun clear() {
-        if (!snapshotFile.exists()) return
-        check(snapshotFile.delete()) { "Could not remove pending action snapshot" }
-        temporaryFile.delete()
+        rootDirectory.listFiles().orEmpty()
+            .filterNot { it == deletionMarkerFile }
+            .forEach { payload ->
+                check(payload.deleteRecursively()) {
+                    "Could not remove pending action artifact"
+                }
+            }
+        check(rootDirectory.listFiles().orEmpty().all { it == deletionMarkerFile }) {
+            "Pending action files remained after clear"
+        }
     }
+
+    @Synchronized
+    fun freezeForDeletedSpace() {
+        rootDirectory.mkdirs()
+        try {
+            FileOutputStream(deletionMarkerTemporaryFile).use { output ->
+                output.write(DELETION_MARKER_BYTES)
+                output.fd.sync()
+            }
+            try {
+                Files.move(
+                    deletionMarkerTemporaryFile.toPath(),
+                    deletionMarkerFile.toPath(),
+                    StandardCopyOption.ATOMIC_MOVE,
+                    StandardCopyOption.REPLACE_EXISTING,
+                )
+            } catch (_: AtomicMoveNotSupportedException) {
+                Files.move(
+                    deletionMarkerTemporaryFile.toPath(),
+                    deletionMarkerFile.toPath(),
+                    StandardCopyOption.REPLACE_EXISTING,
+                )
+            }
+            clear()
+            check(isFrozenForDeletedSpace()) { "Pending action deletion marker was not persisted" }
+        } catch (error: Throwable) {
+            deletionMarkerTemporaryFile.delete()
+            throw PendingActionStoreUnavailableException(
+                "Pending actions could not be frozen for deleted space",
+                error,
+            )
+        }
+    }
+
+    fun isFrozenForDeletedSpace(): Boolean = deletionMarkerFile.isFile
 
     private companion object {
         const val ANDROID_KEYSTORE = "AndroidKeyStore"
@@ -250,6 +311,8 @@ class AndroidKeystorePendingActionStore(context: Context) {
         const val SCHEMA_VERSION = 1
         const val MAX_CLEAR_BYTES = 64 * 1024 * 1024
         const val MAX_ENCRYPTED_BYTES = MAX_CLEAR_BYTES + 2 + 32 + GCM_TAG_BYTES
+        val DELETION_MARKER_BYTES = "ameme.local-space-deleted.v1\n"
+            .toByteArray(StandardCharsets.UTF_8)
         val json = Json {
             encodeDefaults = true
             ignoreUnknownKeys = false

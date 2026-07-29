@@ -31,6 +31,8 @@ import com.ameme.android.data.SourceDeletionRepository
 import com.ameme.android.data.SourceDeletionResult
 import com.ameme.android.data.LocalSpaceDeletionRepository
 import com.ameme.android.data.LocalSpaceDeletionResult
+import com.ameme.android.data.AgentAccessAuditRecord
+import com.ameme.android.data.AgentAccessAuditRepository
 import com.ameme.android.domain.CaptureKind
 import com.ameme.android.domain.DayGroup
 import com.ameme.android.domain.DaySummarySnapshot
@@ -43,6 +45,9 @@ import com.ameme.android.domain.SourceCaptureRequest
 import com.ameme.android.domain.SourceLocator
 import com.ameme.android.domain.Sensitivity
 import com.ameme.android.data.transport.AgentLocalNodeIdempotencyRegistry
+import com.ameme.android.data.transport.AgentAccessAuditAttempt
+import com.ameme.android.data.transport.AgentAccessAuditSink
+import com.ameme.android.data.transport.AgentLocalNodeControl
 import com.ameme.android.domain.PendingSourceLocatorRelease
 import java.net.URI
 import java.io.File
@@ -62,7 +67,8 @@ class LocalMemoryRepository(
     RecoveryBackupRepository,
     ReuseRepository,
     SourceDeletionRepository,
-    LocalSpaceDeletionRepository {
+    LocalSpaceDeletionRepository,
+    AgentAccessAuditRepository {
     override fun loadActiveEvents(): List<MemoryEvent> = database.readActive()
 
     override fun loadDaySummary(localDate: LocalDate): DaySummarySnapshot = database.readDaySummary(localDate)
@@ -308,6 +314,35 @@ class LocalMemoryRepository(
         )
 
     override fun close() = database.close()
+
+    override fun recentAgentAccessAudit(
+        limit: Int,
+        at: Instant,
+    ): List<AgentAccessAuditRecord> = database.recentAgentAccessAudit(limit, at)
+
+    override fun pruneExpiredAgentAccessAudit(at: Instant): Int =
+        database.pruneExpiredAgentAccessAudit(at)
+
+    internal fun durableAgentAccessAuditSink(): AgentAccessAuditSink =
+        object : AgentAccessAuditSink {
+            override fun begin(
+                control: AgentLocalNodeControl,
+                at: Instant,
+            ): AgentAccessAuditAttempt = AgentAccessAuditAttempt.from(control, at).also {
+                database.appendAgentAccessAudit(it.startedRecord())
+            }
+
+            override fun complete(
+                attempt: AgentAccessAuditAttempt,
+                resultCode: String,
+                objectCount: Int?,
+                at: Instant,
+            ) {
+                database.appendAgentAccessAudit(
+                    attempt.completedRecord(resultCode, objectCount, at),
+                )
+            }
+        }
 
     internal fun durableAgentIdempotencyRegistry(): AgentLocalNodeIdempotencyRegistry =
         object : AgentLocalNodeIdempotencyRegistry {

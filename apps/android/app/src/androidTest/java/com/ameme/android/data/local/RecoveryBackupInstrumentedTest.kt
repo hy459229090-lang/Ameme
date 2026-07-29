@@ -3,6 +3,10 @@ package com.ameme.android.data.local
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.ameme.android.data.AgentAccessAuditObjectCountBucket
+import com.ameme.android.data.AgentAccessAuditPhase
+import com.ameme.android.data.AgentAccessAuditPolicy
+import com.ameme.android.data.AgentAccessAuditRecord
 import com.ameme.android.domain.FactStatus
 import com.ameme.android.domain.MemoryEvent
 import com.ameme.android.data.RecoveryActivationAuthorization
@@ -14,6 +18,8 @@ import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneOffset
 import java.util.UUID
+import javax.crypto.Mac
+import javax.crypto.spec.SecretKeySpec
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -190,6 +196,7 @@ class RecoveryBackupInstrumentedTest {
             assertTrue(migrated.hasMigration(11))
             assertTrue(migrated.hasMigration(12))
             assertTrue(migrated.hasMigration(13))
+            assertTrue(migrated.hasMigration(14))
             assertEquals("event_v8_survivor", migrated.readActive().single().id)
             assertNotNull(migrated.deletionWatermarkDigest())
         }
@@ -323,6 +330,167 @@ class RecoveryBackupInstrumentedTest {
         }
     }
 
+    @Test fun activationPreservesPostBackupAgentAuditAndMergeFailureLeavesLiveLedger() {
+        val root = newRoot()
+        val databaseFile = File(root, "live/events.db")
+        val backupDirectory = File(root, "backup")
+        val candidateDirectory = File(root, "candidate")
+        val backupAt = Instant.parse("2026-07-29T08:00:00Z")
+        val activatedAt = backupAt.plusSeconds(120)
+        val traceId = "trace_00000000-0000-4000-8000-000000000110"
+        val preBackupStart = auditRecord(
+            auditId = "audit_00000000-0000-4000-8000-000000000111",
+            traceId = traceId,
+            phase = AgentAccessAuditPhase.Started,
+            resultCode = AgentAccessAuditPolicy.RESULT_STARTED,
+            at = backupAt.minusSeconds(10),
+        )
+        val postBackupCompletion = auditRecord(
+            auditId = "audit_00000000-0000-4000-8000-000000000112",
+            traceId = traceId,
+            phase = AgentAccessAuditPhase.Completed,
+            resultCode = AgentAccessAuditPolicy.RESULT_OK,
+            at = backupAt.plusSeconds(10),
+        )
+        val postBackupStart = auditRecord(
+            auditId = "audit_00000000-0000-4000-8000-000000000113",
+            traceId = "trace_00000000-0000-4000-8000-000000000114",
+            phase = AgentAccessAuditPhase.Started,
+            resultCode = AgentAccessAuditPolicy.RESULT_STARTED,
+            at = backupAt.plusSeconds(20),
+        )
+
+        val manifest = LocalEventDatabase.open(
+            databaseFile,
+            keyProvider,
+            SPACE_ID,
+        ).use { database ->
+            database.appendAgentAccessAudit(preBackupStart)
+            database.createLocalRecoveryBackup(backupDirectory, backupAt)
+        }
+        val candidate = LocalRecoveryBackup.restoreCandidate(
+            backupDirectory = backupDirectory,
+            destinationDirectory = candidateDirectory,
+            keyProvider = keyProvider,
+            authoritativeWatermarks = emptyList(),
+        )
+        LocalEventDatabase.open(databaseFile, keyProvider, SPACE_ID).use { live ->
+            live.appendAgentAccessAudit(postBackupCompletion)
+            live.appendAgentAccessAudit(postBackupStart)
+        }
+
+        val authorization = authorization(manifest.backupId, activatedAt)
+        val mergeFailure = LocalRecoveryActivationCoordinator(
+            keyProvider = keyProvider,
+            clock = Clock.fixed(activatedAt, ZoneOffset.UTC),
+        ).apply {
+            failureInjector = { phase ->
+                if (
+                    phase ==
+                    LocalRecoveryActivationCoordinator.RecoveryActivationPhase.AgentAccessAuditMerged
+                ) {
+                    error("injected Agent access audit merge failure")
+                }
+            }
+        }
+        assertThrows(IllegalStateException::class.java) {
+            mergeFailure.activate(
+                candidate = candidate,
+                liveDatabaseFile = databaseFile,
+                authorization = authorization,
+                authoritativeWatermarks = emptyList(),
+            )
+        }
+        LocalEventDatabase.open(databaseFile, keyProvider, SPACE_ID).use { unchanged ->
+            assertEquals(
+                setOf(
+                    preBackupStart.auditId,
+                    postBackupCompletion.auditId,
+                    postBackupStart.auditId,
+                ),
+                unchanged.recentAgentAccessAudit(limit = 10, at = activatedAt)
+                    .map(AgentAccessAuditRecord::auditId)
+                    .toSet(),
+            )
+        }
+        assertFalse(File(databaseFile.parentFile, ".${databaseFile.name}.recovery-stage").exists())
+        assertFalse(File(databaseFile.parentFile, ".${databaseFile.name}.recovery-journal").exists())
+        listOf("-wal", "-shm", "-journal").forEach { suffix ->
+            assertFalse(
+                File(
+                    databaseFile.parentFile,
+                    ".${databaseFile.name}.recovery-stage$suffix",
+                ).exists(),
+            )
+        }
+
+        val receipt = LocalRecoveryActivationCoordinator(
+            keyProvider = keyProvider,
+            clock = Clock.fixed(activatedAt, ZoneOffset.UTC),
+        ).activate(
+            candidate = candidate,
+            liveDatabaseFile = databaseFile,
+            authorization = authorization,
+            authoritativeWatermarks = emptyList(),
+        )
+        assertFalse(receipt.cleanupPending)
+        LocalEventDatabase.open(databaseFile, keyProvider, SPACE_ID).use { activated ->
+            val merged = activated.recentAgentAccessAudit(limit = 10, at = activatedAt)
+            assertEquals(
+                setOf(
+                    preBackupStart.auditId,
+                    postBackupCompletion.auditId,
+                    postBackupStart.auditId,
+                ),
+                merged.map(AgentAccessAuditRecord::auditId).toSet(),
+            )
+            assertEquals(1, merged.count { it.auditId == preBackupStart.auditId })
+        }
+    }
+
+    @Test fun preparedRecoveryRemovesOrphanedAuditMergeSidecarsBeforeRestoringLive() {
+        val root = newRoot()
+        val databaseFile = File(root, "live/events.db")
+        val event = event("event_recovery_prepared_sidecars")
+        LocalEventDatabase.open(databaseFile, keyProvider, SPACE_ID).use { database ->
+            database.insertCaptured(event)
+        }
+        val rollback = File(databaseFile.parentFile, ".${databaseFile.name}.recovery-rollback")
+        val staged = File(databaseFile.parentFile, ".${databaseFile.name}.recovery-stage")
+        val journal = File(databaseFile.parentFile, ".${databaseFile.name}.recovery-journal")
+        assertTrue(databaseFile.renameTo(rollback))
+        rollback.copyTo(databaseFile)
+        staged.writeBytes(byteArrayOf(1, 2, 3))
+        listOf("-wal", "-shm", "-journal").forEach { suffix ->
+            File("${staged.path}$suffix").writeBytes(byteArrayOf(4, 5, 6))
+            File("${databaseFile.path}$suffix").writeBytes(byteArrayOf(7, 8, 9))
+        }
+        writePreparedJournal(
+            journal = journal,
+            confirmationId =
+                RecoveryActivationAuthorization.CONFIRMATION_PREFIX +
+                    "00000000-0000-4000-8000-000000000120",
+            backupId = "backup_00000000-0000-4000-8000-000000000121",
+        )
+
+        assertTrue(
+            LocalRecoveryActivationCoordinator.recoverInterruptedActivation(
+                databaseFile,
+                keyProvider,
+            ),
+        )
+        assertFalse(rollback.exists())
+        assertFalse(staged.exists())
+        assertFalse(journal.exists())
+        listOf("-wal", "-shm", "-journal").forEach { suffix ->
+            assertFalse(File("${staged.path}$suffix").exists())
+            assertFalse(File("${databaseFile.path}$suffix").exists())
+        }
+        LocalEventDatabase.open(databaseFile, keyProvider, SPACE_ID).use { recovered ->
+            assertEquals(event.id, recovered.readActive().single().id)
+        }
+    }
+
     private fun authorization(
         backupId: String,
         activatedAt: Instant,
@@ -343,6 +511,50 @@ class RecoveryBackupInstrumentedTest {
         factStatus = FactStatus.Confirmed,
         sourceLabel = "instrumented-test",
     )
+
+    private fun auditRecord(
+        auditId: String,
+        traceId: String,
+        phase: AgentAccessAuditPhase,
+        resultCode: String,
+        at: Instant,
+    ) = AgentAccessAuditRecord(
+        auditId = auditId,
+        traceId = traceId,
+        phase = phase,
+        callerId = "agent_synthetic",
+        purpose = "autonomous_memory",
+        spaces = listOf(SPACE_ID),
+        dataTypes = listOf("event"),
+        operation = "visible_events",
+        resultCode = resultCode,
+        objectCountBucket = if (phase == AgentAccessAuditPhase.Started) {
+            AgentAccessAuditObjectCountBucket.Unknown
+        } else {
+            AgentAccessAuditObjectCountBucket.One
+        },
+        occurredAt = at,
+        retentionUntil = at.plus(AgentAccessAuditPolicy.retention),
+    )
+
+    private fun writePreparedJournal(
+        journal: File,
+        confirmationId: String,
+        backupId: String,
+    ) {
+        val fields = listOf(
+            "ameme-local-recovery-activation-v1",
+            "Prepared",
+            confirmationId,
+            backupId,
+        )
+        val mac = Mac.getInstance("HmacSHA256").run {
+            init(SecretKeySpec(key, "HmacSHA256"))
+            doFinal(fields.joinToString("\u001f").toByteArray())
+                .joinToString("") { "%02x".format(it) }
+        }
+        journal.writeText((fields + mac).joinToString("\n", postfix = "\n"))
+    }
 
     private fun newRoot(): File {
         val root = File(context.cacheDir, "ameme-recovery-${UUID.randomUUID()}")

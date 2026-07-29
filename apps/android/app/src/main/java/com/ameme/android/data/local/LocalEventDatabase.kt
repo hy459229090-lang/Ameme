@@ -61,6 +61,7 @@ import com.ameme.android.data.SourceDeletionResult
 import com.ameme.android.data.SourceDeletionStatus
 import com.ameme.android.data.LocalSpaceDeletionResult
 import com.ameme.android.data.LocalSpaceDeletionStatus
+import com.ameme.android.data.AgentAccessAuditRecord
 import com.ameme.android.coverage.CandidateEventType
 import com.ameme.android.coverage.CoverageFactStatus
 import com.ameme.android.coverage.EvidenceField
@@ -90,6 +91,16 @@ class LocalEventDatabase private constructor(
     private val coveragePersistence = LocalCoveragePersistence(database, spaceId)
     private val longTermMemoryPersistence = LocalLongTermMemoryPersistence(database, spaceId)
     private val reusePersistence = LocalReusePersistence(database, spaceId)
+    private val agentAccessAuditPersistence = LocalAgentAccessAuditPersistence(database)
+
+    internal fun appendAgentAccessAudit(record: AgentAccessAuditRecord) =
+        agentAccessAuditPersistence.append(record)
+
+    fun recentAgentAccessAudit(limit: Int, at: Instant): List<AgentAccessAuditRecord> =
+        agentAccessAuditPersistence.recent(limit, at)
+
+    fun pruneExpiredAgentAccessAudit(at: Instant): Int =
+        agentAccessAuditPersistence.pruneExpired(at)
 
     fun seedIfEmpty(events: List<MemoryEvent>) {
         if (currentRowCount() != 0L) return
@@ -2810,7 +2821,8 @@ class LocalEventDatabase private constructor(
     }
 
     companion object {
-        const val SCHEMA_VERSION = 13
+        const val SCHEMA_VERSION = 14
+        const val USER_CONFIRMATION_SCHEMA_VERSION = 13
         const val FIELD_EVIDENCE_SCHEMA_VERSION = 12
         const val SOURCE_DELETION_SCHEMA_VERSION = 11
         const val REUSE_SCHEMA_VERSION = 10
@@ -2914,7 +2926,13 @@ class LocalEventDatabase private constructor(
                         "create_v12_field_evidence",
                     )
                     createUserConfirmationTables(database)
-                    recordMigration(database, SCHEMA_VERSION, "create_v13_user_confirmation_provenance")
+                    recordMigration(
+                        database,
+                        USER_CONFIRMATION_SCHEMA_VERSION,
+                        "create_v13_user_confirmation_provenance",
+                    )
+                    createAgentAccessAuditTables(database)
+                    recordMigration(database, SCHEMA_VERSION, "create_v14_agent_access_audit")
                     database.version = SCHEMA_VERSION
                 }
                 1 -> {
@@ -3017,8 +3035,12 @@ class LocalEventDatabase private constructor(
                     migrateV12ToV13(database)
                 }
                 FIELD_EVIDENCE_SCHEMA_VERSION -> migrateV12ToV13(database)
+                USER_CONFIRMATION_SCHEMA_VERSION -> Unit
                 SCHEMA_VERSION -> Unit
                 else -> error("Unsupported local event schema version ${database.version}")
+            }
+            if (database.version == USER_CONFIRMATION_SCHEMA_VERSION) {
+                migrateV13ToV14(database)
             }
         }
 
@@ -3158,7 +3180,17 @@ class LocalEventDatabase private constructor(
 
         private fun migrateV12ToV13(database: SQLiteDatabase) = inMigration(database) {
             createUserConfirmationTables(database)
-            recordMigration(database, SCHEMA_VERSION, "migrate_v12_to_v13_user_confirmation_provenance")
+            recordMigration(
+                database,
+                USER_CONFIRMATION_SCHEMA_VERSION,
+                "migrate_v12_to_v13_user_confirmation_provenance",
+            )
+            database.version = USER_CONFIRMATION_SCHEMA_VERSION
+        }
+
+        private fun migrateV13ToV14(database: SQLiteDatabase) = inMigration(database) {
+            createAgentAccessAuditTables(database)
+            recordMigration(database, SCHEMA_VERSION, "migrate_v13_to_v14_agent_access_audit")
             database.version = SCHEMA_VERSION
         }
 
@@ -3573,6 +3605,73 @@ class LocalEventDatabase private constructor(
                          NEW.deleted_at IS NULL
                     BEGIN
                         SELECT RAISE(ABORT, 'event user confirmation update must be terminal');
+                    END
+                """.trimIndent(),
+            )
+        }
+
+        private fun createAgentAccessAuditTables(database: SQLiteDatabase) {
+            database.execSQL(
+                """
+                    CREATE TABLE IF NOT EXISTS ${LocalAgentAccessAuditPersistence.TABLE} (
+                        audit_id TEXT PRIMARY KEY NOT NULL,
+                        trace_id TEXT NOT NULL,
+                        phase TEXT NOT NULL,
+                        caller_id TEXT NOT NULL,
+                        purpose TEXT NOT NULL,
+                        spaces_json TEXT NOT NULL,
+                        data_types_json TEXT NOT NULL,
+                        operation TEXT NOT NULL,
+                        result_code TEXT NOT NULL,
+                        object_count_bucket TEXT NOT NULL,
+                        occurred_at INTEGER NOT NULL,
+                        retention_until INTEGER NOT NULL,
+                        UNIQUE(trace_id, phase),
+                        CHECK(phase IN ('Started', 'Completed')),
+                        CHECK(length(caller_id) BETWEEN 1 AND 128),
+                        CHECK(length(purpose) BETWEEN 1 AND 128),
+                        CHECK(length(spaces_json) BETWEEN 3 AND 4096),
+                        CHECK(length(data_types_json) BETWEEN 3 AND 4096),
+                        CHECK(length(operation) BETWEEN 1 AND 128),
+                        CHECK(length(result_code) BETWEEN 2 AND 64),
+                        CHECK(
+                            object_count_bucket IN (
+                                '0', '1', '2_10', '11_100', '101_plus', 'unknown'
+                            )
+                        ),
+                        CHECK(retention_until > occurred_at)
+                    )
+                """.trimIndent(),
+            )
+            database.execSQL(
+                """
+                    CREATE INDEX IF NOT EXISTS idx_agent_access_audit_recent
+                    ON ${LocalAgentAccessAuditPersistence.TABLE}(occurred_at DESC, audit_id DESC)
+                """.trimIndent(),
+            )
+            database.execSQL(
+                """
+                    CREATE INDEX IF NOT EXISTS idx_agent_access_audit_caller
+                    ON ${LocalAgentAccessAuditPersistence.TABLE}(caller_id, occurred_at DESC)
+                """.trimIndent(),
+            )
+            database.execSQL(
+                """
+                    CREATE TRIGGER IF NOT EXISTS agent_access_audit_no_update
+                    BEFORE UPDATE ON ${LocalAgentAccessAuditPersistence.TABLE}
+                    BEGIN
+                        SELECT RAISE(ABORT, 'agent access audit is append-only');
+                    END
+                """.trimIndent(),
+            )
+            database.execSQL(
+                """
+                    CREATE TRIGGER IF NOT EXISTS agent_access_audit_no_early_delete
+                    BEFORE DELETE ON ${LocalAgentAccessAuditPersistence.TABLE}
+                    WHEN OLD.retention_until >
+                        (CAST(strftime('%s', 'now') AS INTEGER) * 1000)
+                    BEGIN
+                        SELECT RAISE(ABORT, 'agent access audit retention has not expired');
                     END
                 """.trimIndent(),
             )

@@ -150,7 +150,7 @@ class LocalCoveragePersistenceInstrumentedTest {
         }
 
         open(file).use { migrated ->
-            assertEquals(13, LocalEventDatabase.SCHEMA_VERSION)
+            assertEquals(14, LocalEventDatabase.SCHEMA_VERSION)
             assertEquals(created.id, migrated.loadActiveEvents().single().id)
             assertNotNull(migrated.loadDaySummary(created.localDate))
         }
@@ -166,6 +166,7 @@ class LocalCoveragePersistenceInstrumentedTest {
             assertTrue(it.hasMigration(11))
             assertTrue(it.hasMigration(12))
             assertTrue(it.hasMigration(13))
+            assertTrue(it.hasMigration(14))
         }
     }
 

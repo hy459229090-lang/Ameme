@@ -4,6 +4,7 @@ import com.ameme.android.data.MemoryRepository
 import com.ameme.android.data.AgentCaptureUndoConflictException
 import com.ameme.android.data.AgentCaptureUndoResult
 import com.ameme.android.data.AgentCaptureUndoTarget
+import com.ameme.android.data.AgentAccessAuditPolicy
 import com.ameme.android.domain.FactStatus
 import com.ameme.android.domain.EventType
 import com.ameme.android.domain.EvidenceState
@@ -118,15 +119,68 @@ class MemoryRepositoryAgentLocalNodeEndpoint private constructor(
     private val repositorySpaceId: String?,
     private val verifiedSession: VerifiedAgentLocalNodeSession?,
     private val idempotencyRegistry: AgentLocalNodeIdempotencyRegistry?,
+    private val accessAuditSink: AgentAccessAuditSink?,
     private val clock: Clock,
 ) : AgentLocalNodeTransport {
     override suspend fun exchange(request: AgentLocalNodeRequest): AgentLocalNodeResponse {
+        try {
+            val control = request.control
+            val sink = accessAuditSink
+                ?: return error(request, AgentLocalNodeErrorCode.AUTH_REQUIRED)
+            val attempt = try {
+                sink.begin(control, clock.instant())
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                return error(request, AgentLocalNodeErrorCode.TEMPORARILY_UNAVAILABLE)
+            }
+
+            val outcome = try {
+                executeRequest(request)
+            } catch (cancelled: CancellationException) {
+                runCatching {
+                    sink.complete(
+                        attempt = attempt,
+                        resultCode = RESULT_CANCELLED,
+                        objectCount = null,
+                        at = clock.instant(),
+                    )
+                }
+                throw cancelled
+            } catch (_: Exception) {
+                EndpointOutcome(
+                    response = error(request, AgentLocalNodeErrorCode.TEMPORARILY_UNAVAILABLE),
+                    objectCount = null,
+                )
+            }
+
+            try {
+                sink.complete(
+                    attempt = attempt,
+                    resultCode = outcome.resultCode,
+                    objectCount = outcome.objectCount,
+                    at = clock.instant(),
+                )
+            } catch (cancelled: CancellationException) {
+                outcome.response.close()
+                throw cancelled
+            } catch (_: Exception) {
+                outcome.response.close()
+                return error(request, AgentLocalNodeErrorCode.TEMPORARILY_UNAVAILABLE)
+            }
+            return outcome.response
+        } finally {
+            request.close()
+        }
+    }
+
+    private fun executeRequest(request: AgentLocalNodeRequest): EndpointOutcome {
         var payloadBytes: ByteArray? = null
         try {
             val control = request.control
-            authorizationError(control)?.let { return error(request, it) }
+            authorizationError(control)?.let { return outcome(error(request, it)) }
             if (control.operation !in IMPLEMENTED_OPERATIONS) {
-                return error(request, AgentLocalNodeErrorCode.OPERATION_UNSUPPORTED)
+                return outcome(error(request, AgentLocalNodeErrorCode.OPERATION_UNSUPPORTED))
             }
 
             payloadBytes = request.payloadCopy()
@@ -148,34 +202,31 @@ class MemoryRepositoryAgentLocalNodeEndpoint private constructor(
                         AgentLocalNodeDecodedCommand.Visible(
                             AgentLocalNodeApplicationCodec.decodeVisibleEvents(payloadBytes),
                         )
-                    else -> return error(request, AgentLocalNodeErrorCode.OPERATION_UNSUPPORTED)
+                    else -> return outcome(
+                        error(request, AgentLocalNodeErrorCode.OPERATION_UNSUPPORTED),
+                    )
                 }
             } catch (_: AgentLocalNodePayloadTooLargeException) {
-                return error(request, AgentLocalNodeErrorCode.PAYLOAD_TOO_LARGE)
+                return outcome(error(request, AgentLocalNodeErrorCode.PAYLOAD_TOO_LARGE))
             } catch (_: IllegalArgumentException) {
-                return error(request, AgentLocalNodeErrorCode.INVALID_REQUEST)
+                return outcome(error(request, AgentLocalNodeErrorCode.INVALID_REQUEST))
             }
             if (!AgentLocalNodeApplicationCodec.digestMatches(payloadBytes, control.payloadDigest)) {
-                return error(request, AgentLocalNodeErrorCode.PAYLOAD_DIGEST_MISMATCH)
+                return outcome(error(request, AgentLocalNodeErrorCode.PAYLOAD_DIGEST_MISMATCH))
             }
 
             return when (decoded) {
                 is AgentLocalNodeDecodedCommand.Create ->
-                    createEvent(request, decoded.command)
+                    outcome(createEvent(request, decoded.command))
                 is AgentLocalNodeDecodedCommand.Append ->
-                    appendRevision(request, decoded.command)
+                    outcome(appendRevision(request, decoded.command))
                 is AgentLocalNodeDecodedCommand.Undo ->
-                    undoCapture(request, decoded.command)
+                    outcome(undoCapture(request, decoded.command))
                 is AgentLocalNodeDecodedCommand.Visible ->
                     visibleEvents(request, decoded.command)
             }
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (_: Exception) {
-            return error(request, AgentLocalNodeErrorCode.TEMPORARILY_UNAVAILABLE)
         } finally {
             payloadBytes?.fill(0)
-            request.close()
         }
     }
 
@@ -311,26 +362,26 @@ class MemoryRepositoryAgentLocalNodeEndpoint private constructor(
     private fun visibleEvents(
         request: AgentLocalNodeRequest,
         command: AgentLocalNodeVisibleEventsPayload,
-    ): AgentLocalNodeResponse {
+    ): EndpointOutcome {
         val spaces = command.spaces.toSet()
         val memoryTypes = command.memoryTypes.toSet()
         if (request.control.spaces != spaces || request.control.memoryTypes != memoryTypes) {
-            return error(request, AgentLocalNodeErrorCode.SCOPE_MISMATCH)
+            return outcome(error(request, AgentLocalNodeErrorCode.SCOPE_MISMATCH))
         }
         if (spaces != setOf(requireNotNull(repositorySpaceId))) {
-            return error(request, AgentLocalNodeErrorCode.SPACE_DENIED)
+            return outcome(error(request, AgentLocalNodeErrorCode.SPACE_DENIED))
         }
         if (memoryTypes != setOf(MEMORY_TYPE_EVENT)) {
-            return error(request, AgentLocalNodeErrorCode.DATA_TYPE_DENIED)
+            return outcome(error(request, AgentLocalNodeErrorCode.DATA_TYPE_DENIED))
         }
         val session = requireNotNull(verifiedSession)
         if ("structured" !in session.allowedDataClasses) {
-            return error(request, AgentLocalNodeErrorCode.DATA_TYPE_DENIED)
+            return outcome(error(request, AgentLocalNodeErrorCode.DATA_TYPE_DENIED))
         }
         val allowedSensitivities = Sensitivity.entries
             .filterTo(mutableSetOf()) { it.wireValue in session.allowedSensitivities }
         if (allowedSensitivities.isEmpty()) {
-            return error(request, AgentLocalNodeErrorCode.DATA_TYPE_DENIED)
+            return outcome(error(request, AgentLocalNodeErrorCode.DATA_TYPE_DENIED))
         }
         val result = requireNotNull(repository).readAgentVisibleEvents(
             query = command.query.orEmpty(),
@@ -341,12 +392,17 @@ class MemoryRepositoryAgentLocalNodeEndpoint private constructor(
             allowHighRisk = command.allowHighRisk,
             limit = command.limit,
         )
-        return visibleSuccess(
-            request,
-            AgentLocalNodeVisibleEventsResult(
-                events = result.events.map { it.toAgentLocalNodeEventView(requireNotNull(repositorySpaceId)) },
-                riskFiltered = result.riskFiltered,
+        return outcome(
+            response = visibleSuccess(
+                request,
+                AgentLocalNodeVisibleEventsResult(
+                    events = result.events.map {
+                        it.toAgentLocalNodeEventView(requireNotNull(repositorySpaceId))
+                    },
+                    riskFiltered = result.riskFiltered,
+                ),
             ),
+            successfulObjectCount = result.events.size,
         )
     }
 
@@ -388,7 +444,12 @@ class MemoryRepositoryAgentLocalNodeEndpoint private constructor(
 
     private fun authorizationError(control: AgentLocalNodeControl): AgentLocalNodeErrorCode? {
         val session = verifiedSession ?: return AgentLocalNodeErrorCode.AUTH_REQUIRED
-        if (repository == null || repositorySpaceId == null || idempotencyRegistry == null) {
+        if (
+            repository == null ||
+            repositorySpaceId == null ||
+            idempotencyRegistry == null ||
+            accessAuditSink == null
+        ) {
             return AgentLocalNodeErrorCode.AUTH_REQUIRED
         }
         if (control.callerId != session.callerId || control.grantId != session.grantId) {
@@ -528,6 +589,25 @@ class MemoryRepositoryAgentLocalNodeEndpoint private constructor(
         error = AgentLocalNodeError(code),
     )
 
+    private fun outcome(
+        response: AgentLocalNodeResponse,
+        successfulObjectCount: Int = 1,
+    ): EndpointOutcome = EndpointOutcome(
+        response = response,
+        objectCount = if (response.status == AgentLocalNodeStatus.Ok) successfulObjectCount else 0,
+    )
+
+    private data class EndpointOutcome(
+        val response: AgentLocalNodeResponse,
+        val objectCount: Int?,
+    ) {
+        val resultCode: String
+            get() = when (response.status) {
+                AgentLocalNodeStatus.Ok -> AgentAccessAuditPolicy.RESULT_OK
+                AgentLocalNodeStatus.Error -> requireNotNull(response.error).code.name
+            }
+    }
+
     companion object {
         const val PURPOSE_AUTONOMOUS_MEMORY = "autonomous_memory"
         const val OPERATION_CREATE_EVENT = "create_event"
@@ -544,10 +624,11 @@ class MemoryRepositoryAgentLocalNodeEndpoint private constructor(
         )
         private const val FIRST_REVISION = 1
         private const val MAX_TITLE_CHARS = 240
+        private const val RESULT_CANCELLED = "CANCELLED"
 
         /** Production-safe default until authentication and durable idempotency are accepted. */
         fun closed(clock: Clock = Clock.systemUTC()): MemoryRepositoryAgentLocalNodeEndpoint =
-            MemoryRepositoryAgentLocalNodeEndpoint(null, null, null, null, clock)
+            MemoryRepositoryAgentLocalNodeEndpoint(null, null, null, null, null, clock)
 
         /** Test/spike seam; intentionally not wired into the Android production application. */
         internal fun enabledForVerifiedSession(
@@ -555,6 +636,7 @@ class MemoryRepositoryAgentLocalNodeEndpoint private constructor(
             repositorySpaceId: String,
             verifiedSession: VerifiedAgentLocalNodeSession,
             idempotencyRegistry: AgentLocalNodeIdempotencyRegistry,
+            accessAuditSink: AgentAccessAuditSink,
             clock: Clock = Clock.systemUTC(),
         ): MemoryRepositoryAgentLocalNodeEndpoint {
             require(repositorySpaceId.isNotBlank()) { "repositorySpaceId must not be blank" }
@@ -563,6 +645,7 @@ class MemoryRepositoryAgentLocalNodeEndpoint private constructor(
                 repositorySpaceId,
                 verifiedSession,
                 idempotencyRegistry,
+                accessAuditSink,
                 clock,
             )
         }

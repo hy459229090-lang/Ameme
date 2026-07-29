@@ -35,7 +35,12 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.navArgument
 import com.ameme.android.data.MemoryRepository
 import com.ameme.android.data.MemoryIoExecutor
+import com.ameme.android.data.AgentAccessAuditRecord
+import com.ameme.android.data.AgentAccessAuditRepository
 import com.ameme.android.data.FakeMemoryRepository
+import com.ameme.android.data.LocalSpaceDeletionConvergenceCoordinator
+import com.ameme.android.data.LocalSpaceDeletionConvergenceStatus
+import com.ameme.android.data.LocalSpaceDeletionConvergenceStep
 import com.ameme.android.data.StructuredExportWriter
 import com.ameme.android.data.UnavailableMemoryRepository
 import com.ameme.android.data.runCatchingCancellable
@@ -159,12 +164,98 @@ fun AmemeApp(
     var agentRuntimeState by remember { mutableStateOf(AgentLocalNodeRuntimeState.Stopped) }
     var pairingInFlight by remember { mutableStateOf(false) }
     var pairingGeneration by remember { mutableIntStateOf(0) }
+    var localSpaceDeleted by rememberSaveable(repositoryOverride) { mutableStateOf(false) }
+    var localSpaceDeletionInFlight by remember { mutableStateOf(false) }
+    var localSpaceDeletionNeedsRetry by remember { mutableStateOf(false) }
     var pendingExportContent by remember { mutableStateOf<String?>(null) }
     var exportInFlight by remember { mutableStateOf(false) }
     var pendingIncomingShare by remember { mutableStateOf<SourceCaptureRequest?>(null) }
     var incomingShareInFlight by remember { mutableStateOf(false) }
     var experienceModeName by rememberSaveable {
         mutableStateOf(if (repositoryOverride == null) ExperienceMode.Loading.name else ExperienceMode.Ready.name)
+    }
+
+    suspend fun convergeLocalSpaceDeletion(
+        localRepository: LocalMemoryRepository,
+        requestedAt: Instant,
+    ) = LocalSpaceDeletionConvergenceCoordinator(
+        spaceId = LocalEventDatabase.DEFAULT_SPACE_ID,
+        stopIncomingAgentRuntime = {
+            agentRuntime?.let { runtime ->
+                check(ioExecutor.runSourceIo(runtime::closeAndAwait)) {
+                    "Agent runtime did not stop before the local-space deletion boundary"
+                }
+            }
+            agentRuntime = null
+            agentRuntimeState = AgentLocalNodeRuntimeState.Stopped
+        },
+        deleteLocalSpace = { at ->
+            ioExecutor.runSourceIo { localRepository.deleteLocalSpace(at) }
+        },
+        revokeStoredAgentPairing = {
+            ioExecutor.runSourceIo { pairingManager.revoke() }
+        },
+        closeOutgoingAgentTransport = {
+            pairingExperienceConnection?.let { connected ->
+                if (!connected.simulated) {
+                    requireNotNull(pairingExperienceConnector).disconnect(connected)
+                }
+            }
+        },
+        clearStoredConnectionMetadata = {
+            ioExecutor.runSourceIo { pairingExperienceStore.clear() }
+        },
+        freezePendingActionResurrection = {
+            ioExecutor.runSourceIo { pendingActionStore.freezeForDeletedSpace() }
+        },
+        clearPendingActionSnapshot = {
+            ioExecutor.runSourceIo { pendingActionStore.clear() }
+        },
+    ).delete(requestedAt)
+
+    fun applyLocalSpaceDeletionConvergence(
+        result: com.ameme.android.data.LocalSpaceDeletionConvergenceResult,
+    ) {
+        if (LocalSpaceDeletionConvergenceStep.StoredAgentPairingRevocation in result.completedSteps) {
+            agentPairingMaterial = null
+            createdAgentPairing = null
+            createdAgentPairingQrPayload = null
+            createdAgentPairingQrExpiresAt = null
+            pairingGeneration += 1
+        }
+        if (LocalSpaceDeletionConvergenceStep.StoredConnectionMetadataClear in result.completedSteps) {
+            pairingExperienceConnection = null
+        }
+        if (LocalSpaceDeletionConvergenceStep.PendingActionSnapshotClear in result.completedSteps) {
+            pendingIncomingShare = null
+            pendingExportContent = null
+        }
+        val spaceRemainsFrozen = localSpaceDeleted || result.localSpaceFrozen
+        localSpaceDeleted = spaceRemainsFrozen
+        localSpaceDeletionNeedsRetry =
+            result.status == LocalSpaceDeletionConvergenceStatus.PendingLocalRetry
+        if (spaceRemainsFrozen) {
+            events.clear()
+            daySummary = DaySummarySnapshot(
+                LocalDate.now(),
+                0,
+                emptyList(),
+                DaySummaryState.Insufficient,
+            )
+            demoMode = false
+            experienceModeName = ExperienceMode.RecoverableError.name
+        }
+        persistenceError = when (result.status) {
+            LocalSpaceDeletionConvergenceStatus.CompletedLocalOnly ->
+                "本机 Personal 空间已删除；本机 Agent、连接状态和待处理快照已收敛。账号、系统原件和其他设备不在此次删除范围内。"
+            LocalSpaceDeletionConvergenceStatus.PendingExternalCleanup ->
+                "本机 Personal 空间已冻结且本机授权已收敛；仍有系统来源授权等待释放，外部原件不会由 Ameme 删除。"
+            LocalSpaceDeletionConvergenceStatus.PendingLocalRetry -> if (spaceRemainsFrozen) {
+                "本机 Personal 空间已冻结；仍有 ${result.pendingRetrySteps.size} 个本机清理步骤待重试。账号和对端删除未被宣称完成。"
+            } else {
+                "本机 Space 删除尚未持久化；已尝试停止本机 Agent 与清理待处理快照，请重试并核对未完成步骤。"
+            }
+        }
     }
 
     LaunchedEffect(pendingActionStore) {
@@ -196,15 +287,43 @@ fun AmemeApp(
                     )
                 }.also { unclaimedRepository = it }
             }
-            val restored = ioExecutor.loadActiveEvents(readyRepository)
+            val deletedLocalRepository = (readyRepository as? LocalMemoryRepository)
+                ?.takeIf { ioExecutor.runSourceIo(it::isLocalSpaceDeleted) }
+            val restored = if (deletedLocalRepository == null) {
+                ioExecutor.loadActiveEvents(readyRepository)
+            } else {
+                emptyList()
+            }
             currentCoroutineContext().ensureActive()
             events.clear()
             events.addAll(restored)
-            daySummary = ioExecutor.loadDaySummary(readyRepository, LocalDate.now())
+            daySummary = if (deletedLocalRepository == null) {
+                ioExecutor.loadDaySummary(readyRepository, LocalDate.now())
+            } else {
+                DaySummarySnapshot(
+                    LocalDate.now(),
+                    0,
+                    emptyList(),
+                    DaySummaryState.Insufficient,
+                )
+            }
+            deletedLocalRepository?.let {
+                localSpaceDeleted = true
+                applyLocalSpaceDeletionConvergence(
+                    convergeLocalSpaceDeletion(it, Instant.now()),
+                )
+            }
             unclaimedRepository = null
             repository = readyRepository
-            persistenceError = null
-            if (experienceModeName == ExperienceMode.Loading.name) {
+            if (deletedLocalRepository == null) {
+                localSpaceDeleted = false
+                localSpaceDeletionNeedsRetry = false
+                persistenceError = null
+            }
+            if (
+                deletedLocalRepository == null &&
+                experienceModeName == ExperienceMode.Loading.name
+            ) {
                 experienceModeName = ExperienceMode.Ready.name
             }
         } catch (cancelled: CancellationException) {
@@ -230,12 +349,12 @@ fun AmemeApp(
             ownedRepository?.let(ioExecutor::closeInBackground)
         }
     }
-    LaunchedEffect(repository, pairingGeneration) {
+    LaunchedEffect(repository, pairingGeneration, localSpaceDeleted) {
         agentRuntime?.close()
         agentRuntime = null
         agentRuntimeState = AgentLocalNodeRuntimeState.Stopped
         val localRepository = repository as? LocalMemoryRepository
-        if (localRepository == null) {
+        if (localRepository == null || localSpaceDeleted) {
             agentPairingMaterial = null
             return@LaunchedEffect
         }
@@ -281,7 +400,11 @@ fun AmemeApp(
         val ownedRuntime = agentRuntime
         onDispose { ownedRuntime?.close() }
     }
-    val baseExperienceMode = ExperienceMode.valueOf(experienceModeName)
+    val baseExperienceMode = if (localSpaceDeleted) {
+        ExperienceMode.RecoverableError
+    } else {
+        ExperienceMode.valueOf(experienceModeName)
+    }
     val experienceMode = baseExperienceMode.resolvedFor(
         eventCount = events.size,
         deriveFromEvents = repositoryOverride == null,
@@ -657,6 +780,33 @@ fun AmemeApp(
             )
         }
         composable(Routes.Settings) {
+            val auditRepository = repository as? AgentAccessAuditRepository
+            var agentAccessAuditRecords by remember(auditRepository) {
+                mutableStateOf(emptyList<AgentAccessAuditRecord>())
+            }
+            var agentAccessAuditLoadFailed by remember(auditRepository) {
+                mutableStateOf(false)
+            }
+            LaunchedEffect(auditRepository, agentRuntimeState) {
+                if (auditRepository == null) {
+                    agentAccessAuditRecords = emptyList()
+                    agentAccessAuditLoadFailed = false
+                    return@LaunchedEffect
+                }
+                val at = Instant.now()
+                runCatchingCancellable {
+                    ioExecutor.runSourceIo {
+                        auditRepository.pruneExpiredAgentAccessAudit(at)
+                        auditRepository.recentAgentAccessAudit(limit = 20, at = at)
+                    }
+                }.onSuccess { records ->
+                    agentAccessAuditRecords = records
+                    agentAccessAuditLoadFailed = false
+                }.onFailure {
+                    agentAccessAuditRecords = emptyList()
+                    agentAccessAuditLoadFailed = true
+                }
+            }
             val developerAgentPairingDetail = when {
                 agentPairingMaterial == null -> "未配对"
                 agentRuntimeState == AgentLocalNodeRuntimeState.Listening -> "已配对 · 等待 Agent 连接"
@@ -822,6 +972,29 @@ fun AmemeApp(
                         }
                     }
                 },
+                localSpaceDeletionAvailable =
+                    repository is LocalMemoryRepository && repositoryOverride == null && !demoMode,
+                localSpaceDeleted = localSpaceDeleted,
+                localSpaceDeletionInFlight = localSpaceDeletionInFlight,
+                localSpaceDeletionNeedsRetry = localSpaceDeletionNeedsRetry,
+                onDeleteLocalSpace = {
+                    val localRepository = repository as? LocalMemoryRepository
+                    if (localRepository != null && !localSpaceDeletionInFlight) {
+                        localSpaceDeletionInFlight = true
+                        scope.launch {
+                            val convergence = runCatchingCancellable {
+                                convergeLocalSpaceDeletion(localRepository, Instant.now())
+                            }
+                            convergence.onSuccess(::applyLocalSpaceDeletionConvergence)
+                                .onFailure {
+                                    localSpaceDeletionNeedsRetry = true
+                                    persistenceError =
+                                        "本机 Space 删除协调器未完成；没有宣称删除成功，请重试。"
+                                }
+                            localSpaceDeletionInFlight = false
+                        }
+                    }
+                },
                 onDemoModeChanged = { enabled ->
                     if (repositoryOverride == null && enabled != demoMode) {
                         experienceModeName = ExperienceMode.Loading.name
@@ -833,6 +1006,9 @@ fun AmemeApp(
                         PackageManager.PERMISSION_GRANTED
                 },
                 voiceCaptureAvailable = canRecordVoice,
+                agentAccessAuditAvailable = auditRepository != null,
+                agentAccessAuditLoadFailed = agentAccessAuditLoadFailed,
+                agentAccessAuditRecords = agentAccessAuditRecords,
             )
         }
         composable(

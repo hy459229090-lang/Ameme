@@ -24,6 +24,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -43,6 +44,9 @@ import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.ameme.android.data.AgentAccessAuditObjectCountBucket
+import com.ameme.android.data.AgentAccessAuditPhase
+import com.ameme.android.data.AgentAccessAuditRecord
 import com.ameme.android.data.transport.PairingExperienceCandidate
 import com.ameme.android.data.transport.PairingExperienceConnection
 import com.ameme.android.data.transport.PairingExperienceException
@@ -52,6 +56,8 @@ import com.ameme.android.domain.ExperienceMode
 import com.ameme.android.ui.components.PairingQrCode
 import com.ameme.android.ui.icons.AmemeSymbols
 import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -91,6 +97,14 @@ fun SettingsScreen(
     onClearExport: () -> Unit = {},
     calendarReadPermissionGranted: Boolean = false,
     voiceCaptureAvailable: Boolean = false,
+    agentAccessAuditAvailable: Boolean = false,
+    agentAccessAuditLoadFailed: Boolean = false,
+    agentAccessAuditRecords: List<AgentAccessAuditRecord> = emptyList(),
+    localSpaceDeletionAvailable: Boolean = false,
+    localSpaceDeleted: Boolean = false,
+    localSpaceDeletionInFlight: Boolean = false,
+    localSpaceDeletionNeedsRetry: Boolean = false,
+    onDeleteLocalSpace: () -> Unit = {},
 ) {
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
@@ -100,6 +114,8 @@ fun SettingsScreen(
     var pairingSuccess by remember { mutableStateOf<PairingExperienceConnection?>(null) }
     var pairingError by remember { mutableStateOf<String?>(null) }
     var disconnecting by remember { mutableStateOf(false) }
+    var showLocalSpaceDeletion by remember { mutableStateOf(false) }
+    var localSpaceDeletionConfirmation by remember { mutableStateOf("") }
     var pairingQrExpired by remember(developerPairingQrPayload, developerPairingQrExpiresAt) {
         mutableStateOf(
             developerPairingQrExpiresAt == null ||
@@ -316,6 +332,43 @@ fun SettingsScreen(
                     }
                 }
             }
+            item { SectionTitle("Agent 访问记录") }
+            item {
+                Card(Modifier.fillMaxWidth().testTag("agent-access-audit-card")) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text("最近访问", fontWeight = FontWeight.Medium)
+                        Text(
+                            "安全审计保留 180 天；不记录正文、搜索词、对象 ID、请求摘要或配对密钥。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        when {
+                            !agentAccessAuditAvailable -> Text(
+                                "本机生产加密节点就绪后显示真实访问记录。",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            agentAccessAuditLoadFailed -> Text(
+                                "访问记录暂时无法读取；未改用合成记录。",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                            agentAccessAuditRecords.isEmpty() -> Text(
+                                "尚无 Agent 访问记录。",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            else -> agentAccessAuditRecords.forEachIndexed { index, record ->
+                                if (index > 0) HorizontalDivider()
+                                AgentAccessAuditRow(record)
+                            }
+                        }
+                    }
+                }
+            }
             if (!showExperienceControls) {
                 item { SectionTitle("体验数据") }
                 item {
@@ -467,7 +520,53 @@ fun SettingsScreen(
                         }
                     }
                     HorizontalDivider()
-                    SettingRow("删除", "删除事件时立即清除对应 AI 小结")
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text("删除", fontWeight = FontWeight.Medium)
+                        when {
+                            localSpaceDeleted -> Text(
+                                "本机 Personal 空间已删除并冻结。账号、系统照片/日历原件、其他设备与物理擦除不在此次结果范围内。",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.testTag("local-space-deleted-status"),
+                            )
+                            localSpaceDeletionNeedsRetry -> {
+                                Text(
+                                    "上次请求仍有本机步骤待重试；不会把部分完成显示为删除成功。",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error,
+                                )
+                                Button(
+                                    onClick = { showLocalSpaceDeletion = true },
+                                    enabled = localSpaceDeletionAvailable && !localSpaceDeletionInFlight,
+                                    modifier = Modifier.fillMaxWidth().testTag("retry-local-space-delete-button"),
+                                ) {
+                                    Text(if (localSpaceDeletionInFlight) "正在重试" else "重试本机 Space 删除")
+                                }
+                            }
+                            else -> {
+                                Text(
+                                    "可删除并冻结当前安装的 Personal 空间，同时停止本机 Agent、撤销本机配对并清除待处理分享/导出快照。",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                Text(
+                                    "不会删除账号、系统原件、其他设备或对端副本，也不证明物理介质擦除。",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                OutlinedButton(
+                                    onClick = { showLocalSpaceDeletion = true },
+                                    enabled = localSpaceDeletionAvailable && !localSpaceDeletionInFlight,
+                                    modifier = Modifier.fillMaxWidth().testTag("delete-local-space-button"),
+                                ) {
+                                    Text(if (localSpaceDeletionInFlight) "正在删除" else "删除本机 Personal 空间")
+                                }
+                            }
+                        }
+                    }
                     HorizontalDivider()
                     SettingRow("诊断", "不记录正文、搜索词或配对密钥")
                 }
@@ -500,6 +599,58 @@ fun SettingsScreen(
             },
             confirmButton = {},
             dismissButton = { TextButton(onClick = { showPairingChooser = false }) { Text("取消") } },
+        )
+    }
+
+    if (showLocalSpaceDeletion) {
+        AlertDialog(
+            modifier = Modifier.testTag("delete-local-space-dialog"),
+            onDismissRequest = {
+                if (!localSpaceDeletionInFlight) {
+                    showLocalSpaceDeletion = false
+                    localSpaceDeletionConfirmation = ""
+                }
+            },
+            title = { Text("永久删除本机 Personal 空间？") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("此操作会冻结当前安装内的 Event、Memory、搜索和旧备份恢复，并清理本机 Agent 与待处理快照；无法撤销。")
+                    Text("系统照片/日历原件、账号、其他设备和对端副本不会被此次操作删除。")
+                    OutlinedTextField(
+                        value = localSpaceDeletionConfirmation,
+                        onValueChange = { localSpaceDeletionConfirmation = it },
+                        enabled = !localSpaceDeletionInFlight,
+                        singleLine = true,
+                        label = { Text("输入“删除”以确认") },
+                        modifier = Modifier.fillMaxWidth().testTag("delete-local-space-confirmation"),
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onDeleteLocalSpace()
+                        showLocalSpaceDeletion = false
+                        localSpaceDeletionConfirmation = ""
+                    },
+                    enabled =
+                        localSpaceDeletionConfirmation == "删除" && !localSpaceDeletionInFlight,
+                    modifier = Modifier.testTag("confirm-delete-local-space-button"),
+                ) {
+                    Text("确认删除本机空间")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showLocalSpaceDeletion = false
+                        localSpaceDeletionConfirmation = ""
+                    },
+                    enabled = !localSpaceDeletionInFlight,
+                ) {
+                    Text("取消")
+                }
+            },
         )
     }
 
@@ -675,6 +826,64 @@ fun SettingsScreen(
         )
     }
 }
+
+@Composable
+private fun AgentAccessAuditRow(record: AgentAccessAuditRecord) {
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        Text(
+            "${record.callerId} · ${record.operation}",
+            fontWeight = FontWeight.Medium,
+        )
+        Text(
+            "目的 ${record.purpose}",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            "范围 ${record.spaces.joinToString("、")} · 数据 ${record.dataTypes.joinToString("、")}",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            "${record.phase.label()} · 结果 ${record.resultCode} · 对象 ${record.objectCountBucket.label()}",
+            style = MaterialTheme.typography.bodySmall,
+            color = if (
+                record.phase == AgentAccessAuditPhase.Completed &&
+                record.resultCode != "OK"
+            ) {
+                MaterialTheme.colorScheme.error
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+        )
+        Text(
+            AUDIT_TIME_FORMATTER.format(record.occurredAt),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+private fun AgentAccessAuditPhase.label(): String = when (this) {
+    AgentAccessAuditPhase.Started -> "已开始"
+    AgentAccessAuditPhase.Completed -> "已完成"
+}
+
+private fun AgentAccessAuditObjectCountBucket.label(): String = when (this) {
+    AgentAccessAuditObjectCountBucket.Zero -> "0"
+    AgentAccessAuditObjectCountBucket.One -> "1"
+    AgentAccessAuditObjectCountBucket.TwoToTen -> "2–10"
+    AgentAccessAuditObjectCountBucket.ElevenToOneHundred -> "11–100"
+    AgentAccessAuditObjectCountBucket.MoreThanOneHundred -> "101+"
+    AgentAccessAuditObjectCountBucket.Unknown -> "未知"
+}
+
+private val AUDIT_TIME_FORMATTER: DateTimeFormatter =
+    DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+        .withZone(ZoneId.systemDefault())
 
 @Composable
 private fun PairingMethodRow(title: String, detail: String, tag: String, onClick: () -> Unit) {

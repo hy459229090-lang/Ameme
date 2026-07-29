@@ -81,6 +81,13 @@ COMMANDS = [
         ],
     ),
     (
+        "android_agent_access_audit_contract",
+        [
+            sys.executable,
+            "scripts/validation/validate_android_agent_access_audit_contract.py",
+        ],
+    ),
+    (
         "ios_agent_local_node_client_contract",
         [
             sys.executable,

@@ -29,10 +29,44 @@ ANDROID_CONTRACT_TEST = (
     / "apps/android/app/src/test/java/com/ameme/android/data"
     / "LocalSpaceDeletionRepositoryContractTest.kt"
 )
+ANDROID_CONVERGENCE = ANDROID_MODEL.with_name("LocalSpaceDeletionConvergence.kt")
+ANDROID_CONVERGENCE_TEST = (
+    ROOT
+    / "apps/android/app/src/test/java/com/ameme/android/data"
+    / "LocalSpaceDeletionConvergenceCoordinatorTest.kt"
+)
+ANDROID_PAIRING = (
+    ROOT
+    / "apps/android/app/src/main/java/com/ameme/android/data/transport"
+    / "AgentPairingManager.kt"
+)
+ANDROID_PENDING_ACTION = (
+    ROOT
+    / "apps/android/app/src/main/java/com/ameme/android/data/local"
+    / "AndroidKeystorePendingActionStore.kt"
+)
+ANDROID_APP = ROOT / "apps/android/app/src/main/java/com/ameme/android/ui/AmemeApp.kt"
+ANDROID_SETTINGS = ANDROID_APP.parent / "screens" / "SettingsScreen.kt"
+ANDROID_SETTINGS_TEST = (
+    ROOT / "apps/android/app/src/androidTest/java/com/ameme/android"
+    / "SettingsLocalSpaceDeletionUiTest.kt"
+)
 IOS_MODEL = ROOT / "apps/ios/Ameme/Shared/LocalSpaceDeletion.swift"
 IOS_STORE = IOS_MODEL.with_name("LocalMemoryStore.swift")
 IOS_BACKUP = IOS_MODEL.with_name("LocalBackupStore.swift")
 IOS_TEST = ROOT / "apps/ios/Tests/AmemeSharedTests/LocalSpaceDeletionTests.swift"
+IOS_CONVERGENCE = IOS_MODEL.with_name("LocalSpaceDeletionConvergence.swift")
+IOS_CONVERGENCE_TEST = (
+    ROOT / "apps/ios/Tests/AmemeSharedTests/LocalSpaceDeletionConvergenceTests.swift"
+)
+IOS_AGENT_STORE = IOS_MODEL.with_name("AgentExperience.swift")
+IOS_PENDING_EXPORT = IOS_MODEL.with_name("PendingExportStore.swift")
+IOS_INCOMING_SHARE = IOS_MODEL.with_name("IncomingShare.swift")
+IOS_APP = ROOT / "apps/ios/AmemeApp/AmemeApp.swift"
+IOS_SHARE_EXTENSION = ROOT / "apps/ios/ShareExtension/ShareViewController.swift"
+IOS_INCOMING_SHARE_TEST = (
+    ROOT / "apps/ios/Tests/AmemeSharedTests/IncomingShareHandoffTests.swift"
+)
 IOS_SMOKE = ROOT / "apps/ios/Smoke/main.swift"
 IOS_PROJECT = ROOT / "apps/ios/Ameme.xcodeproj/project.pbxproj"
 
@@ -52,10 +86,25 @@ def main() -> int:
         ANDROID_ADAPTER,
         ANDROID_INSTRUMENTED_TEST,
         ANDROID_CONTRACT_TEST,
+        ANDROID_CONVERGENCE,
+        ANDROID_CONVERGENCE_TEST,
+        ANDROID_PAIRING,
+        ANDROID_PENDING_ACTION,
+        ANDROID_APP,
+        ANDROID_SETTINGS,
+        ANDROID_SETTINGS_TEST,
         IOS_MODEL,
         IOS_STORE,
         IOS_BACKUP,
         IOS_TEST,
+        IOS_CONVERGENCE,
+        IOS_CONVERGENCE_TEST,
+        IOS_AGENT_STORE,
+        IOS_PENDING_EXPORT,
+        IOS_INCOMING_SHARE,
+        IOS_APP,
+        IOS_SHARE_EXTENSION,
+        IOS_INCOMING_SHARE_TEST,
         IOS_SMOKE,
         IOS_PROJECT,
     )
@@ -68,10 +117,25 @@ def main() -> int:
     android_adapter = ANDROID_ADAPTER.read_text(encoding="utf-8")
     android_instrumented_test = ANDROID_INSTRUMENTED_TEST.read_text(encoding="utf-8")
     android_contract_test = ANDROID_CONTRACT_TEST.read_text(encoding="utf-8")
+    android_convergence = ANDROID_CONVERGENCE.read_text(encoding="utf-8")
+    android_convergence_test = ANDROID_CONVERGENCE_TEST.read_text(encoding="utf-8")
+    android_pairing = ANDROID_PAIRING.read_text(encoding="utf-8")
+    android_pending_action = ANDROID_PENDING_ACTION.read_text(encoding="utf-8")
+    android_app = ANDROID_APP.read_text(encoding="utf-8")
+    android_settings = ANDROID_SETTINGS.read_text(encoding="utf-8")
+    android_settings_test = ANDROID_SETTINGS_TEST.read_text(encoding="utf-8")
     ios_model = IOS_MODEL.read_text(encoding="utf-8")
     ios_store = IOS_STORE.read_text(encoding="utf-8")
     ios_backup = IOS_BACKUP.read_text(encoding="utf-8")
     ios_test = IOS_TEST.read_text(encoding="utf-8")
+    ios_convergence = IOS_CONVERGENCE.read_text(encoding="utf-8")
+    ios_convergence_test = IOS_CONVERGENCE_TEST.read_text(encoding="utf-8")
+    ios_agent_store = IOS_AGENT_STORE.read_text(encoding="utf-8")
+    ios_pending_export = IOS_PENDING_EXPORT.read_text(encoding="utf-8")
+    ios_incoming_share = IOS_INCOMING_SHARE.read_text(encoding="utf-8")
+    ios_app = IOS_APP.read_text(encoding="utf-8")
+    ios_share_extension = IOS_SHARE_EXTENSION.read_text(encoding="utf-8")
+    ios_incoming_share_test = IOS_INCOMING_SHARE_TEST.read_text(encoding="utf-8")
     ios_smoke = IOS_SMOKE.read_text(encoding="utf-8")
     ios_project = IOS_PROJECT.read_text(encoding="utf-8")
 
@@ -157,6 +221,69 @@ def main() -> int:
         require(marker in android_contract_test, f"Android JVM contract covers {marker}", checks)
 
     for marker in (
+        "IncomingAgentRuntimeStop",
+        "LocalSpaceFreeze",
+        "StoredAgentPairingRevocation",
+        "OutgoingAgentTransportClose",
+        "StoredConnectionMetadataClear",
+        "PendingActionSnapshotClear",
+        "PendingActionResurrectionFreeze",
+        "PendingLocalRetry",
+        "PendingExternalCleanup",
+        "withContext(NonCancellable)",
+        "Every step is attempted even if another step fails",
+        "accountDeletionClaim: Boolean = false",
+        "peerDeletionProofClaim: Boolean = false",
+    ):
+        require(marker in android_convergence, f"Android convergence declares {marker}", checks)
+    for marker in (
+        "successfulDeleteConvergesEveryLocalSurfaceInSafetyOrder",
+        "failuresRemainContentFreeAndDoNotPreventLaterCleanupAttempts",
+        "providerLocatorCleanupStaysSeparateFromLocalRetry",
+        "assertFalse(result.accountDeletionClaim)",
+        "assertFalse(result.peerDeletionProofClaim)",
+    ):
+        require(marker in android_convergence_test, f"Android convergence JVM covers {marker}", checks)
+    for marker in (
+        "check(committed)",
+        "PAIRING_STATE_KEYS.none(preferences::contains)",
+        "Could not remove Agent pairing material",
+        "Could not remove temporary Agent pairing material",
+    ):
+        require(marker in android_pairing, f"Android pairing revocation verifies {marker}", checks)
+    for marker in (
+        "freezeForDeletedSpace",
+        "isFrozenForDeletedSpace",
+        "space-deleted-v1",
+        "Pending actions became frozen while saving",
+        "Pending action files remained after clear",
+    ):
+        require(marker in android_pending_action, f"Android pending action freeze declares {marker}", checks)
+    for marker in (
+        "convergeLocalSpaceDeletion",
+        "LocalSpaceDeletionConvergenceCoordinator",
+        "pendingActionStore.freezeForDeletedSpace()",
+        "pairingManager.revoke()",
+        "runtime::closeAndAwait",
+        "localSpaceDeletionNeedsRetry",
+    ):
+        require(marker in android_app, f"Android product wiring declares {marker}", checks)
+    for marker in (
+        'Text("输入“删除”以确认")',
+        "delete-local-space-button",
+        "confirm-delete-local-space-button",
+        "不会删除账号、系统原件、其他设备或对端副本",
+    ):
+        require(marker in android_settings, f"Android deletion UI declares {marker}", checks)
+    for marker in (
+        "destructiveLocalSpaceActionRequiresExactTypedConfirmation",
+        'performTextInput("删除")',
+        "assertIsNotEnabled()",
+        "terminalDeletedStateDoesNotOfferAnotherDestructiveButton",
+    ):
+        require(marker in android_settings_test, f"Android deletion UI test covers {marker}", checks)
+
+    for marker in (
         "completedLocalOnly",
         "pendingRawCleanup",
         "alreadyDeleted",
@@ -216,6 +343,74 @@ def main() -> int:
     ):
         require(marker in ios_test, f"iOS XCTest source covers {marker}", checks)
     for marker in (
+        "activeAgentTransportClose",
+        "localSpaceFreeze",
+        "storedConnectionMetadataClear",
+        "pendingExportSnapshotClear",
+        "pendingExportResurrectionFreeze",
+        "incomingShareHandoffsClear",
+        "incomingShareResurrectionFreeze",
+        "pendingLocalRetry",
+        "pendingExternalCleanup",
+        "Attempts every local checkpoint even after a partial failure",
+        "freezePendingExportResurrection",
+        "freezeIncomingShareResurrection",
+        "clearIncomingShareHandoffs",
+        "accountDeletionClaim = false",
+        "peerDeletionProofClaim = false",
+    ):
+        require(marker in ios_convergence, f"iOS convergence declares {marker}", checks)
+    for marker in (
+        "testSuccessfulDeleteConvergesEveryLocalSurfaceInSafetyOrder",
+        "testPartialFailureStillAttemptsLaterCleanupAndRemainsRetryable",
+        "XCTAssertFalse(result.accountDeletionClaim)",
+        "XCTAssertFalse(result.peerDeletionProofClaim)",
+    ):
+        require(marker in ios_convergence_test, f"iOS convergence XCTest source covers {marker}", checks)
+    require(
+        "clearAndVerify" in ios_agent_store
+        and "defaults.object(forKey: Self.userDefaultsKey) == nil" in ios_agent_store,
+        "iOS connection metadata clear is verified",
+        checks,
+    )
+    require(
+        "clearPayloadFilesUnlocked" in ios_pending_export
+        and "remainingPayloadURLsUnlocked.isEmpty" in ios_pending_export
+        and "freezeForDeletedSpaceAndClear" in ios_pending_export
+        and "isFrozenForDeletedSpaceUnlocked" in ios_pending_export,
+        "iOS pending export clear verifies every payload and persists a deletion freeze",
+        checks,
+    )
+    for marker in (
+        "localSpaceDeleted",
+        "freezeForDeletedSpaceAndClear",
+        "clearPendingHandoffs",
+        "isFrozenForDeletedSpace",
+        ".space-deleted-v1",
+    ):
+        require(marker in ios_incoming_share, f"iOS App Group handoff freeze declares {marker}", checks)
+    for marker in (
+        "func deleteLocalSpace(requestedAt: Date = .now)",
+        "LocalSpaceDeletionConvergenceCoordinator",
+        "localSpaceDeletionNeedsRetry",
+        'TextField("输入“删除”以确认"',
+        "settings.delete-local-space",
+        "不会删除账号、系统原件或其他设备副本",
+    ):
+        require(marker in ios_app, f"iOS product wiring declares {marker}", checks)
+    require(
+        "case .localSpaceDeleted:" in ios_share_extension
+        and "本机 Personal 空间已删除" in ios_share_extension,
+        "iOS Share Extension refuses post-delete handoffs honestly",
+        checks,
+    )
+    for marker in (
+        "testDeletedSpaceFreezeClearsHiddenArtifactsAndRejectsNewHandoffs",
+        "freezeForDeletedSpaceAndClear",
+        ".localSpaceDeleted",
+    ):
+        require(marker in ios_incoming_share_test, f"iOS handoff XCTest source covers {marker}", checks)
+    for marker in (
         "local-space root freeze/app-owned Raw cleanup/old-backup rejection",
         "spaceDeletionStore.deleteLocalSpace(",
         "!spaceDeletionResult.accountDeletionClaim",
@@ -225,7 +420,12 @@ def main() -> int:
         "spaceDeletionReloaded.deleteLocalSpace().status == .alreadyDeleted",
     ):
         require(marker in ios_smoke, f"iOS production smoke covers {marker}", checks)
-    for source in ("LocalSpaceDeletion.swift", "LocalSpaceDeletionTests.swift"):
+    for source in (
+        "LocalSpaceDeletion.swift",
+        "LocalSpaceDeletionConvergence.swift",
+        "LocalSpaceDeletionTests.swift",
+        "LocalSpaceDeletionConvergenceTests.swift",
+    ):
         require(source in ios_project, f"iOS generated project includes {source}", checks)
 
     require(
@@ -235,7 +435,7 @@ def main() -> int:
     )
     require(
         "GrantRepository" not in android_model + ios_model,
-        "local-space result does not masquerade as Grant revocation",
+        "base local-space result does not masquerade as account/shared Grant registry revocation",
         checks,
     )
     require(
@@ -248,8 +448,14 @@ def main() -> int:
         ANDROID_MODEL,
         ANDROID_INSTRUMENTED_TEST,
         ANDROID_CONTRACT_TEST,
+        ANDROID_CONVERGENCE,
+        ANDROID_CONVERGENCE_TEST,
+        ANDROID_SETTINGS_TEST,
         IOS_MODEL,
         IOS_TEST,
+        IOS_CONVERGENCE,
+        IOS_CONVERGENCE_TEST,
+        IOS_INCOMING_SHARE_TEST,
     )
     ignored = [
         subprocess.run(
@@ -270,9 +476,10 @@ def main() -> int:
             {
                 "ok": True,
                 "checks": len(checks),
-                "scope": "static_cross_platform_local_space_freeze_and_deletion_only",
+                "scope": "static_cross_platform_local_space_freeze_and_local_install_convergence_only",
                 "account_deletion_claim": False,
-                "grant_revocation_claim": False,
+                "local_install_authorization_convergence_claim": True,
+                "account_or_shared_grant_registry_revocation_claim": False,
                 "peer_deletion_proof_claim": False,
                 "provider_original_deletion_claim": False,
                 "physical_purge_claim": False,

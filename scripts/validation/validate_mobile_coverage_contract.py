@@ -235,7 +235,7 @@ def main() -> int:
         "coverage_candidate_states",
         "coverage_event_links",
         "coverage_source_index",
-        "const val SCHEMA_VERSION = 13",
+        "const val SCHEMA_VERSION = 14",
         "const val COVERAGE_SCHEMA_VERSION = 7",
         "coverage_candidate_accept",
         "detachEvent",

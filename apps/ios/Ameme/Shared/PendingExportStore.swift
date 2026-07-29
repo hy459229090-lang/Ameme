@@ -5,6 +5,7 @@ public enum PendingExportStoreError: Error, Equatable {
     case emptyExport
     case invalidEnvelope
     case unsupportedVersion
+    case localSpaceDeleted
     case unavailable
     case tooLarge
 }
@@ -19,6 +20,7 @@ public final class PendingExportStore: @unchecked Sendable {
     private let fileManager: FileManager
     private let fileURL: URL
     private let temporaryURL: URL
+    private let deletionMarkerURL: URL
     private let keyStore: any KeyMaterialStore
     private let lock = NSLock()
     private let aad = Data("com.ameme.ios:pending-export:v1".utf8)
@@ -32,6 +34,10 @@ public final class PendingExportStore: @unchecked Sendable {
         self.keyStore = keyStore
         self.fileURL = rootDirectory.appendingPathComponent("pending-export-v1.json", isDirectory: false)
         self.temporaryURL = rootDirectory.appendingPathComponent("pending-export-v1.json.tmp", isDirectory: false)
+        self.deletionMarkerURL = rootDirectory.appendingPathComponent(
+            ".space-deleted-v1",
+            isDirectory: false
+        )
     }
 
     public var exists: Bool {
@@ -43,6 +49,14 @@ public final class PendingExportStore: @unchecked Sendable {
     public func load() throws -> Data? {
         lock.lock()
         defer { lock.unlock() }
+        if isFrozenForDeletedSpaceUnlocked {
+            do {
+                try clearPayloadFilesUnlocked()
+                return nil
+            } catch {
+                throw PendingExportStoreError.unavailable
+            }
+        }
         guard fileManager.fileExists(atPath: fileURL.path) else { return nil }
         do {
             let encoded = try Data(contentsOf: fileURL)
@@ -73,6 +87,9 @@ public final class PendingExportStore: @unchecked Sendable {
     public func save(_ data: Data) throws {
         lock.lock()
         defer { lock.unlock() }
+        guard !isFrozenForDeletedSpaceUnlocked else {
+            throw PendingExportStoreError.localSpaceDeleted
+        }
         guard !data.isEmpty else { throw PendingExportStoreError.emptyExport }
         guard data.count <= Self.maxClearBytes else { throw PendingExportStoreError.tooLarge }
         do {
@@ -96,6 +113,10 @@ public final class PendingExportStore: @unchecked Sendable {
             } else {
                 try fileManager.moveItem(at: temporaryURL, to: fileURL)
             }
+            if isFrozenForDeletedSpaceUnlocked {
+                try clearPayloadFilesUnlocked()
+                throw PendingExportStoreError.localSpaceDeleted
+            }
         } catch let error as PendingExportStoreError {
             try? fileManager.removeItem(at: temporaryURL)
             throw error
@@ -108,12 +129,64 @@ public final class PendingExportStore: @unchecked Sendable {
     public func clear() throws {
         lock.lock()
         defer { lock.unlock() }
-        guard fileManager.fileExists(atPath: fileURL.path) else { return }
         do {
-            try fileManager.removeItem(at: fileURL)
-            try? fileManager.removeItem(at: temporaryURL)
+            try clearPayloadFilesUnlocked()
+            guard remainingPayloadURLsUnlocked.isEmpty else {
+                throw PendingExportStoreError.unavailable
+            }
         } catch {
             throw PendingExportStoreError.unavailable
+        }
+    }
+
+    public var isFrozenForDeletedSpace: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return isFrozenForDeletedSpaceUnlocked
+    }
+
+    /// Persists the deletion boundary before removing pending payloads. The marker is kept
+    /// across launches so a stale exporter cannot recreate a snapshot after Personal space
+    /// deletion has already become authoritative.
+    public func freezeForDeletedSpaceAndClear() throws {
+        lock.lock()
+        defer { lock.unlock() }
+        do {
+            try fileManager.createDirectory(
+                at: deletionMarkerURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            try Data("ameme.local-space-deleted.v1\n".utf8).write(
+                to: deletionMarkerURL,
+                options: .atomic
+            )
+            try clearPayloadFilesUnlocked()
+            guard isFrozenForDeletedSpaceUnlocked, remainingPayloadURLsUnlocked.isEmpty else {
+                throw PendingExportStoreError.unavailable
+            }
+        } catch let error as PendingExportStoreError {
+            throw error
+        } catch {
+            throw PendingExportStoreError.unavailable
+        }
+    }
+
+    private var isFrozenForDeletedSpaceUnlocked: Bool {
+        fileManager.fileExists(atPath: deletionMarkerURL.path)
+    }
+
+    private var remainingPayloadURLsUnlocked: [URL] {
+        ((try? fileManager.contentsOfDirectory(
+            at: deletionMarkerURL.deletingLastPathComponent(),
+            includingPropertiesForKeys: nil
+        )) ?? []).filter {
+            $0.standardizedFileURL != deletionMarkerURL.standardizedFileURL
+        }
+    }
+
+    private func clearPayloadFilesUnlocked() throws {
+        for url in remainingPayloadURLsUnlocked {
+            try fileManager.removeItem(at: url)
         }
     }
 }

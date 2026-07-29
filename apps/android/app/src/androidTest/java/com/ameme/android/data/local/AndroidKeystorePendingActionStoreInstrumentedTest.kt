@@ -17,6 +17,8 @@ import java.time.LocalTime
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -26,11 +28,15 @@ class AndroidKeystorePendingActionStoreInstrumentedTest {
     private val context: Context = ApplicationProvider.getApplicationContext()
     private val store = AndroidKeystorePendingActionStore(context)
     private val snapshotFile = File(context.noBackupFilesDir, "pending-actions/snapshot-v1.bin")
+    private val temporaryFile = File(context.noBackupFilesDir, "pending-actions/snapshot-v1.bin.tmp")
+    private val deletionMarkerFile = File(context.noBackupFilesDir, "pending-actions/space-deleted-v1")
 
     @After
     fun cleanUp() {
         runCatching { store.clear() }
         snapshotFile.delete()
+        temporaryFile.delete()
+        deletionMarkerFile.delete()
     }
 
     @Test
@@ -64,6 +70,27 @@ class AndroidKeystorePendingActionStoreInstrumentedTest {
 
         assertTrue(runCatching { store.load() }.isFailure)
         assertTrue("corrupted pending data is retained for explicit recovery handling", snapshotFile.exists())
+    }
+
+    @Test
+    fun deletedSpaceFreezeClearsArtifactsAndRejectsPendingActionResurrection() {
+        val isolatedRoot = File(context.cacheDir, "pending-actions-freeze-${System.nanoTime()}")
+        val isolatedStore = AndroidKeystorePendingActionStore(context, isolatedRoot)
+        try {
+            isolatedStore.save(PendingActionSnapshot(exportContent = "private export"))
+            File(isolatedRoot, ".orphan-atomic.tmp").writeText("orphaned private payload")
+
+            isolatedStore.freezeForDeletedSpace()
+
+            assertTrue(isolatedStore.isFrozenForDeletedSpace())
+            assertNull(isolatedStore.load())
+            assertEquals(listOf("space-deleted-v1"), isolatedRoot.list()?.sorted())
+            assertThrows(IllegalStateException::class.java) {
+                isolatedStore.save(PendingActionSnapshot(exportContent = "must not return"))
+            }
+        } finally {
+            isolatedRoot.deleteRecursively()
+        }
     }
 
     private fun syntheticRequest() = SourceCaptureRequest(

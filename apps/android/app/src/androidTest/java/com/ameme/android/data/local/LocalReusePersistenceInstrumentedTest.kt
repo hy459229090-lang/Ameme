@@ -238,6 +238,7 @@ class LocalReusePersistenceInstrumentedTest {
             assertTrue(migrated.hasMigration(11))
             assertTrue(migrated.hasMigration(12))
             assertTrue(migrated.hasMigration(13))
+            assertTrue(migrated.hasMigration(14))
         }
     }
 

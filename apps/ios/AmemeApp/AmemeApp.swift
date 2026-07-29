@@ -39,6 +39,7 @@ final class AppModel: ObservableObject {
     @Published var pendingIncomingShare: PendingIncomingShare?
     @Published private(set) var pendingExportAvailable = false
     @Published private(set) var agentExperienceConnection: AgentExperienceConnection?
+    @Published private(set) var localSpaceDeletionNeedsRetry = false
     private var storeCancellable: AnyCancellable?
     private let incomingShareStore: IncomingShareHandoffStore
     private let pendingExportStore: PendingExportStore
@@ -53,18 +54,33 @@ final class AppModel: ObservableObject {
         pendingExportStore = PendingExportStore(rootDirectory: Self.pendingExportRoot())
         agentExperienceStore = AgentExperienceStore()
         self.agentExperienceConnector = agentExperienceConnector
-        do {
-            agentExperienceConnection = try agentExperienceStore.load()
-        } catch {
+        if initialStore.isLocalSpaceDeleted {
             agentExperienceConnection = nil
-            notice = "设备连接状态不可用；已安全断开体验连接。"
+            try? agentExperienceStore.clearAndVerify()
+        } else {
+            do {
+                agentExperienceConnection = try agentExperienceStore.load()
+            } catch {
+                agentExperienceConnection = nil
+                notice = "设备连接状态不可用；已安全断开体验连接。"
+            }
         }
         storeCancellable = initialStore.objectWillChange.sink { [weak self] _ in
             self?.objectWillChange.send()
         }
-        restorePendingExport()
+        if initialStore.isLocalSpaceDeleted {
+            pendingExportAvailable = false
+            notice = "本机 Personal 空间已删除；正在复核本机连接与待处理快照。"
+        } else {
+            restorePendingExport()
+        }
         Task { @MainActor [weak self] in
-            self?.restorePendingIncomingShare()
+            guard let self else { return }
+            if initialStore.isLocalSpaceDeleted {
+                _ = await self.deleteLocalSpace()
+            } else {
+                self.restorePendingIncomingShare()
+            }
         }
     }
 
@@ -83,6 +99,7 @@ final class AppModel: ObservableObject {
     }
 
     private func restorePendingIncomingShare() {
+        guard !store.isLocalSpaceDeleted else { return }
         guard pendingIncomingShare == nil else { return }
         for id in incomingShareStore.pendingIDs() {
             do {
@@ -103,6 +120,10 @@ final class AppModel: ObservableObject {
     }
 
     func handleIncomingShareURL(_ url: URL) {
+        guard !store.isLocalSpaceDeleted else {
+            notice = "本机 Personal 空间已删除；没有接收或保存分享内容。"
+            return
+        }
         guard let id = incomingShareStore.id(from: url) else { return }
         // Share extensions and scene activation can deliver the same URL more than
         // once. Keep one review sheet and one handoff record for that UUID.
@@ -391,6 +412,10 @@ final class AppModel: ObservableObject {
     }
 
     func connectAgentExperience(method: AgentConnectionMethod) {
+        guard !store.isLocalSpaceDeleted else {
+            notice = "本机 Personal 空间已删除；不能再建立 Agent 连接。"
+            return
+        }
         let connection = AgentExperienceConnection.simulatedDemo(method: method)
         do {
             try agentExperienceStore.save(connection)
@@ -417,6 +442,9 @@ final class AppModel: ObservableObject {
     func connectAgentExperience(
         candidate: AgentExperienceCandidate
     ) async throws -> AgentExperienceConnection {
+        guard !store.isLocalSpaceDeleted else {
+            throw AgentExperienceStoreError.unavailable
+        }
         let connection = try await agentExperienceConnector.connect(candidate: candidate)
         do {
             try agentExperienceStore.save(connection)
@@ -436,6 +464,59 @@ final class AppModel: ObservableObject {
         agentExperienceStore.clear()
         agentExperienceConnection = nil
         notice = "已断开体验连接；本机事件没有改变。"
+    }
+
+    @discardableResult
+    func deleteLocalSpace(requestedAt: Date = .now) async -> LocalSpaceDeletionConvergenceResult {
+        let coordinator = LocalSpaceDeletionConvergenceCoordinator(
+            closeActiveAgentTransport: { [self] in
+                if let connection = agentExperienceConnection {
+                    await agentExperienceConnector.disconnect(connection: connection)
+                }
+            },
+            deleteLocalSpace: { [store] at in
+                store.deleteLocalSpace(requestedAt: at)
+            },
+            clearStoredConnectionMetadata: { [agentExperienceStore] in
+                try agentExperienceStore.clearAndVerify()
+            },
+            freezePendingExportResurrection: { [pendingExportStore] in
+                try pendingExportStore.freezeForDeletedSpaceAndClear()
+            },
+            clearPendingExportSnapshot: { [pendingExportStore] in
+                try pendingExportStore.clear()
+            },
+            freezeIncomingShareResurrection: { [incomingShareStore] in
+                try incomingShareStore.freezeForDeletedSpaceAndClear()
+            },
+            clearIncomingShareHandoffs: { [incomingShareStore] in
+                try incomingShareStore.clearPendingHandoffs()
+            }
+        )
+        let result = await coordinator.delete(requestedAt: requestedAt)
+        if result.completedSteps.contains(.storedConnectionMetadataClear) {
+            agentExperienceConnection = nil
+        }
+        if result.completedSteps.contains(.pendingExportSnapshotClear) {
+            pendingExportAvailable = false
+        }
+        if result.completedSteps.contains(.incomingShareHandoffsClear) {
+            pendingIncomingShare = nil
+        }
+        localSpaceDeletionNeedsRetry = result.status == .pendingLocalRetry
+        notice = switch result.status {
+        case .completedLocalOnly:
+            "本机 Personal 空间已删除；本机连接和待处理快照已收敛。账号、系统原件与其他设备不在此次范围内。"
+        case .pendingExternalCleanup:
+            "本机 Personal 空间已冻结；仍有本机 Raw 清理待重试，外部系统原件不会由 Ameme 删除。"
+        case .pendingLocalRetry:
+            if result.localSpaceFrozen {
+                "本机 Personal 空间已冻结；仍有 \(result.pendingRetrySteps.count) 个本机清理步骤待重试。账号和对端删除未被宣称完成。"
+            } else {
+                "本机 Space 删除尚未持久化；已尝试断开 Agent 并清理待处理快照，请重试。"
+            }
+        }
+        return result
     }
 
     func enterDemoMode() {
@@ -1889,6 +1970,9 @@ struct SettingsView: View {
     @State private var showingAgentSheet = false
     @State private var exportURL: URL?
     @State private var disconnectingAgent = false
+    @State private var showingLocalSpaceDeletion = false
+    @State private var localSpaceDeletionConfirmation = ""
+    @State private var deletingLocalSpace = false
 
     var body: some View {
         Form {
@@ -1919,7 +2003,11 @@ struct SettingsView: View {
             Section("空间、设备与 Agent") {
                 SettingRowView(title: "Personal 空间", detail: "本机加密存储")
                 SettingRowView(title: "设备同步", detail: "云端未启用 · Agent 局域网发现已接入，授权与数据传输待后续版本")
-                if let connection = model.agentExperienceConnection {
+                if model.store.isLocalSpaceDeleted {
+                    Text("本机 Personal 空间已删除；不能再建立 Agent 连接。")
+                        .font(.footnote)
+                        .foregroundStyle(AmemeStyle.secondaryText)
+                } else if let connection = model.agentExperienceConnection {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("体验连接").font(.headline)
                         Text("\(connection.deviceName) · \(connection.agentName)")
@@ -1987,6 +2075,31 @@ struct SettingsView: View {
                     }
                 }
                 SettingRowView(title: "删除", detail: "删除事件时重新计算本机小结和搜索索引")
+                if model.store.isLocalSpaceDeleted {
+                    Text("本机 Personal 空间已删除并冻结。账号、系统照片/日历原件、其他设备与物理擦除不在此次结果范围内。")
+                        .font(.footnote)
+                        .foregroundStyle(AmemeStyle.secondaryText)
+                        .accessibilityIdentifier("settings.local-space-deleted")
+                } else {
+                    Text("删除本机空间会同时断开 Agent、清除连接元数据、待导出快照和待确认分享；不会删除账号、系统原件或其他设备副本。")
+                        .font(.footnote)
+                        .foregroundStyle(AmemeStyle.secondaryText)
+                    Button(
+                        model.localSpaceDeletionNeedsRetry
+                            ? "重试本机 Space 删除"
+                            : "删除本机 Personal 空间",
+                        role: .destructive
+                    ) {
+                        showingLocalSpaceDeletion = true
+                    }
+                    .disabled(deletingLocalSpace || model.store.isDemoMode)
+                    .accessibilityIdentifier("settings.delete-local-space")
+                    if model.localSpaceDeletionNeedsRetry {
+                        Text("上次请求仍有本机步骤待重试；不会把部分完成显示为删除成功。")
+                            .font(.footnote)
+                            .foregroundStyle(AmemeStyle.secondaryText)
+                    }
+                }
                 SettingRowView(title: "诊断", detail: "不记录正文、搜索词或配对密钥")
             }
         }
@@ -2007,6 +2120,23 @@ struct SettingsView: View {
                     model.connectAgentExperience(method: method)
                 }
             )
+        }
+        .alert("永久删除本机 Personal 空间？", isPresented: $showingLocalSpaceDeletion) {
+            TextField("输入“删除”以确认", text: $localSpaceDeletionConfirmation)
+            Button("确认删除本机空间", role: .destructive) {
+                deletingLocalSpace = true
+                Task { @MainActor in
+                    _ = await model.deleteLocalSpace()
+                    deletingLocalSpace = false
+                    localSpaceDeletionConfirmation = ""
+                }
+            }
+            .disabled(localSpaceDeletionConfirmation != "删除" || deletingLocalSpace)
+            Button("取消", role: .cancel) {
+                localSpaceDeletionConfirmation = ""
+            }
+        } message: {
+            Text("此操作会冻结当前安装内的 Event、Memory、搜索和旧备份恢复，并清理本机 Agent 与待处理快照。系统原件、账号、其他设备和对端副本不会被删除。")
         }
     }
 

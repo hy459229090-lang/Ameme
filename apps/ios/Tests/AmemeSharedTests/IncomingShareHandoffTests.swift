@@ -81,4 +81,32 @@ final class IncomingShareHandoffTests: XCTestCase {
         }
         try? FileManager.default.removeItem(at: root)
     }
+
+    func testDeletedSpaceFreezeClearsHiddenArtifactsAndRejectsNewHandoffs() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AmemeIncomingFreeze-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let fileManager = FileManager.default
+        let store = IncomingShareHandoffStore(rootDirectory: root, fileManager: fileManager)
+        let url = try store.writeText("must be cleared")
+        let id = try XCTUnwrap(store.id(from: url))
+        try Data("orphaned atomic payload".utf8).write(
+            to: root.appendingPathComponent(".handoff-orphan.tmp")
+        )
+
+        try store.freezeForDeletedSpaceAndClear()
+
+        XCTAssertTrue(store.isFrozenForDeletedSpace)
+        XCTAssertTrue(store.pendingIDs().isEmpty)
+        XCTAssertEqual(
+            try fileManager.contentsOfDirectory(atPath: root.path),
+            [".space-deleted-v1"]
+        )
+        XCTAssertThrowsError(try store.read(id: id)) { error in
+            XCTAssertEqual(error as? IncomingSharePayloadError, .localSpaceDeleted)
+        }
+        XCTAssertThrowsError(try store.writeText("must not return")) { error in
+            XCTAssertEqual(error as? IncomingSharePayloadError, .localSpaceDeleted)
+        }
+    }
 }

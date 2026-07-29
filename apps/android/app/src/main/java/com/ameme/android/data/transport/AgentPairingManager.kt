@@ -171,7 +171,7 @@ class AgentPairingManager(
     }
 
     fun revoke() {
-        preferences.edit()
+        val committed = preferences.edit()
             .remove(KEY_MATERIAL)
             .remove(KEY_SECRET_IV)
             .remove(KEY_SECRET_CIPHERTEXT)
@@ -184,7 +184,18 @@ class AgentPairingManager(
             .remove(KEY_GRANT_NOT_BEFORE)
             .remove(KEY_GRANT_CREATED_AT)
             .commit()
-        File(context.filesDir, PAIRING_FILE).delete()
+        check(committed) { "Could not revoke persisted Agent pairing" }
+        check(PAIRING_STATE_KEYS.none(preferences::contains)) {
+            "Persisted Agent pairing remained after revocation"
+        }
+        val pairingFile = pairingFile()
+        val temporaryFile = File(pairingFile.parentFile, "${pairingFile.name}.tmp")
+        check(!pairingFile.exists() || pairingFile.delete()) {
+            "Could not remove Agent pairing material"
+        }
+        check(!temporaryFile.exists() || temporaryFile.delete()) {
+            "Could not remove temporary Agent pairing material"
+        }
     }
 
     fun sslServerSocketFactory(): SSLServerSocketFactory = identity.sslServerSocketFactory()
@@ -333,6 +344,19 @@ class AgentPairingManager(
         private const val PAIRING_KEY_ALIAS = "ameme-agent-pairing-wrap-v1"
         private const val AES_TRANSFORMATION = "AES/GCM/NoPadding"
         private val PAIRING_DURATION: Duration = Duration.ofDays(30)
+        private val PAIRING_STATE_KEYS = setOf(
+            KEY_MATERIAL,
+            KEY_SECRET_IV,
+            KEY_SECRET_CIPHERTEXT,
+            KEY_EXPIRES_AT,
+            KEY_GRANT_OWNER,
+            KEY_GRANT_PURPOSES,
+            KEY_GRANT_SPACES,
+            KEY_GRANT_DATA_TYPES,
+            KEY_GRANT_OPERATIONS,
+            KEY_GRANT_NOT_BEFORE,
+            KEY_GRANT_CREATED_AT,
+        )
     }
 }
 

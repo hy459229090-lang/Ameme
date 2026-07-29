@@ -30,6 +30,8 @@ public enum IncomingSharePayloadError: Error, Equatable {
     case fileTooLarge
     case missingFile
     case invalidHandoffURL
+    case localSpaceDeleted
+    case unavailable
 }
 
 public struct IncomingSharePayload: Codable, Equatable, Identifiable, Sendable {
@@ -197,6 +199,9 @@ public struct IncomingShareHandoffStore {
     }
 
     public func write(_ payload: IncomingSharePayload, fileData: Data?) throws -> URL {
+        guard !isFrozenForDeletedSpace else {
+            throw IncomingSharePayloadError.localSpaceDeleted
+        }
         if payload.kind != .text, fileData == nil {
             throw IncomingSharePayloadError.missingFile
         }
@@ -215,10 +220,17 @@ public struct IncomingShareHandoffStore {
             try? fileManager.removeItem(at: dataURL)
             throw error
         }
+        if isFrozenForDeletedSpace {
+            remove(id: payload.id)
+            throw IncomingSharePayloadError.localSpaceDeleted
+        }
         return Self.handoffURL(for: payload.id)
     }
 
     public func read(id: UUID) throws -> IncomingShareRead {
+        guard !isFrozenForDeletedSpace else {
+            throw IncomingSharePayloadError.localSpaceDeleted
+        }
         let envelopeURL = envelopeURL(for: id)
         let encoded = try Data(contentsOf: envelopeURL)
         let decoder = JSONDecoder()
@@ -239,6 +251,7 @@ public struct IncomingShareHandoffStore {
     /// Lists durable handoffs which have not yet been confirmed or cancelled by
     /// the containing app. The payload stays opaque until `read(id:)` validates it.
     public func pendingIDs() -> [UUID] {
+        guard !isFrozenForDeletedSpace else { return [] }
         let urls = (try? fileManager.contentsOfDirectory(
             at: rootDirectory,
             includingPropertiesForKeys: nil,
@@ -253,6 +266,41 @@ public struct IncomingShareHandoffStore {
     public func remove(id: UUID) {
         try? fileManager.removeItem(at: envelopeURL(for: id))
         try? fileManager.removeItem(at: dataURL(for: id))
+    }
+
+    public var isFrozenForDeletedSpace: Bool {
+        fileManager.fileExists(atPath: deletionMarkerURL.path)
+    }
+
+    public func freezeForDeletedSpaceAndClear() throws {
+        do {
+            try fileManager.createDirectory(at: rootDirectory, withIntermediateDirectories: true)
+            try Data("ameme.local-space-deleted.v1\n".utf8).write(
+                to: deletionMarkerURL,
+                options: .atomic
+            )
+            try clearPayloadFiles()
+            guard isFrozenForDeletedSpace, remainingPayloads.isEmpty else {
+                throw IncomingSharePayloadError.unavailable
+            }
+        } catch let error as IncomingSharePayloadError {
+            throw error
+        } catch {
+            throw IncomingSharePayloadError.unavailable
+        }
+    }
+
+    public func clearPendingHandoffs() throws {
+        do {
+            try clearPayloadFiles()
+            guard remainingPayloads.isEmpty else {
+                throw IncomingSharePayloadError.unavailable
+            }
+        } catch let error as IncomingSharePayloadError {
+            throw error
+        } catch {
+            throw IncomingSharePayloadError.unavailable
+        }
     }
 
     public func id(from url: URL) -> UUID? {
@@ -275,5 +323,24 @@ public struct IncomingShareHandoffStore {
 
     private func dataURL(for id: UUID) -> URL {
         rootDirectory.appendingPathComponent("\(id.uuidString).data", isDirectory: false)
+    }
+
+    private var deletionMarkerURL: URL {
+        rootDirectory.appendingPathComponent(".space-deleted-v1", isDirectory: false)
+    }
+
+    private var remainingPayloads: [URL] {
+        ((try? fileManager.contentsOfDirectory(
+            at: rootDirectory,
+            includingPropertiesForKeys: nil
+        )) ?? []).filter { url in
+            url.standardizedFileURL != deletionMarkerURL.standardizedFileURL
+        }
+    }
+
+    private func clearPayloadFiles() throws {
+        for url in remainingPayloads {
+            try fileManager.removeItem(at: url)
+        }
     }
 }

@@ -72,7 +72,7 @@ def main() -> int:
     project = IOS_PROJECT.read_text(encoding="utf-8")
 
     for marker in (
-        "const val SCHEMA_VERSION = 13",
+        "const val SCHEMA_VERSION = 14",
         "const val SOURCE_DELETION_SCHEMA_VERSION = 11",
         "const val REUSE_SCHEMA_VERSION = 10",
         "migrate_v10_to_v11_source_deletion",

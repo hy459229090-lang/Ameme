@@ -9,6 +9,7 @@ import com.ameme.android.data.transport.channel.SingleConnectionTlsLocalNodeList
 import java.io.Closeable
 import java.time.Clock
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import javax.net.ssl.SSLServerSocketFactory
@@ -166,6 +167,7 @@ class AgentLocalNodeRuntime private constructor(
             repositorySpaceId = LocalEventDatabase.DEFAULT_SPACE_ID,
             verifiedSession = verifiedSession,
             idempotencyRegistry = repository.durableAgentIdempotencyRegistry(),
+            accessAuditSink = repository.durableAgentAccessAuditSink(),
             clock = clock,
         )
         val response = runBlocking { endpoint.exchange(request) }
@@ -200,8 +202,25 @@ class AgentLocalNodeRuntime private constructor(
         signal(AgentLocalNodeRuntimeState.Stopped)
     }
 
+    /**
+     * Deletion/revocation boundary: stop accepting work and wait until the single request worker
+     * has actually exited. A timeout is reported to the caller instead of being mislabeled as a
+     * completed local-authorization shutdown.
+     */
+    fun closeAndAwait(timeoutMillis: Long = CLOSE_AWAIT_TIMEOUT_MILLIS): Boolean {
+        require(timeoutMillis in 1..30_000)
+        close()
+        return try {
+            executor.awaitTermination(timeoutMillis, TimeUnit.MILLISECONDS)
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+            false
+        }
+    }
+
     companion object {
         private const val RETRY_DELAY_MILLIS = 250L
+        private const val CLOSE_AWAIT_TIMEOUT_MILLIS = 5_000L
 
         fun launch(
             repository: LocalMemoryRepository,

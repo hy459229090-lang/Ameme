@@ -16,6 +16,10 @@ ANDROID_DATABASE = (
 )
 ANDROID_BACKUP = ANDROID_DATABASE.with_name("RecoveryBackup.kt")
 ANDROID_ACTIVATION = ANDROID_DATABASE.with_name("LocalRecoveryActivation.kt")
+ANDROID_AUDIT_MERGE = ANDROID_DATABASE.with_name("LocalRecoveryAgentAccessAudit.kt")
+ANDROID_AUDIT_PLAN = (
+    ROOT / "apps/android/app/src/main/java/com/ameme/android/data/AgentAccessAuditRecovery.kt"
+)
 ANDROID_REPOSITORY = (
     ROOT / "apps/android/app/src/main/java/com/ameme/android/data/RecoveryBackupRepository.kt"
 )
@@ -47,6 +51,8 @@ def main() -> int:
         ANDROID_DATABASE,
         ANDROID_BACKUP,
         ANDROID_ACTIVATION,
+        ANDROID_AUDIT_MERGE,
+        ANDROID_AUDIT_PLAN,
         ANDROID_REPOSITORY,
         ANDROID_REPOSITORY_ADAPTER,
         ANDROID_KEY_PROVIDER,
@@ -68,6 +74,8 @@ def main() -> int:
             ANDROID_DATABASE,
             ANDROID_BACKUP,
             ANDROID_ACTIVATION,
+            ANDROID_AUDIT_MERGE,
+            ANDROID_AUDIT_PLAN,
             ANDROID_REPOSITORY,
             ANDROID_REPOSITORY_ADAPTER,
         )
@@ -83,7 +91,7 @@ def main() -> int:
         "migrate_v8_to_v9_recovery_safety",
         "deletion_watermarks_no_delete",
         "deletion_watermarks_no_regression",
-        "const val SCHEMA_VERSION = 13",
+        "const val SCHEMA_VERSION = 14",
         "const val REUSE_SCHEMA_VERSION = 10",
         "const val RECOVERY_SCHEMA_VERSION = 9",
         "writeDeletionWatermark",
@@ -106,6 +114,14 @@ def main() -> int:
         "Live SQLCipher sidecars must be closed before recovery activation",
         "Recovery activation journal authentication failed",
         "HmacSHA256",
+        "AgentAccessAuditRecoveryPlanner",
+        "mergeIntoStagedCandidate",
+        "Recovery Agent access audit union exceeds capacity",
+        "Recovery Agent access audit trace-phase conflict",
+        "PRAGMA journal_mode=DELETE",
+        "mergedSnapshotSha256",
+        "AgentAccessAuditMerged",
+        "deleteStagedArtifacts",
     ):
         require(marker in android, f"Android recovery persistence declares {marker}", checks)
     for marker in (
@@ -184,6 +200,8 @@ def main() -> int:
         "CandidateMovedToLive",
         "expired",
         "forgedJournal",
+        "activationPreservesPostBackupAgentAuditAndMergeFailureLeavesLiveLedger",
+        "preparedRecoveryRemovesOrphanedAuditMergeSidecarsBeforeRestoringLive",
     ):
         require(marker in android_test, f"Android instrumented recovery test covers {marker}", checks)
     for marker in (
@@ -275,6 +293,8 @@ def main() -> int:
     tracked_inputs = (
         ANDROID_BACKUP.relative_to(ROOT),
         ANDROID_ACTIVATION.relative_to(ROOT),
+        ANDROID_AUDIT_MERGE.relative_to(ROOT),
+        ANDROID_AUDIT_PLAN.relative_to(ROOT),
         ANDROID_REPOSITORY.relative_to(ROOT),
         ANDROID_TEST.relative_to(ROOT),
         IOS_BACKUP.relative_to(ROOT),
@@ -302,6 +322,7 @@ def main() -> int:
                 "scope": "static_cross_platform_same_install_recovery_and_rollback_activation_kernel_only",
                 "production_recovery_claim": False,
                 "user_visible_recovery_claim": False,
+                "android_agent_audit_monotonic_merge_claim": True,
                 "device_execution_claim": False,
             },
             indent=2,

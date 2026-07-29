@@ -105,7 +105,7 @@ def main() -> int:
     require_markers(
         android_store,
         (
-            "const val SCHEMA_VERSION = 13",
+            "const val USER_CONFIRMATION_SCHEMA_VERSION = 13",
             "migrate_v12_to_v13_user_confirmation_provenance",
             "event_user_confirmations",
             "event_user_confirmations_no_delete",

@@ -284,6 +284,35 @@ internal object LocalRecoveryBackup {
         )
     }
 
+    internal fun verifyActivatedCandidateDatabase(
+        databaseFile: File,
+        manifest: RecoveryBackupManifest,
+        key: ByteArray,
+        authoritativeWatermarks: List<DeletionWatermark>,
+        agentAccessAuditEvidence: RecoveryAgentAccessAuditEvidence,
+    ) {
+        require(databaseFile.isFile && !Files.isSymbolicLink(databaseFile.toPath())) {
+            "Activated recovery database is unavailable"
+        }
+        require(databaseFile.length() == agentAccessAuditEvidence.mergedSnapshotSize) {
+            "Activated recovery database size changed"
+        }
+        require(sha256Hex(databaseFile) == agentAccessAuditEvidence.mergedSnapshotSha256) {
+            "Activated recovery database digest changed"
+        }
+        verifySnapshot(
+            snapshot = databaseFile,
+            key = key,
+            expectedWatermarkDigest = manifest.deletionWatermarkDigest,
+            authoritativeWatermarks = authoritativeWatermarks,
+        )
+        LocalRecoveryAgentAccessAudit.verifyRetainedEvidence(
+            databaseFile = databaseFile,
+            key = key,
+            expected = agentAccessAuditEvidence,
+        )
+    }
+
     private fun verifySnapshot(
         snapshot: File,
         key: ByteArray,
@@ -336,7 +365,7 @@ internal object LocalRecoveryBackup {
         }
     }
 
-    private fun removeReadOnlyVerificationSidecars(snapshot: File) {
+    internal fun removeReadOnlyVerificationSidecars(snapshot: File) {
         listOf("-wal", "-shm", "-journal").forEach { suffix ->
             val sidecar = File(snapshot.parentFile, "${snapshot.name}$suffix")
             if (!sidecar.exists()) return@forEach

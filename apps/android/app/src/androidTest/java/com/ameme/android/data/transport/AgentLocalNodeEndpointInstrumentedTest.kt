@@ -5,6 +5,9 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.ameme.android.data.local.LocalMemoryRepository
 import com.ameme.android.data.local.SyntheticDatabaseKeyProvider
+import com.ameme.android.data.AgentAccessAuditObjectCountBucket
+import com.ameme.android.data.AgentAccessAuditPhase
+import com.ameme.android.data.AgentAccessAuditPolicy
 import com.ameme.android.domain.EvidenceState
 import com.ameme.android.domain.FactStatus
 import java.io.File
@@ -51,6 +54,7 @@ class AgentLocalNodeEndpointInstrumentedTest {
                 expiresAt = Instant.parse("2026-07-14T05:00:00Z"),
             ),
             idempotencyRegistry = repository.durableAgentIdempotencyRegistry(),
+            accessAuditSink = repository.durableAgentAccessAuditSink(),
             clock = clock,
         )
         val payload = AgentLocalNodeCreateEventPayload(
@@ -145,6 +149,24 @@ class AgentLocalNodeEndpointInstrumentedTest {
             assertEquals(EvidenceState.UserAsserted, stored.evidenceState)
             assertEquals(2, stored.revision)
             assertTrue(databaseFile.length() > 0L)
+            val audit = reopened.recentAgentAccessAudit(limit = 10, at = clock.instant())
+            assertEquals(4, audit.size)
+            assertEquals(2, audit.groupBy { it.traceId }.size)
+            audit.groupBy { it.traceId }.values.forEach { trace ->
+                assertEquals(
+                    setOf(AgentAccessAuditPhase.Started, AgentAccessAuditPhase.Completed),
+                    trace.mapTo(mutableSetOf()) { it.phase },
+                )
+            }
+            val appendAudit = audit.single {
+                it.phase == AgentAccessAuditPhase.Completed &&
+                    it.operation == "append_revision"
+            }
+            assertEquals(AgentAccessAuditPolicy.RESULT_OK, appendAudit.resultCode)
+            assertEquals(AgentAccessAuditObjectCountBucket.One, appendAudit.objectCountBucket)
+            assertFalse(audit.joinToString().contains(CONTENT))
+            assertFalse(audit.joinToString().contains(REVISION_CONTENT))
+            assertFalse(audit.joinToString().contains(result.eventId))
 
             val replayEndpoint = MemoryRepositoryAgentLocalNodeEndpoint.enabledForVerifiedSession(
                 repository = reopened,
@@ -161,6 +183,7 @@ class AgentLocalNodeEndpointInstrumentedTest {
                     expiresAt = Instant.parse("2026-07-14T05:00:00Z"),
                 ),
                 idempotencyRegistry = reopened.durableAgentIdempotencyRegistry(),
+                accessAuditSink = reopened.durableAgentAccessAuditSink(),
                 clock = clock,
             )
             val replayBytes = AgentLocalNodeApplicationCodec.encodeCreateEvent(payload)
@@ -287,6 +310,7 @@ class AgentLocalNodeEndpointInstrumentedTest {
                     expiresAt = Instant.parse("2026-07-14T05:00:00Z"),
                 ),
                 idempotencyRegistry = reopened.durableAgentIdempotencyRegistry(),
+                accessAuditSink = reopened.durableAgentAccessAuditSink(),
                 clock = clock,
             )
             val undoPayload = AgentLocalNodeUndoCapturePayload(
@@ -363,6 +387,7 @@ class AgentLocalNodeEndpointInstrumentedTest {
                     expiresAt = Instant.parse("2026-07-14T05:00:00Z"),
                 ),
                 idempotencyRegistry = repository.durableAgentIdempotencyRegistry(),
+                accessAuditSink = repository.durableAgentAccessAuditSink(),
                 clock = clock,
             )
             val createBytes = AgentLocalNodeApplicationCodec.encodeCreateEvent(payload)
@@ -450,6 +475,7 @@ class AgentLocalNodeEndpointInstrumentedTest {
                     expiresAt = Instant.parse("2026-07-14T05:00:00Z"),
                 ),
                 idempotencyRegistry = reopened.durableAgentIdempotencyRegistry(),
+                accessAuditSink = reopened.durableAgentAccessAuditSink(),
                 clock = clock,
             )
             val undoPayload = AgentLocalNodeUndoCapturePayload(
@@ -518,6 +544,7 @@ class AgentLocalNodeEndpointInstrumentedTest {
                 repositorySpaceId = SPACE_ID,
                 verifiedSession = session,
                 idempotencyRegistry = repository.durableAgentIdempotencyRegistry(),
+                accessAuditSink = repository.durableAgentAccessAuditSink(),
                 clock = clock,
             )
             suspend fun create(
@@ -655,6 +682,7 @@ class AgentLocalNodeEndpointInstrumentedTest {
                     repositorySpaceId = SPACE_ID,
                     verifiedSession = session.copy(allowedSensitivities = setOf("personal")),
                     idempotencyRegistry = repository.durableAgentIdempotencyRegistry(),
+                    accessAuditSink = repository.durableAgentAccessAuditSink(),
                     clock = clock,
                 )
             val unauthorized = visible(

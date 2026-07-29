@@ -35,6 +35,8 @@
 		7906C5CCFAD9897FFBF7AC50 /* LongTermMemoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6630A6CD6A5E7F4BEB0E3A9 /* LongTermMemoryTests.swift */; };
 		79D8A12FA082FDB7EBF0F37A /* IncomingShareHandoffTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5F19D1C7A9E0CD00AF623F8 /* IncomingShareHandoffTests.swift */; };
 		82FD5B19EEA2AB247DF24FC5 /* AmemeShared.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 136E3A12237D7A2B2C940AC7 /* AmemeShared.framework */; };
+		953140FEEAA2AE21B405C9C8 /* LocalSpaceDeletionConvergenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0AC4A879B3ABAB30B82184 /* LocalSpaceDeletionConvergenceTests.swift */; };
+		9EFACA2053F76573BFE9E21B /* LocalSpaceDeletionConvergence.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2D1466804395B9150998F33 /* LocalSpaceDeletionConvergence.swift */; };
 		B2098B3CA9D02DC18765698E /* SourceLineage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C4777302E77E5BD39AFFFB6 /* SourceLineage.swift */; };
 		BE64DB86C04A7DCB6DBE93EB /* AmemeShared.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 136E3A12237D7A2B2C940AC7 /* AmemeShared.framework */; };
 		CD42E77E687BDEFBB7277C2C /* AmemeShareExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = BB5DE2F5021CD570DD276759 /* AmemeShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -135,6 +137,7 @@
 		A4BD9B3B722E05DACE815B36 /* LocalMemoryStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalMemoryStoreTests.swift; sourceTree = "<group>"; };
 		A6630A6CD6A5E7F4BEB0E3A9 /* LongTermMemoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LongTermMemoryTests.swift; sourceTree = "<group>"; };
 		A9323F27D3E5EDD8A5FAA8C2 /* ShareExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ShareExtension.entitlements; sourceTree = "<group>"; };
+		AA0AC4A879B3ABAB30B82184 /* LocalSpaceDeletionConvergenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalSpaceDeletionConvergenceTests.swift; sourceTree = "<group>"; };
 		B599B0416DFE77D6724DC708 /* AgentExperienceDiscovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentExperienceDiscovery.swift; sourceTree = "<group>"; };
 		B7574E716B2282E4B8E869A4 /* CoveragePersistenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoveragePersistenceTests.swift; sourceTree = "<group>"; };
 		BB5DE2F5021CD570DD276759 /* AmemeShareExtension.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = AmemeShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -152,6 +155,7 @@
 		EC97FEF29FE897752D06AD97 /* AgentAccessGrant.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentAccessGrant.swift; sourceTree = "<group>"; };
 		ED174B91780C00B392299BFE /* LocalBackupStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalBackupStore.swift; sourceTree = "<group>"; };
 		F25D283DE69494016967FA0F /* ReuseContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReuseContext.swift; sourceTree = "<group>"; };
+		F2D1466804395B9150998F33 /* LocalSpaceDeletionConvergence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalSpaceDeletionConvergence.swift; sourceTree = "<group>"; };
 		F913BAEFF11220E52C4226BA /* IncomingShare.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IncomingShare.swift; sourceTree = "<group>"; };
 		FABB8F8C5C0819CCF825A413 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		FE73845C098287738CFC6DFE /* AgentExperienceConnector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentExperienceConnector.swift; sourceTree = "<group>"; };
@@ -219,6 +223,7 @@
 				ED174B91780C00B392299BFE /* LocalBackupStore.swift */,
 				01DEEEE10FE486FB2821C899 /* LocalMemoryStore.swift */,
 				A0FEAF71EF61749E3814B2DA /* LocalSpaceDeletion.swift */,
+				F2D1466804395B9150998F33 /* LocalSpaceDeletionConvergence.swift */,
 				0723485264CD08D64245C35E /* LongTermMemory.swift */,
 				8EADB6199992B75992369955 /* MobileCoverageRuntime.swift */,
 				A0AFCB33DA303FBD8715F6E4 /* Models.swift */,
@@ -260,6 +265,7 @@
 				D5F19D1C7A9E0CD00AF623F8 /* IncomingShareHandoffTests.swift */,
 				83C5DB3128B0C0FEED20A5BE /* LocalBackupStoreTests.swift */,
 				A4BD9B3B722E05DACE815B36 /* LocalMemoryStoreTests.swift */,
+				AA0AC4A879B3ABAB30B82184 /* LocalSpaceDeletionConvergenceTests.swift */,
 				701DA062F8C7FE670B0335FC /* LocalSpaceDeletionTests.swift */,
 				A6630A6CD6A5E7F4BEB0E3A9 /* LongTermMemoryTests.swift */,
 				DD48E84B816F888602C1B022 /* PendingExportStoreTests.swift */,
@@ -470,6 +476,7 @@
 				430C98D8B5AB52FA3898CAF4 /* LocalBackupStore.swift in Sources */,
 				61B0D4D31CC020D6D3775FDE /* LocalMemoryStore.swift in Sources */,
 				24811BD7AACE27796A543D2C /* LocalSpaceDeletion.swift in Sources */,
+				9EFACA2053F76573BFE9E21B /* LocalSpaceDeletionConvergence.swift in Sources */,
 				023E5ABD23777843C1AA6651 /* LongTermMemory.swift in Sources */,
 				49B4743749B07278E20C87CB /* MobileCoverageRuntime.swift in Sources */,
 				EC38184D1A2C1E92FA6EF9CC /* Models.swift in Sources */,
@@ -498,6 +505,7 @@
 				79D8A12FA082FDB7EBF0F37A /* IncomingShareHandoffTests.swift in Sources */,
 				D19DF4E51FA21E98D1DFE407 /* LocalBackupStoreTests.swift in Sources */,
 				F2640ECB909A8973F49174CC /* LocalMemoryStoreTests.swift in Sources */,
+				953140FEEAA2AE21B405C9C8 /* LocalSpaceDeletionConvergenceTests.swift in Sources */,
 				DD1A9FE87E89D6DE38B1AC2D /* LocalSpaceDeletionTests.swift in Sources */,
 				7906C5CCFAD9897FFBF7AC50 /* LongTermMemoryTests.swift in Sources */,
 				1FD525BC1F092D384ABE666B /* PendingExportStoreTests.swift in Sources */,

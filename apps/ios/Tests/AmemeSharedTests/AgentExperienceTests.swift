@@ -221,6 +221,8 @@ final class AgentExperienceTests: XCTestCase {
                     .contains("secret")
             )
         }
+        try store.clearAndVerify()
+        XCTAssertNil(defaults.object(forKey: AgentExperienceStore.userDefaultsKey))
     }
 
     func testExpiredConnectionIsClearedAndMalformedStateFailsClosed() throws {

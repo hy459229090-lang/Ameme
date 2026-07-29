@@ -137,7 +137,7 @@ def main() -> int:
         "reuse_attempts",
         "reuse_outcomes",
         "migrate_v9_to_v10_reuse_telemetry",
-        "const val SCHEMA_VERSION = 13",
+        "const val SCHEMA_VERSION = 14",
         "const val FIELD_EVIDENCE_SCHEMA_VERSION = 12",
         "const val REUSE_SCHEMA_VERSION = 10",
         'listOf("reuse_attempts", "reuse_outcomes")',

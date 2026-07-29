@@ -190,6 +190,7 @@ class LocalLongTermMemoryInstrumentedTest {
             assertTrue(it.hasMigration(11))
             assertTrue(it.hasMigration(12))
             assertTrue(it.hasMigration(13))
+            assertTrue(it.hasMigration(14))
         }
     }
 

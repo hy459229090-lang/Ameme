@@ -219,6 +219,8 @@ final class ShareViewController: UIViewController {
             return "分享文字为空；没有保存内容。"
         case .textTooLong:
             return "分享文字过长；没有保存内容。"
+        case .localSpaceDeleted:
+            return "本机 Personal 空间已删除；没有保存分享内容。"
         case .invalidMimeType, .invalidSchema, .missingFile:
             return "分享内容不符合安全边界；没有保存内容。"
         default:

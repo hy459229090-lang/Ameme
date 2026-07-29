@@ -64,6 +64,14 @@ class LocalRecoveryActivationCoordinator(
                 key = key,
                 authoritativeWatermarks = authoritativeWatermarks,
             )
+            writeJournal(
+                journal = files.journal,
+                state = JournalState.Prepared,
+                authorization = authorization,
+                key = key,
+            )
+            failureInjector?.invoke(RecoveryActivationPhase.JournalPrepared)
+
             Files.copy(
                 candidate.databaseFile.toPath(),
                 files.staged.toPath(),
@@ -76,14 +84,21 @@ class LocalRecoveryActivationCoordinator(
                 authoritativeWatermarks = authoritativeWatermarks,
             )
             failureInjector?.invoke(RecoveryActivationPhase.CandidateStaged)
-
-            writeJournal(
-                journal = files.journal,
-                state = JournalState.Prepared,
-                authorization = authorization,
+            val agentAccessAuditEvidence =
+                LocalRecoveryAgentAccessAudit.mergeIntoStagedCandidate(
+                    liveDatabaseFile = files.live,
+                    stagedDatabaseFile = files.staged,
+                    key = key,
+                    retainedAt = activatedAt,
+                )
+            LocalRecoveryBackup.verifyActivatedCandidateDatabase(
+                databaseFile = files.staged,
+                manifest = candidate.sourceManifest,
                 key = key,
+                authoritativeWatermarks = authoritativeWatermarks,
+                agentAccessAuditEvidence = agentAccessAuditEvidence,
             )
-            failureInjector?.invoke(RecoveryActivationPhase.JournalPrepared)
+            failureInjector?.invoke(RecoveryActivationPhase.AgentAccessAuditMerged)
 
             atomicMove(files.live, files.rollback)
             failureInjector?.invoke(RecoveryActivationPhase.LiveMovedToRollback)
@@ -91,11 +106,12 @@ class LocalRecoveryActivationCoordinator(
             atomicMove(files.staged, files.live)
             failureInjector?.invoke(RecoveryActivationPhase.CandidateMovedToLive)
 
-            LocalRecoveryBackup.verifyCandidateDatabase(
+            LocalRecoveryBackup.verifyActivatedCandidateDatabase(
                 databaseFile = files.live,
                 manifest = candidate.sourceManifest,
                 key = key,
                 authoritativeWatermarks = authoritativeWatermarks,
+                agentAccessAuditEvidence = agentAccessAuditEvidence,
             )
             failureInjector?.invoke(RecoveryActivationPhase.LiveVerified)
 
@@ -119,8 +135,11 @@ class LocalRecoveryActivationCoordinator(
             val recovery = runCatching {
                 recoverInterruptedActivation(liveDatabaseFile, key)
             }.onFailure(error::addSuppressed)
-            if (recovery.getOrNull() == false && files.staged.exists()) {
-                runCatching { deleteReservedFile(files.staged) }
+            if (
+                recovery.getOrNull() == false &&
+                (files.staged.exists() || files.stagedSidecars.any { it.exists() })
+            ) {
+                runCatching { deleteStagedArtifacts(files) }
                     .onFailure(error::addSuppressed)
             }
             throw error
@@ -130,8 +149,9 @@ class LocalRecoveryActivationCoordinator(
     }
 
     internal enum class RecoveryActivationPhase {
-        CandidateStaged,
         JournalPrepared,
+        CandidateStaged,
+        AgentAccessAuditMerged,
         LiveMovedToRollback,
         CandidateMovedToLive,
         LiveVerified,
@@ -173,12 +193,18 @@ class LocalRecoveryActivationCoordinator(
             require(!staged.exists() && !rollback.exists() && !journal.exists()) {
                 "Reserved recovery activation files already exist"
             }
+            require(stagedSidecars.none { it.exists() }) {
+                "Reserved recovery staging sidecars already exist"
+            }
             SIDECAR_SUFFIXES.forEach { suffix ->
                 require(!File(parent, "${live.name}$suffix").exists()) {
                     "Live SQLCipher sidecars must be closed before recovery activation"
                 }
             }
         }
+
+        val stagedSidecars: List<File>
+            get() = SIDECAR_SUFFIXES.map { suffix -> File("${staged.path}$suffix") }
     }
 
     companion object {
@@ -217,6 +243,7 @@ class LocalRecoveryActivationCoordinator(
             val journal = readJournal(files.journal, key)
             when (journal.state) {
                 JournalState.Prepared -> {
+                    deleteDatabaseSidecars(files.live)
                     if (files.rollback.exists()) {
                         require(
                             files.rollback.isFile &&
@@ -237,14 +264,13 @@ class LocalRecoveryActivationCoordinator(
                     require(files.live.isFile && !Files.isSymbolicLink(files.live.toPath())) {
                         "Committed recovery activation has no live database"
                     }
+                    deleteDatabaseSidecars(files.live)
                     if (files.rollback.exists()) {
                         deleteReservedFile(files.rollback)
                     }
                 }
             }
-            if (files.staged.exists()) {
-                deleteReservedFile(files.staged)
-            }
+            deleteStagedArtifacts(files)
             deleteReservedFile(files.journal)
             return true
         }
@@ -336,6 +362,20 @@ class LocalRecoveryActivationCoordinator(
                 "Recovery activation reserved path is unsafe"
             }
             Files.delete(file.toPath())
+        }
+
+        private fun deleteStagedArtifacts(files: ActivationFiles) {
+            files.stagedSidecars.forEach { sidecar ->
+                if (sidecar.exists()) deleteReservedFile(sidecar)
+            }
+            if (files.staged.exists()) deleteReservedFile(files.staged)
+        }
+
+        private fun deleteDatabaseSidecars(databaseFile: File) {
+            SIDECAR_SUFFIXES.forEach { suffix ->
+                val sidecar = File("${databaseFile.path}$suffix")
+                if (sidecar.exists()) deleteReservedFile(sidecar)
+            }
         }
 
         private fun hmacHex(key: ByteArray, payload: ByteArray): String {

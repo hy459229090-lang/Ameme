@@ -201,4 +201,11 @@ public struct AgentExperienceStore {
     public func clear() {
         defaults.removeObject(forKey: Self.userDefaultsKey)
     }
+
+    public func clearAndVerify() throws {
+        clear()
+        guard defaults.object(forKey: Self.userDefaultsKey) == nil else {
+            throw AgentExperienceStoreError.unavailable
+        }
+    }
 }

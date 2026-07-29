@@ -123,7 +123,7 @@ def main() -> int:
         require(marker in ios_model, f"iOS lineage model declares {marker}", checks)
 
     for marker in (
-        "const val SCHEMA_VERSION = 13",
+        "const val SCHEMA_VERSION = 14",
         "const val FIELD_EVIDENCE_SCHEMA_VERSION = 12",
         "migrate_v12_to_v13_user_confirmation_provenance",
         "const val SOURCE_DELETION_SCHEMA_VERSION = 11",

@@ -62,6 +62,26 @@ class AgentPairingManagerInstrumentedTest {
         manager.revoke()
         assertNull(manager.loadActive())
         assertFalse(manager.pairingFile().exists())
+        assertFalse(
+            java.io.File(manager.pairingFile().parentFile, "${manager.pairingFile().name}.tmp")
+                .exists(),
+        )
+    }
+
+    @Test
+    fun revoke_removes_interrupted_temporary_pairing_material() {
+        manager.create(host = "127.0.0.1", port = 43_821)
+        val temporary = java.io.File(
+            manager.pairingFile().parentFile,
+            "${manager.pairingFile().name}.tmp",
+        )
+        temporary.writeText("content-free interrupted material")
+
+        manager.revoke()
+
+        assertNull(manager.loadActive())
+        assertFalse(manager.pairingFile().exists())
+        assertFalse(temporary.exists())
     }
 
     @Test

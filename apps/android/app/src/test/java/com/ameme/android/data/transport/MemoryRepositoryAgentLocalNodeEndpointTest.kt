@@ -3,6 +3,10 @@ package com.ameme.android.data.transport
 import com.ameme.android.data.FakeMemoryRepository
 import com.ameme.android.data.AgentCaptureUndoResult
 import com.ameme.android.data.AgentCaptureUndoTarget
+import com.ameme.android.data.AgentAccessAuditObjectCountBucket
+import com.ameme.android.data.AgentAccessAuditPhase
+import com.ameme.android.data.AgentAccessAuditPolicy
+import com.ameme.android.data.AgentAccessAuditRecord
 import com.ameme.android.domain.EvidenceState
 import com.ameme.android.domain.FactStatus
 import java.time.Clock
@@ -806,6 +810,92 @@ class MemoryRepositoryAgentLocalNodeEndpointTest {
     }
 
     @Test
+    fun accessAuditRecordsContentFreeSuccessAndAuthorizationFailure() = runBlocking {
+        val repository = FakeMemoryRepository(clock)
+        val audit = InMemoryTestAccessAuditSink()
+        val endpoint = enabledEndpoint(repository, auditSink = audit)
+        val payload = goldenPayload()
+
+        val success = endpoint.exchange(request(payload, requestId = "req_audit_success"))
+        val denied = endpoint.exchange(
+            request(payload, requestId = "req_audit_denied", callerId = "agent_other"),
+        )
+
+        assertEquals(AgentLocalNodeStatus.Ok, success.status)
+        assertError(denied, AgentLocalNodeErrorCode.AUTH_REQUIRED)
+        assertEquals(4, audit.records.size)
+        val successfulPair = audit.records.take(2)
+        assertEquals(
+            listOf(AgentAccessAuditPhase.Started, AgentAccessAuditPhase.Completed),
+            successfulPair.map(AgentAccessAuditRecord::phase),
+        )
+        assertEquals(1, successfulPair.map(AgentAccessAuditRecord::traceId).distinct().size)
+        assertEquals("agent_synthetic", successfulPair.last().callerId)
+        assertEquals("autonomous_memory", successfulPair.last().purpose)
+        assertEquals(listOf("space_work"), successfulPair.last().spaces)
+        assertEquals(listOf("event"), successfulPair.last().dataTypes)
+        assertEquals("create_event", successfulPair.last().operation)
+        assertEquals(AgentAccessAuditPolicy.RESULT_OK, successfulPair.last().resultCode)
+        assertEquals(
+            AgentAccessAuditObjectCountBucket.One,
+            successfulPair.last().objectCountBucket,
+        )
+        assertEquals(
+            AgentAccessAuditPolicy.retention,
+            java.time.Duration.between(
+                successfulPair.last().occurredAt,
+                successfulPair.last().retentionUntil,
+            ),
+        )
+        assertEquals("AUTH_REQUIRED", audit.records.last().resultCode)
+        assertEquals(AgentAccessAuditObjectCountBucket.Zero, audit.records.last().objectCountBucket)
+
+        val auditProjection = audit.records.joinToString()
+        assertFalse(auditProjection.contains(payload.content))
+        assertFalse(auditProjection.contains(GOLDEN_SLOT))
+        assertFalse(auditProjection.contains(GOLDEN_PAYLOAD_DIGEST))
+        assertFalse(auditProjection.contains(resultOf(success).eventId))
+    }
+
+    @Test
+    fun accessAuditFailureClosesBeforeMutationAndCompletionRetryRemainsIdempotent() = runBlocking {
+        val repository = FakeMemoryRepository(clock)
+        val initialCount = repository.loadActiveEvents().size
+        val registry = InMemoryTestIdempotencyRegistry()
+        val payload = goldenPayload()
+        val beginFailure = enabledEndpoint(
+            repository,
+            registry = registry,
+            auditSink = InMemoryTestAccessAuditSink(failBegin = true),
+        ).exchange(request(payload, requestId = "req_audit_begin_failure"))
+
+        assertError(beginFailure, AgentLocalNodeErrorCode.TEMPORARILY_UNAVAILABLE)
+        assertEquals(initialCount, repository.loadActiveEvents().size)
+
+        val completionFailureAudit = InMemoryTestAccessAuditSink(failComplete = true)
+        val completionFailure = enabledEndpoint(
+            repository,
+            registry = registry,
+            auditSink = completionFailureAudit,
+        ).exchange(request(payload, requestId = "req_audit_completion_failure"))
+        assertError(completionFailure, AgentLocalNodeErrorCode.TEMPORARILY_UNAVAILABLE)
+        assertEquals(initialCount + 1, repository.loadActiveEvents().size)
+        assertEquals(1, completionFailureAudit.records.size)
+        assertEquals(AgentAccessAuditPhase.Started, completionFailureAudit.records.single().phase)
+
+        val retryAudit = InMemoryTestAccessAuditSink()
+        val retry = enabledEndpoint(
+            repository,
+            registry = registry,
+            auditSink = retryAudit,
+        ).exchange(request(payload, requestId = "req_audit_completion_retry"))
+        assertEquals(AgentLocalNodeStatus.Ok, retry.status)
+        assertEquals(initialCount + 1, repository.loadActiveEvents().size)
+        assertEquals(AgentAccessAuditPolicy.RESULT_OK, retryAudit.records.last().resultCode)
+        assertEquals(AgentAccessAuditObjectCountBucket.One, retryAudit.records.last().objectCountBucket)
+    }
+
+    @Test
     fun closedEndpointAndExpiredOrRevokedGrantFailWithoutExistenceDetail() = runBlocking {
         val payload = goldenPayload()
         val closed = MemoryRepositoryAgentLocalNodeEndpoint.closed(clock).exchange(
@@ -870,12 +960,14 @@ class MemoryRepositoryAgentLocalNodeEndpointTest {
         repository: FakeMemoryRepository,
         registry: AgentLocalNodeIdempotencyRegistry = InMemoryTestIdempotencyRegistry(),
         session: VerifiedAgentLocalNodeSession = verifiedSession(),
+        auditSink: AgentAccessAuditSink = InMemoryTestAccessAuditSink(),
     ): MemoryRepositoryAgentLocalNodeEndpoint =
         MemoryRepositoryAgentLocalNodeEndpoint.enabledForVerifiedSession(
             repository = repository,
             repositorySpaceId = "space_work",
             verifiedSession = session,
             idempotencyRegistry = registry,
+            accessAuditSink = auditSink,
             clock = clock,
         )
 
@@ -1179,6 +1271,33 @@ class MemoryRepositoryAgentLocalNodeEndpointTest {
             ) ?: return AgentLocalNodeUndoIdempotencyResult.NotVisible
             undoStored[binding] = payloadDigest to outcome
             return AgentLocalNodeUndoIdempotencyResult.Applied(outcome)
+        }
+    }
+
+    private class InMemoryTestAccessAuditSink(
+        private val failBegin: Boolean = false,
+        private val failComplete: Boolean = false,
+    ) : AgentAccessAuditSink {
+        val records = mutableListOf<AgentAccessAuditRecord>()
+
+        override fun begin(
+            control: AgentLocalNodeControl,
+            at: Instant,
+        ): AgentAccessAuditAttempt {
+            check(!failBegin) { "synthetic audit begin failure" }
+            return AgentAccessAuditAttempt.from(control, at).also { attempt ->
+                records += attempt.startedRecord()
+            }
+        }
+
+        override fun complete(
+            attempt: AgentAccessAuditAttempt,
+            resultCode: String,
+            objectCount: Int?,
+            at: Instant,
+        ) {
+            check(!failComplete) { "synthetic audit completion failure" }
+            records += attempt.completedRecord(resultCode, objectCount, at)
         }
     }
 

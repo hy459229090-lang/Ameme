@@ -532,15 +532,16 @@ class LocalSourceDeletionInstrumentedTest {
                 database.execSQL("DROP TABLE event_source_links")
                 database.execSQL("DROP TABLE event_field_evidence")
                 database.execSQL("DROP TABLE event_user_confirmations")
+                database.execSQL("DROP TABLE agent_access_audit")
                 database.execSQL("DROP TABLE source_objects")
-                database.execSQL("DELETE FROM schema_migrations WHERE version IN (11, 12, 13)")
+                database.execSQL("DELETE FROM schema_migrations WHERE version IN (11, 12, 13, 14)")
                 database.version = 10
             }
         } finally {
             openKey.fill(0)
         }
         open(file).use { migrated ->
-            assertEquals(13, LocalEventDatabase.SCHEMA_VERSION)
+            assertEquals(14, LocalEventDatabase.SCHEMA_VERSION)
             assertEquals(event.id, migrated.loadActiveEvents().single().id)
             assertTrue(migrated.sourceObjectsForEvent(event.id).isEmpty())
             assertEquals(
@@ -567,7 +568,8 @@ class LocalSourceDeletionInstrumentedTest {
         }
         withRawDatabase(file) { database ->
             database.execSQL("DROP TABLE event_user_confirmations")
-            database.execSQL("DELETE FROM schema_migrations WHERE version = 13")
+            database.execSQL("DROP TABLE agent_access_audit")
+            database.execSQL("DELETE FROM schema_migrations WHERE version IN (13, 14)")
             database.version = 12
         }
 
@@ -576,9 +578,16 @@ class LocalSourceDeletionInstrumentedTest {
             assertTrue(migrated.userConfirmationsForEvent(eventId).isEmpty())
         }
         withRawDatabase(file) { database ->
-            assertEquals(13, database.version)
+            assertEquals(14, database.version)
             database.rawQuery(
                 "SELECT COUNT(*) FROM schema_migrations WHERE version = 13",
+                emptyArray(),
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(1, cursor.getInt(0))
+            }
+            database.rawQuery(
+                "SELECT COUNT(*) FROM schema_migrations WHERE version = 14",
                 emptyArray(),
             ).use { cursor ->
                 assertTrue(cursor.moveToFirst())

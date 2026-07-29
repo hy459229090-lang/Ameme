@@ -9,7 +9,7 @@ public enum LocalSpaceDeletionStatus: String, Codable, Hashable, Sendable {
     case persistenceFailed = "persistence_failed"
 }
 
-public struct LocalSpaceDeletionResult: Codable, Hashable, Sendable {
+public struct LocalSpaceDeletionResult: Hashable, Sendable {
     public let spaceID: String
     public let status: LocalSpaceDeletionStatus
     public let affectedEventCount: Int
