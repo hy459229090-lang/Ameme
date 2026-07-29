@@ -146,6 +146,24 @@ def main() -> int:
             ]
             diagnostic = diagnostic_lines[-1][:160] if diagnostic_lines else "no_diagnostic"
             raise RuntimeError("swift_network_to_android_smoke_failed:" + diagnostic)
+        swift_evidence: dict[str, Any] | None = None
+        for line in reversed(result.stdout.splitlines()):
+            try:
+                candidate = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(candidate, dict) and candidate.get("status") == "passed":
+                swift_evidence = candidate
+                break
+        if swift_evidence is None or not all(
+            swift_evidence.get(field) is True
+            for field in (
+                "bounded_visible_events",
+                "append_revision",
+                "exact_event_and_revision_undo",
+            )
+        ):
+            raise RuntimeError("swift_network_operation_evidence_incomplete")
         current_ui = adb.ui_xml()
         if "自动整理你的一天" in current_ui and not adb.click_text_after_scroll("查看今天"):
             raise RuntimeError("android_onboarding_continue_not_clickable")
@@ -157,6 +175,9 @@ def main() -> int:
             "qr_user_path_connected": True,
             "tls_hmac_grant_bound": True,
             "visible_in_android_today": True,
+            "bounded_visible_events": True,
+            "append_revision": True,
+            "exact_event_and_revision_undo": True,
             "content_logged": False,
         }, ensure_ascii=False))
         return 0

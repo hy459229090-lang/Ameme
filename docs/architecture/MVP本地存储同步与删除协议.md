@@ -1,4 +1,4 @@
-# Ameme MVP 本地存储、同步与删除协议 v0.19
+# Ameme MVP 本地存储、同步与删除协议 v0.20
 
 > 文档状态：已接受；MVP 存储/同步/删除实现正本，达成情况待 Spike\
 > 更新日期：2026-07-29\
@@ -6,7 +6,7 @@
 > 人类快速阅读：先看“实现基线”、第 5 节删除语义、第 8 节迁移策略和第 9 节当前达成边界\
 > AI 阅读提示：版本与通过范围以实现基线和第 9 节为准；不得把静态、Smoke、Simulator/AVD 证据扩写成真实用户、物理设备或分布式删除通过\
 > 上游：`MVP领域契约与状态机.md`、`../../packages/contracts/schemas/ameme-domain.schema.json`、`../decisions/ADR-005-MVP技术实现默认栈.md`\
-> 实现基线：Android 固定官方 `net.zetetic:sqlcipher-android:4.15.0` + SQLite WAL；schema v6 的 SourceLocator、DayLedger/Summary、Agent 持久幂等、可回退 FTS5、异步 I/O、Calendar/Voice 显式来源和 10k/100k 已形成 API 36 x86_64 AVD 证据；schema v7 加入 Coverage，v8 加入长期 Memory，v9 加入不可回退删除水位、备份 checkpoint 和认证同安装恢复候选，v10 加入四类复用的无正文 attempt/outcome，v11 加入本机 SourceObject/Event link/deletion job、单来源 cascade、source watermark 与当前安装 Personal space root freeze，v12 加入 exact-revision `event_field_evidence` 与多来源保守重算/删除计数，v13 加入 content-free exact-revision `event_user_confirmations`。v7–v13 SQLCipher instrumentation 已在 API 36、16 KB arm64 AVD 的本轮全量回归中执行；Android 仍没有 app-owned Raw Vault。iOS AES-GCM local-store envelope v8 已由生产 smoke 走通 Coverage、长期 Memory、删除水位、认证备份、四类短时复用、无正文遥测、app-owned media Raw-only、外部原件边界、单/多来源字段证据重算、完整用户确认删源保留、partial 确认 fail-closed 与当前安装 Personal space 根水位/旧备份拒绝。2026-07-29 进一步加入不改变 schema/envelope 的同安装候选激活内核：exact backup 短时确认、权威水位二次校验、同卷 staging 与 HMAC crash journal，失败回旧 live，commit 后保留已验证新 live；Android 已在 API 36 / 16 KB AVD 恢复类 3/3 与全量 91/84/7/0 执行，iOS 成功路径已由生产 smoke 执行。两端设备密钥均未进入 artifact，因此不构成跨设备/全设备丢失恢复；本机 root 也不构成 Grant 撤销、peer/provider 删除或物理擦除证明。真实用户确认动作、account/Grant/peer proof、完整 Raw retention、LAN append-only peer sync、最终用户可见 ContextPack、物理设备与 UI 性能仍待验证。官方来源：<https://github.com/sqlcipher/sqlcipher-android>、<https://central.sonatype.com/artifact/net.zetetic/sqlcipher-android/4.15.0>。
+> 实现基线：Android 固定官方 `net.zetetic:sqlcipher-android:4.15.0` + SQLite WAL；schema v6 的 SourceLocator、DayLedger/Summary、Agent 持久幂等、可回退 FTS5、异步 I/O、Calendar/Voice 显式来源和 10k/100k 已形成 API 36 x86_64 AVD 证据；schema v7 加入 Coverage，v8 加入长期 Memory，v9 加入不可回退删除水位、备份 checkpoint 和认证同安装恢复候选，v10 加入四类复用的无正文 attempt/outcome，v11 加入本机 SourceObject/Event link/deletion job、单来源 cascade、source watermark 与当前安装 Personal space root freeze，v12 加入 exact-revision `event_field_evidence` 与多来源保守重算/删除计数，v13 加入 content-free exact-revision `event_user_confirmations`。v7–v13 SQLCipher instrumentation 已在 API 36、16 KB arm64 AVD 的本轮全量回归中执行；Android 仍没有 app-owned Raw Vault。iOS AES-GCM local-store envelope v8 已由生产 smoke 走通 Coverage、长期 Memory、删除水位、认证备份、四类短时复用、无正文遥测、app-owned media Raw-only、外部原件边界、单/多来源字段证据重算、完整用户确认删源保留、partial 确认 fail-closed 与当前安装 Personal space 根水位/旧备份拒绝。2026-07-29 进一步加入不改变 schema/envelope 的同安装候选激活内核：exact backup 短时确认、权威水位二次校验、同卷 staging 与 HMAC crash journal，失败回旧 live，commit 后保留已验证新 live；Android 已在 API 36 / 16 KB AVD 恢复类 3/3 与全量 91/84/7/0 执行，iOS 成功路径已由生产 smoke 执行。同日 iOS Local Node 客户端在普通用户 QR Grant 仍为 event-only 的前提下，补齐四项 Android 生产 v1 operation 的 canonical builder、最小 Grant scope、握手 capability 检查和 typed response/result-digest/error-shape fail-closed；原始 exchange 私有化且生产 exchange 只按当前时间授权。四项 operation 已在 API 36 / 16 KB arm64 AVD 完成 Swift Network.framework→Android SQLCipher→Today 纵向执行。两端设备密钥均未进入 artifact，因此不构成跨设备/全设备丢失恢复；本机 root 也不构成 Grant 撤销、peer/provider 删除或物理擦除证明。真实用户确认动作、account/Grant/peer proof、完整 Raw retention、LAN append-only peer sync、最终用户可见 ContextPack、物理设备与 UI 性能仍待验证。官方来源：<https://github.com/sqlcipher/sqlcipher-android>、<https://central.sonatype.com/artifact/net.zetetic/sqlcipher-android/4.15.0>。
 
 ## 1. 设备内逻辑分区
 
@@ -212,7 +212,18 @@ Android 清单同时保持 `allowBackup=false`，`data-extraction-rules` 对 clo
 
 Agent 本地应用层已接入同一个 SQLCipher repository：`ameme.agent-local-node.v1` 的 `create_event` 创建初始 Revision `1`，`append_revision` 在相同 Event 上追加不可变 revision 并更新 current projection，exact `undo_capture` 只撤销原 capture token 对应的 Event 或 Revision。Event 撤销追加 tombstone；Revision 撤销要求目标仍为 current head，并追加恢复前一 immutable revision 内容的补偿 Revision，不覆盖或删除历史。Revision/撤销事务同时终结旧字段证据、使 Event-bound 长期 Memory 失效、刷新搜索和 DayLedger；不存在、已删除、过期、类型不匹配或 sensitivity 不可见目标统一为 `NOT_VISIBLE`，后续 head 冲突为 `REVISION_CONFLICT`。原写入和撤销都把幂等槽与 mutation 放在同一 SQLCipher transaction，撤销首次调用限原写入后 10 分钟；已成功撤销的相同请求在关闭重建与时窗后仍重放已持久终态。幂等表不保存正文或恢复 snapshot。
 
-`visible_events` 在同一库的 active current projection 上执行单 Personal space、Event-only、structured-only、最多 16 个 AND query term、精确时区时间边界、session sensitivity 交集和 1–100 条上限；删除/space root freeze 后不可见。返回映射把 title/description 限为 240/1,000 code points，并显式给出 truncation，不返回 user words、source label/ID、locator、路径或 Raw。`allow_high_risk` 不能扩大 session sensitivity；生产 runtime 根本不授予 Restricted。配对 TLS 1.3/certificate pin/HMAC/session/sequence 通道验证后，Android 按持久 local policy 只宣告获准的 operation；缺少 `grant_operations` 的旧 pairing fail closed 并要求重新授权，不能因升级静默获得读取、写入或撤销能力。历史 API 36 AVD Host smoke 只证明 `create_event`；Revision、撤销和读取当前只有 JVM、Host MCP/TLS 与已编译 SQLCipher instrumentation source。共享账户 Grant registry、真实 Host/ContextPack、物理 LAN/NSD、后台、跨端撤销传播与物理设备仍不在通过证据内。
+`visible_events` 在同一库的 active current projection 上执行单 Personal space、Event-only、structured-only、最多 16 个 AND query term、精确时区时间边界、session sensitivity 交集和 1–100 条上限；删除/space root freeze 后不可见。返回映射把 title/description 限为 240/1,000 code points，并显式给出 truncation，不返回 user words、source label/ID、locator、路径或 Raw。`allow_high_risk` 不能扩大 session sensitivity；生产 runtime 根本不授予 Restricted。配对 TLS 1.3/certificate pin/HMAC/session/sequence 通道验证后，Android 按持久 local policy 只宣告获准的 operation；缺少 `grant_operations` 的旧 pairing fail closed 并要求重新授权，不能因升级静默获得读取、写入或撤销能力。本轮 API 36 / 16 KB AVD 已由 Swift 客户端实际执行四操作纵向链；共享账户 Grant registry、真实 Host/ContextPack、物理 LAN/NSD、后台、跨端撤销传播与物理设备仍不在通过证据内。
+
+iOS `AgentLocalNodeNetworkClient` 现在保存 TLS/HMAC hello 中经过认证的 operation 集，并只在调用方
+提供包含目标 space/type 的显式 Grant 且 operation 已协商时构造
+`create_event`/`append_revision`/`undo_capture`/`visible_events`。成功响应必须是 canonical 六字段
+envelope，request ID、`result_digest` 和 operation-specific exact result shape 全部匹配；畸形结果
+关闭 session，合法远端 error 只暴露冻结 code/retryability。普通用户 QR 默认 policy 继续只有
+event，连接展示仍只声称结构化 Event 写入；读取、Revision 与撤销需要后续独立用户确认，不能由
+新增 API 静默扩权。原始 application exchange 已收为私有，生产 exchange 只能用当前时间做 Grant
+授权。本轮 Swift→Android Smoke 在 API 36 / 16 KB arm64 AVD 实际执行
+create→bounded read→Revision→Revision exact undo→Event exact undo→final read，并由 Today
+可见性复核保留的原始 Event。
 
 该证据仅关闭“最小本地 Event 闭环可运行”的实现问题，没有关闭完整协议或 DB-01：
 
@@ -221,7 +232,7 @@ Agent 本地应用层已接入同一个 SQLCipher repository：`ameme.agent-loca
 - 当前删除是追加 tombstone/watermark 并更新本机投影；同安装恢复候选会拒绝旧水位，但尚未实现物理清除、完整影响图、peer ack、分布式权威水位和删除证明；
 - SourceLocator 目前覆盖 Photo Picker/ACTION_SEND/Calendar/Voice 元数据、实例幂等和授权生命周期，未覆盖可用性复核、fingerprint、Raw Vault 或跨设备行为；
 - Raw Vault、durable job/outbox、完整 lineage/审计和 LAN sync 尚未进入该切片；
-- Agent `create_event` 已完成配对 Host→TLS/HMAC→Android→SQLCipher 的历史模拟器纵向闭环；`append_revision`、exact Event/Revision `undo_capture` 与最小 `visible_events` 已完成仓库实现、Host MCP/TLS 回归和 Android instrumentation 编译，但未做本轮设备纵向执行；共享账户 Grant、NSD/物理 LAN、后台、跨端撤销传播、真实第三方宿主与真实 ContextPack 仍待证明；
+- Agent 四项生产 operation 已完成配对 Swift→TLS/HMAC→Android→SQLCipher→Today 的 API 36 / 16 KB AVD 纵向闭环；该执行使用 ADB forward 与显式 expanded Grant，不等于普通用户已授权读取/撤销，也不替代共享账户 Grant、NSD/物理 LAN、后台、跨端撤销传播、真实第三方宿主与真实 ContextPack；
 - v1→v2→v3→v4→v5→v6 已验证成功迁移与 legacy space 回填；v6→v7 Coverage、v7→v8 长期 Memory、v8→v9 恢复安全、v9→v10 无正文复用 telemetry、v10→v11 来源删除、v11→v12 字段证据和 v12→v13 用户确认 provenance 已在 API 36 / 16 KB AVD 的当前全量 SQLCipher instrumentation 中执行。同安装加密快照和 HMAC journal live-store 激活/失败回滚内核已有 fail-closed Oracle，并由 Android AVD 恢复类 3/3 执行；物理设备、跨设备 key recovery、真实进程 kill、断电/空间不足与 OEM 文件系统故障注入仍属于 MIG-01。
 
 ## 10. 必须执行的 Spike

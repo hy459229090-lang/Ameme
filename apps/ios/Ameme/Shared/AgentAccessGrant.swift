@@ -69,7 +69,29 @@ public struct AgentAccessGrant: Codable, Equatable, Sendable {
     }
 
     public func authorize(_ request: AgentAccessGrantRequest, at date: Date = .now) throws {
-        guard request.callerID == callerID, request.grantID == grantID else {
+        try authorizeScope(
+            callerID: request.callerID,
+            grantID: request.grantID,
+            purpose: request.purpose,
+            spaces: [request.space],
+            dataTypes: [request.dataType],
+            at: date
+        )
+    }
+
+    /// Checks an explicit minimal request scope against this Grant.
+    ///
+    /// This mirrors the Android Local Node authorization boundary for bounded
+    /// reads, whose payload may name more than one already-granted space/type.
+    public func authorizeScope(
+        callerID: String,
+        grantID: String,
+        purpose: String,
+        spaces: Set<String>,
+        dataTypes: Set<String>,
+        at date: Date = .now
+    ) throws {
+        guard callerID == self.callerID, grantID == self.grantID else {
             throw AgentAccessGrantError.authRequired
         }
         switch status {
@@ -82,13 +104,13 @@ public struct AgentAccessGrant: Codable, Equatable, Sendable {
                 throw AgentAccessGrantError.grantExpired
             }
         }
-        guard purposes.contains(request.purpose) else {
+        guard purposes.contains(purpose) else {
             throw AgentAccessGrantError.purposeDenied
         }
-        guard spaces.contains(request.space) else {
+        guard !spaces.isEmpty, spaces.isSubset(of: Set(self.spaces)) else {
             throw AgentAccessGrantError.spaceDenied
         }
-        guard dataTypes.contains(request.dataType) else {
+        guard !dataTypes.isEmpty, dataTypes.isSubset(of: Set(self.dataTypes)) else {
             throw AgentAccessGrantError.dataTypeDenied
         }
     }

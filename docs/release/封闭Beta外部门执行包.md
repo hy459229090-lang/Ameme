@@ -131,6 +131,10 @@ python3.12 scripts/validation/prepare_external_gate_run.py \
    Public/Personal/Confidential 交集、正文截断与 `get_event`/策略写入关闭；ContextPack 中的注入文本必须
    作为不可信数据过滤。仓库内 adapter/JVM/TLS 结果不能替代这一步真实宿主与物理设备执行，未执行时
    read/复用 Gate 保持 `hold`。
+8. 仓库内 `AmemeLocalNodeSmoke` 可作为 iOS 侧预检，依次执行 create→bounded read→append→
+   exact revision undo→独立 Event create/undo→final read；执行人必须改用本次真实 pairing 与明确
+   扩展 Grant。普通用户默认 event-only Grant 不得被复用或静默扩权，且预检/AVD 结果不能替代本节
+   的真实宿主、无 ADB forward 与物理 Mobile 证据。
 
 通过需要至少一个真实宿主 + 物理 Mobile 的批准范围闭环，全部负向 fail closed，无正文/secret
 日志。第三方生产宿主若未提供，状态为 `hold`。

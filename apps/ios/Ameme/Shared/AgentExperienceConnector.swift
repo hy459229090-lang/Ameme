@@ -136,6 +136,11 @@ public final class BonjourAgentExperienceConnector: @unchecked Sendable, AgentEx
         }
         do {
             try await client.connect()
+            guard await client.supportedOperations().contains(
+                AgentLocalNodeChannelCodec.operationCreateEvent
+            ) else {
+                throw AgentExperienceConnectorError.connectionFailed
+            }
             if let previous = activeClients.insert(client, for: candidate.id) {
                 await previous.close()
             }

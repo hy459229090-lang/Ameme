@@ -1214,6 +1214,11 @@ struct AmemeSharedSmoke {
         )
         precondition(parsedResponse.applicationLine.starts(with: Data("{".utf8)), "iOS response frame did not expose the canonical application response")
         precondition(seenResponseNonces.count == 1, "iOS response replay ledger did not advance")
+        let parsedCreate = try! AgentLocalNodeChannelCodec.parseCreateEventResponse(
+            parsedResponse.applicationLine,
+            expectedRequestID: "req_create_event"
+        )
+        precondition(parsedCreate.eventID == "evt_synthetic_001" && parsedCreate.revision == 1, "iOS typed create result parser diverged from the golden")
 
         let transportGrant = AgentAccessGrant(
             grantID: "grant_synthetic",
@@ -1221,7 +1226,7 @@ struct AmemeSharedSmoke {
             callerID: "agent_synthetic",
             purposes: ["autonomous_memory"],
             spaces: ["space_work"],
-            dataTypes: ["event"],
+            dataTypes: ["event", "revision"],
             notBefore: grantNow,
             expiresAt: grantNow.addingTimeInterval(3_600),
             status: .active,
@@ -1245,6 +1250,204 @@ struct AmemeSharedSmoke {
         precondition(generatedObject["protocol_version"] as? String == AgentLocalNodeChannelCodec.applicationProtocol, "iOS application request protocol version drifted")
         precondition((generatedObject["control"] as? [String: Any])?["grant_id"] as? String == transportGrant.grantID, "iOS application request lost Grant binding")
         precondition((generatedObject["payload"] as? [String: Any])?["data_class"] as? String == "structured", "iOS application request lost structured data class")
+
+        let generatedRevision = try! AgentLocalNodeChannelCodec.buildAppendRevisionRequest(
+            draft: AgentLocalNodeAppendRevisionDraft(
+                requestID: "req_ios_append_revision",
+                idempotencyKey: "ios-revision-idempotency",
+                eventID: "evt_synthetic_001",
+                space: "space_work",
+                content: "来自 iOS 的精确修订",
+                evidenceState: "user_asserted",
+                factStatus: "user_asserted",
+                now: "2027-01-15T04:00:00Z"
+            ),
+            grant: transportGrant,
+            authorizationDate: grantNow.addingTimeInterval(1)
+        )
+        let generatedRevisionObject = try! JSONSerialization.jsonObject(with: generatedRevision) as! [String: Any]
+        precondition(
+            (generatedRevisionObject["control"] as? [String: Any])?["operation"] as? String == "append_revision"
+                && (generatedRevisionObject["control"] as? [String: Any])?["memory_types"] as? [String] == ["revision"],
+            "iOS append_revision request did not preserve minimal revision scope"
+        )
+        let revisionUndoToken = AgentLocalNodeChannelCodec.deriveIdempotencySlot(
+            rawKey: "ios-revision-idempotency",
+            operation: AgentLocalNodeChannelCodec.operationAppendRevision
+        )
+        let generatedUndo = try! AgentLocalNodeChannelCodec.buildUndoCaptureRequest(
+            draft: AgentLocalNodeUndoCaptureDraft(
+                requestID: "req_ios_undo_revision",
+                idempotencyKey: "ios-undo-idempotency",
+                undoToken: revisionUndoToken,
+                space: "space_work",
+                memoryType: "revision",
+                now: "2027-01-15T04:00:01Z"
+            ),
+            grant: transportGrant,
+            authorizationDate: grantNow.addingTimeInterval(2)
+        )
+        let generatedUndoObject = try! JSONSerialization.jsonObject(with: generatedUndo) as! [String: Any]
+        precondition(
+            (generatedUndoObject["payload"] as? [String: Any])?["undo_token"] as? String == revisionUndoToken,
+            "iOS undo_capture request lost the exact opaque token"
+        )
+        let generatedRead = try! AgentLocalNodeChannelCodec.buildVisibleEventsRequest(
+            draft: AgentLocalNodeVisibleEventsDraft(
+                requestID: "req_ios_visible_events",
+                idempotencyKey: "ios-visible-idempotency",
+                spaces: ["space_work"],
+                query: "synthetic",
+                limit: 20,
+                startAt: "2027-01-01T00:00:00Z",
+                endAt: "2027-01-31T23:59:59Z"
+            ),
+            grant: transportGrant,
+            authorizationDate: grantNow.addingTimeInterval(3)
+        )
+        let generatedReadObject = try! JSONSerialization.jsonObject(with: generatedRead) as! [String: Any]
+        precondition(
+            (generatedReadObject["control"] as? [String: Any])?["operation"] as? String == "visible_events"
+                && (generatedReadObject["payload"] as? [String: Any])?["allow_high_risk"] as? Bool == false,
+            "iOS visible_events request did not preserve bounded risk scope"
+        )
+
+        func applicationResponse(requestID: String, result: [String: Any]) -> Data {
+            let resultData = try! AgentLocalNodeChannelCodec.canonicalJSONData(result)
+            return try! AgentLocalNodeChannelCodec.canonicalJSONData([
+                "protocol_version": AgentLocalNodeChannelCodec.applicationProtocol,
+                "request_id": requestID,
+                "status": "ok",
+                "result": result,
+                "result_digest": AgentLocalNodeChannelCodec.digest(resultData),
+                "error": NSNull(),
+            ])
+        }
+        let appendResult = try! AgentLocalNodeChannelCodec.parseAppendRevisionResponse(
+            applicationResponse(
+                requestID: "req_ios_append_revision",
+                result: [
+                    "event_revision_id": "rev_synthetic_002",
+                    "object_type": "revision",
+                    "revision": 2,
+                    "target_event_id": "evt_synthetic_001",
+                ]
+            ),
+            expectedRequestID: "req_ios_append_revision"
+        )
+        precondition(
+            appendResult.eventRevisionID == "rev_synthetic_002"
+                && appendResult.targetEventID == "evt_synthetic_001",
+            "iOS typed append result lost exact identities"
+        )
+        let undoResult = try! AgentLocalNodeChannelCodec.parseUndoCaptureResponse(
+            applicationResponse(
+                requestID: "req_ios_undo_revision",
+                result: [
+                    "state": "undone",
+                    "target_event_id": "evt_synthetic_001",
+                    "undone_object_type": "revision",
+                    "undone_object_id": "rev_synthetic_002",
+                    "activity_visible": true,
+                    "compensation_revision_id": "rev_synthetic_003",
+                ]
+            ),
+            expectedRequestID: "req_ios_undo_revision"
+        )
+        precondition(
+            undoResult.undoneObjectID == "rev_synthetic_002"
+                && undoResult.compensationRevisionID == "rev_synthetic_003",
+            "iOS typed undo result lost compensation identity"
+        )
+        let visibleResult = try! AgentLocalNodeChannelCodec.parseVisibleEventsResponse(
+            applicationResponse(
+                requestID: "req_ios_visible_events",
+                result: [
+                    "events": [[
+                        "event_id": "evt_synthetic_001",
+                        "space_id": "space_work",
+                        "memory_type": "event",
+                        "revision": 3,
+                        "event_type": "activity",
+                        "title": "Synthetic title",
+                        "description": "Synthetic bounded description",
+                        "fact_status": "confirmed",
+                        "evidence_state": "observed",
+                        "sensitivity": "personal",
+                        "data_class": "structured",
+                        "content_truncated": false,
+                    ]],
+                    "risk_filtered": true,
+                ]
+            ),
+            expectedRequestID: "req_ios_visible_events"
+        )
+        precondition(
+            visibleResult.events.map(\.eventID) == ["evt_synthetic_001"]
+                && visibleResult.riskFiltered,
+            "iOS typed visible_events result lost bounded projection metadata"
+        )
+
+        let remoteErrorLine = try! AgentLocalNodeChannelCodec.canonicalJSONData([
+            "protocol_version": AgentLocalNodeChannelCodec.applicationProtocol,
+            "request_id": "req_ios_visible_events",
+            "status": "error",
+            "result": NSNull(),
+            "result_digest": NSNull(),
+            "error": ["code": "NOT_VISIBLE", "retryable": false],
+        ])
+        do {
+            _ = try AgentLocalNodeChannelCodec.parseVisibleEventsResponse(
+                remoteErrorLine,
+                expectedRequestID: "req_ios_visible_events"
+            )
+            preconditionFailure("iOS response parser accepted NOT_VISIBLE as success")
+        } catch let error as AgentLocalNodeRemoteError {
+            precondition(error.code == .notVisible && !error.retryable, "iOS remote error mapping drifted")
+        } catch {
+            preconditionFailure("iOS response parser lost the content-free remote error")
+        }
+        let wrongDigestLine = try! AgentLocalNodeChannelCodec.canonicalJSONData([
+            "protocol_version": AgentLocalNodeChannelCodec.applicationProtocol,
+            "request_id": "req_ios_append_revision",
+            "status": "ok",
+            "result": [
+                "event_revision_id": "rev_synthetic_002",
+                "object_type": "revision",
+                "revision": 2,
+                "target_event_id": "evt_synthetic_001",
+            ],
+            "result_digest": "sha256_" + String(repeating: "0", count: 64),
+            "error": NSNull(),
+        ])
+        precondition(
+            (try? AgentLocalNodeChannelCodec.parseAppendRevisionResponse(
+                wrongDigestLine,
+                expectedRequestID: "req_ios_append_revision"
+            )) == nil,
+            "iOS response parser accepted a mismatched result digest"
+        )
+        let eventOnlyGrant = AgentAccessGrantPolicy.default(
+            createdAt: grantNow,
+            expiresAt: grantNow.addingTimeInterval(3_600)
+        ).bind(callerID: "agent_synthetic", grantID: "grant_event_only")
+        precondition(
+            (try? AgentLocalNodeChannelCodec.buildAppendRevisionRequest(
+                draft: AgentLocalNodeAppendRevisionDraft(
+                    requestID: "req_ios_scope_expansion",
+                    idempotencyKey: "ios-scope-expansion",
+                    eventID: "evt_synthetic_001",
+                    space: "space_personal",
+                    content: "不应越权",
+                    evidenceState: "user_asserted",
+                    factStatus: "user_asserted",
+                    now: "2027-01-15T04:00:00Z"
+                ),
+                grant: eventOnlyGrant,
+                authorizationDate: grantNow.addingTimeInterval(1)
+            )) == nil,
+            "iOS event-only ordinary-user Grant unexpectedly expanded to revision"
+        )
         let expiredTransportGrant = AgentAccessGrant(
             grantID: "grant_expired",
             ownerID: "owner_synthetic",

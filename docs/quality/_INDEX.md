@@ -28,6 +28,7 @@
 | P0 Android 生产 Agent Revision 写入 | `P0-Android生产Agent-Revision写入验证-20260726.md` | conditional_pass；记录 Revision 切片当时的 exact-Grant `append_revision`、SQLCipher 原子 Revision/幂等、敏感目标隐藏及 Host MCP/TLS adapter；当时的 undo 关闭结论已由后续独立撤销报告更新 |
 | P0 Android 生产 Agent Event/Revision 撤销 | `P0-Android生产Agent-EventRevision撤销验证-20260726.md` | conditional_pass；记录撤销切片的 exact token、10 分钟首次时窗、Event tombstone、Revision compensation/head conflict、SQLCipher 持久幂等及 Host MCP/TLS adapter；当时的 read 关闭结论已由后续最小读取报告更新 |
 | P0 Android 生产 Agent 最小读取 | `P0-Android生产Agent-最小读取验证-20260726.md` | conditional_pass；bounded `visible_events`、SQLCipher current projection、scope/sensitivity/time/query/delete、正文截断、Host Recall/Context injection/budget 与 TLS 通过；真实 Host/设备/共享 Grant/发布 hold |
+| P0 iOS 生产 Agent 四操作客户端与响应校验 | `P0-iOS生产Agent-四操作客户端与响应校验-20260729.md` | conditional_pass；iOS 四项 Android 生产 v1 operation 已有最小 Grant builder、握手 capability、typed result、canonical/result-digest/error-shape fail-closed，并在 API 36 / 16 KB AVD 完成 Swift→Android 四操作纵向 Smoke；普通用户默认仍 event-only，物理设备、共享 Grant 与发布 hold |
 
 ## 当前正本
 
@@ -87,3 +88,4 @@
 | 2026-07-29 | 新增/验证 | P0 双端用户确认字段证据与来源删除保留：Android schema v13 / iOS envelope v8 新增 content-free exact-revision `EventUserConfirmation`；完整显式 Candidate 确认删源后保留 Event 但终结 source claim，partial/stale/legacy 删除或 fail closed，迁移不猜测旧动作；iOS 生产 Smoke 与 Android API 36 / 16 KB SQLCipher instrumentation 已实际通过，iOS XCTest/真实用户/物理设备 hold |
 | 2026-07-29 | 更新/验证 | 双端复用与当前平台 UI 收敛：iOS Search 改为单一扁平入口、原生 `confirmationDialog` 与结果 Sheet；Android 保持当前 Material 3，把 Search 改为单一 `LazyColumn` 并在 API 36 / 16 KB、320dp、130% 字号下完成 91/84/7/0 全量回归、完整 UI 12/12 和截图复核。iOS 新 Xcode/XCUITest/截图、物理设备与真实读屏/用户仍 hold |
 | 2026-07-29 | 新增/验证 | P0 双端本机恢复候选可回滚激活：exact backup 15 分钟确认、切换前后水位/完整性复核、HMAC `prepared/committed` journal、中途失败回旧 live、成功后候选不消费和伪造 journal fail closed；iOS 生产 Smoke 与 Android API 36 / 16 KB AVD 恢复类 3/3、全量 91/84/7/0 通过，用户 UI/跨设备 key/物理故障注入继续 hold |
+| 2026-07-29 | 新增/验证 | P0 iOS Agent 四操作客户端：在普通用户 QR Grant 仍为 event-only 的前提下，为 `append_revision`、exact `undo_capture`、bounded `visible_events` 补齐 canonical builder、握手 operation 检查、typed result 与 result digest/严格 error-shape 校验；原始 exchange 私有化且生产 exchange 只按当前时间授权。Shared/App/Smoke build、生产 Shared Smoke、82 项静态门、workspace 27/27 与 API 36 / 16 KB AVD 四操作纵向 Smoke 通过，物理设备/共享 Grant/真实 Host hold |

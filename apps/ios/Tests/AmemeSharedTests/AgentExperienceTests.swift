@@ -265,4 +265,136 @@ final class AgentExperienceTests: XCTestCase {
         XCTAssertNil(try store.load())
         XCTAssertNil(defaults.data(forKey: AgentExperienceStore.userDefaultsKey))
     }
+
+    func testLocalNodeBuildersCoverBoundedReadRevisionAndExactUndo() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let grant = AgentAccessGrant(
+            grantID: "grant_ios_parity",
+            ownerID: "owner_ios_parity",
+            callerID: "agent_ios_parity",
+            purposes: ["autonomous_memory"],
+            spaces: ["space_personal"],
+            dataTypes: ["event", "revision"],
+            notBefore: now,
+            expiresAt: now.addingTimeInterval(3_600),
+            status: .active,
+            createdAt: now
+        )
+        let revisionKey = "ios-parity-revision-key"
+        let revision = try AgentLocalNodeChannelCodec.buildAppendRevisionRequest(
+            draft: AgentLocalNodeAppendRevisionDraft(
+                requestID: "req_ios_parity_revision",
+                idempotencyKey: revisionKey,
+                eventID: "evt_ios_parity",
+                space: "space_personal",
+                content: "Synthetic correction",
+                evidenceState: "user_asserted",
+                factStatus: "user_asserted",
+                now: "2027-01-15T08:00:00Z"
+            ),
+            grant: grant,
+            authorizationDate: now.addingTimeInterval(1)
+        )
+        let revisionObject = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: revision) as? [String: Any]
+        )
+        let revisionControl = try XCTUnwrap(revisionObject["control"] as? [String: Any])
+        XCTAssertEqual(revisionControl["operation"] as? String, "append_revision")
+        XCTAssertEqual(revisionControl["memory_types"] as? [String], ["revision"])
+
+        let undoToken = AgentLocalNodeChannelCodec.deriveIdempotencySlot(
+            rawKey: revisionKey,
+            operation: AgentLocalNodeChannelCodec.operationAppendRevision
+        )
+        let undo = try AgentLocalNodeChannelCodec.buildUndoCaptureRequest(
+            draft: AgentLocalNodeUndoCaptureDraft(
+                requestID: "req_ios_parity_undo",
+                idempotencyKey: "ios-parity-undo-key",
+                undoToken: undoToken,
+                space: "space_personal",
+                memoryType: "revision",
+                now: "2027-01-15T08:00:01Z"
+            ),
+            grant: grant,
+            authorizationDate: now.addingTimeInterval(2)
+        )
+        let undoPayload = try XCTUnwrap(
+            (JSONSerialization.jsonObject(with: undo) as? [String: Any])?["payload"]
+                as? [String: Any]
+        )
+        XCTAssertEqual(undoPayload["undo_token"] as? String, undoToken)
+
+        let visible = try AgentLocalNodeChannelCodec.buildVisibleEventsRequest(
+            draft: AgentLocalNodeVisibleEventsDraft(
+                requestID: "req_ios_parity_visible",
+                idempotencyKey: "ios-parity-visible-key",
+                spaces: ["space_personal"],
+                query: "synthetic",
+                limit: 20
+            ),
+            grant: grant,
+            authorizationDate: now.addingTimeInterval(3)
+        )
+        let visibleObject = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: visible) as? [String: Any]
+        )
+        let visibleControl = try XCTUnwrap(visibleObject["control"] as? [String: Any])
+        XCTAssertEqual(visibleControl["operation"] as? String, "visible_events")
+        XCTAssertEqual(visibleControl["spaces"] as? [String], ["space_personal"])
+    }
+
+    func testLocalNodeTypedResponsesRejectDigestAndRetryabilityDrift() throws {
+        let result: [String: Any] = [
+            "event_revision_id": "rev_ios_parity_002",
+            "object_type": "revision",
+            "revision": 2,
+            "target_event_id": "evt_ios_parity",
+        ]
+        let resultData = try AgentLocalNodeChannelCodec.canonicalJSONData(result)
+        let valid = try AgentLocalNodeChannelCodec.canonicalJSONData([
+            "protocol_version": AgentLocalNodeChannelCodec.applicationProtocol,
+            "request_id": "req_ios_parity_revision",
+            "status": "ok",
+            "result": result,
+            "result_digest": AgentLocalNodeChannelCodec.digest(resultData),
+            "error": NSNull(),
+        ])
+        XCTAssertEqual(
+            try AgentLocalNodeChannelCodec.parseAppendRevisionResponse(
+                valid,
+                expectedRequestID: "req_ios_parity_revision"
+            ).eventRevisionID,
+            "rev_ios_parity_002"
+        )
+
+        let wrongDigest = try AgentLocalNodeChannelCodec.canonicalJSONData([
+            "protocol_version": AgentLocalNodeChannelCodec.applicationProtocol,
+            "request_id": "req_ios_parity_revision",
+            "status": "ok",
+            "result": result,
+            "result_digest": "sha256_" + String(repeating: "0", count: 64),
+            "error": NSNull(),
+        ])
+        XCTAssertThrowsError(
+            try AgentLocalNodeChannelCodec.parseAppendRevisionResponse(
+                wrongDigest,
+                expectedRequestID: "req_ios_parity_revision"
+            )
+        )
+
+        let invalidRetryability = try AgentLocalNodeChannelCodec.canonicalJSONData([
+            "protocol_version": AgentLocalNodeChannelCodec.applicationProtocol,
+            "request_id": "req_ios_parity_visible",
+            "status": "error",
+            "result": NSNull(),
+            "result_digest": NSNull(),
+            "error": ["code": "NOT_VISIBLE", "retryable": true],
+        ])
+        XCTAssertThrowsError(
+            try AgentLocalNodeChannelCodec.parseVisibleEventsResponse(
+                invalidRetryability,
+                expectedRequestID: "req_ios_parity_visible"
+            )
+        )
+    }
 }

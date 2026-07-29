@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-MVP 工程实现进行中。已集成契约质量基线、非生产 Core/Raw/队列 Oracle、独立 CoreOracle 参考宿主进程、同步模拟器、R0 AI/12-case 固定评测与 Android SQLCipher Local Event Node。`ameme.agent-local-node.v1` 的 bounded `visible_events` + `create_event`/`append_revision`/exact `undo_capture` MCP 适配、Android 配对 TLS/HMAC listener、SQLCipher 持久边界和 Today 展示已形成仓库闭环；历史 API 36 AVD 纵向证据只覆盖 `create_event`，读取/Revision/undo 仍需设备与真实宿主执行。生产 Raw、NSD/物理 LAN、后台 Agent、共享账户 Grant、真实 ContextPack/宿主和物理设备仍待实现或验证。
+MVP 工程实现进行中。已集成契约质量基线、非生产 Core/Raw/队列 Oracle、独立 CoreOracle 参考宿主进程、同步模拟器、R0 AI/12-case 固定评测与 Android SQLCipher Local Event Node。`ameme.agent-local-node.v1` 的 bounded `visible_events` + `create_event`/`append_revision`/exact `undo_capture` MCP 适配、Android 配对 TLS/HMAC listener、SQLCipher 持久边界和 Today 展示已形成仓库闭环；iOS 生产客户端也已补齐四操作 canonical builder、最小 Grant scope、握手 capability 和 typed response/result-digest/error-shape 校验，并在 API 36 / 16 KB AVD 完成 Swift→Android 四操作纵向闭环。生产 Raw、NSD/物理 LAN、后台 Agent、共享账户 Grant、真实 ContextPack/宿主和物理设备仍待实现或验证。
 
 ## 当前正本
 
@@ -36,4 +36,5 @@ MVP 工程实现进行中。已集成契约质量基线、非生产 Core/Raw/队
 | 2026-07-26 | Agent Revision 写入 | 在冻结 v1 协议上接通 Android/Host `append_revision`：exact revision ID、SQLCipher 原子幂等、敏感目标隐藏、MCP/TLS 回归；该切片当时 undo 关闭，后续由独立撤销切片更新 |
 | 2026-07-26 | Agent Event/Revision 撤销 | 在冻结 v1 协议上接通 Android/Host exact `undo_capture`：10 分钟首次时窗、Event tombstone、Revision compensation/head conflict、SQLCipher 持久幂等与恶意结果拒绝；read、跨端传播、设备与真实宿主 Gate 保留 |
 | 2026-07-26 | Agent 最小读取 | 接通 Android/Host bounded `visible_events`：单 Personal space/Event/structured、query/time/limit/sensitivity、Restricted 不泄漏、正文截断和 Host Recall/Context injection/budget；`get_event`/策略/长期 Memory 保持关闭，真实 Host/设备 Gate 保留 |
+| 2026-07-29 | iOS Agent 四操作客户端 | 在普通用户 QR 默认 event-only 不扩权的前提下，补齐 iOS `append_revision`、exact `undo_capture`、bounded `visible_events` builder/typed exchange，并对四操作响应执行 canonical/request/result-digest/exact-shape/error retryability 校验；原始 exchange 私有化、生产 exchange 只按当前时间授权，82 项静态门、workspace 27/27 与 API 36 / 16 KB AVD 四操作纵向 Smoke 通过，物理设备/共享 Grant/真实 Host hold |
 | 2026-07-15 | Android 连接体验 | 增加 Debug 三入口统一候选/授权/成功/断开适配层和非敏感状态存储；Release provider 为空，真实 TLS 手工路径下沉开发者选项 |

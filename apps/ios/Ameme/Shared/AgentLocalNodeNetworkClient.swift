@@ -19,6 +19,7 @@ public actor AgentLocalNodeNetworkClient {
     private var sessionID: String?
     private var sequence: Int64 = 0
     private var responseNonces = Set<String>()
+    private var negotiatedOperations = Set<String>()
 
     public init(
         pairing: AgentLocalNodePairingMaterial,
@@ -71,6 +72,7 @@ public actor AgentLocalNodeNetworkClient {
             self.sessionID = serverHello.sessionID
             self.sequence = 0
             self.responseNonces.removeAll()
+            self.negotiatedOperations = Set(serverHello.supportedOperations)
         } catch {
             connection.cancel()
             close()
@@ -80,7 +82,7 @@ public actor AgentLocalNodeNetworkClient {
 
     /// Exchanges one canonical application request on the authenticated channel.
     /// Calls are serialized and the session is destroyed on any framing failure.
-    public func exchange(applicationLine: Data) async throws -> AgentLocalNodeResponseFrame {
+    private func exchange(applicationLine: Data) async throws -> AgentLocalNodeResponseFrame {
         guard let connection, let sessionKey, let sessionID else {
             throw AgentLocalNodeChannelError.transportFailed
         }
@@ -118,15 +120,75 @@ public actor AgentLocalNodeNetworkClient {
     }
 
     public func exchangeCreateEvent(
-        draft: AgentLocalNodeCreateEventDraft,
-        authorizationDate: Date = .now
-    ) async throws -> AgentLocalNodeResponseFrame {
+        draft: AgentLocalNodeCreateEventDraft
+    ) async throws -> AgentLocalNodeCreateEventResult {
+        try requireOperation(AgentLocalNodeChannelCodec.operationCreateEvent)
         let applicationLine = try AgentLocalNodeChannelCodec.buildCreateEventRequest(
             draft: draft,
             grant: accessGrant,
-            authorizationDate: authorizationDate
+            authorizationDate: .now
         )
-        return try await exchange(applicationLine: applicationLine)
+        return try await exchangeValidated(applicationLine: applicationLine) { response in
+            try AgentLocalNodeChannelCodec.parseCreateEventResponse(
+                response,
+                expectedRequestID: draft.requestID
+            )
+        }
+    }
+
+    public func exchangeAppendRevision(
+        draft: AgentLocalNodeAppendRevisionDraft
+    ) async throws -> AgentLocalNodeAppendRevisionResult {
+        try requireOperation(AgentLocalNodeChannelCodec.operationAppendRevision)
+        let applicationLine = try AgentLocalNodeChannelCodec.buildAppendRevisionRequest(
+            draft: draft,
+            grant: accessGrant,
+            authorizationDate: .now
+        )
+        return try await exchangeValidated(applicationLine: applicationLine) { response in
+            try AgentLocalNodeChannelCodec.parseAppendRevisionResponse(
+                response,
+                expectedRequestID: draft.requestID
+            )
+        }
+    }
+
+    public func exchangeUndoCapture(
+        draft: AgentLocalNodeUndoCaptureDraft
+    ) async throws -> AgentLocalNodeUndoCaptureResult {
+        try requireOperation(AgentLocalNodeChannelCodec.operationUndoCapture)
+        let applicationLine = try AgentLocalNodeChannelCodec.buildUndoCaptureRequest(
+            draft: draft,
+            grant: accessGrant,
+            authorizationDate: .now
+        )
+        return try await exchangeValidated(applicationLine: applicationLine) { response in
+            try AgentLocalNodeChannelCodec.parseUndoCaptureResponse(
+                response,
+                expectedRequestID: draft.requestID
+            )
+        }
+    }
+
+    public func exchangeVisibleEvents(
+        draft: AgentLocalNodeVisibleEventsDraft
+    ) async throws -> AgentLocalNodeVisibleEventsResult {
+        try requireOperation(AgentLocalNodeChannelCodec.operationVisibleEvents)
+        let applicationLine = try AgentLocalNodeChannelCodec.buildVisibleEventsRequest(
+            draft: draft,
+            grant: accessGrant,
+            authorizationDate: .now
+        )
+        return try await exchangeValidated(applicationLine: applicationLine) { response in
+            try AgentLocalNodeChannelCodec.parseVisibleEventsResponse(
+                response,
+                expectedRequestID: draft.requestID
+            )
+        }
+    }
+
+    public func supportedOperations() -> [String] {
+        negotiatedOperations.sorted()
     }
 
     public func close() {
@@ -135,6 +197,7 @@ public actor AgentLocalNodeNetworkClient {
         self.sessionID = nil
         self.sequence = 0
         self.responseNonces.removeAll()
+        self.negotiatedOperations.removeAll()
         if var sessionKey {
             let length = sessionKey.count
             sessionKey.resetBytes(in: 0..<length)
@@ -145,6 +208,33 @@ public actor AgentLocalNodeNetworkClient {
         connection?.cancel()
     }
 
+    private func requireOperation(_ operation: String) throws {
+        guard connection != nil, sessionKey != nil, sessionID != nil else {
+            throw AgentLocalNodeChannelError.transportFailed
+        }
+        guard negotiatedOperations.contains(operation) else {
+            throw AgentLocalNodeChannelError.operationUnsupported
+        }
+    }
+
+    private func exchangeValidated<Result>(
+        applicationLine: Data,
+        parse: (Data) throws -> Result
+    ) async throws -> Result {
+        let response = try await exchange(applicationLine: applicationLine)
+        do {
+            return try parse(response.applicationLine)
+        } catch let remoteError as AgentLocalNodeRemoteError {
+            throw remoteError
+        } catch let channelError as AgentLocalNodeChannelError {
+            close()
+            throw channelError
+        } catch {
+            close()
+            throw AgentLocalNodeChannelError.payloadInvalid
+        }
+    }
+
     private func makeConnection() -> NWConnection {
         let tls = NWProtocolTLS.Options()
         sec_protocol_options_set_min_tls_protocol_version(tls.securityProtocolOptions, .TLSv13)
@@ -152,7 +242,8 @@ public actor AgentLocalNodeNetworkClient {
         let expectedPin = pairing.tlsCertificateSHA256
         sec_protocol_options_set_verify_block(tls.securityProtocolOptions, { _, trust, complete in
             let secTrust = sec_trust_copy_ref(trust).takeRetainedValue()
-            guard let certificate = SecTrustGetCertificateAtIndex(secTrust, 0) else {
+            guard let certificateChain = SecTrustCopyCertificateChain(secTrust) as? [SecCertificate],
+                  let certificate = certificateChain.first else {
                 complete(false)
                 return
             }

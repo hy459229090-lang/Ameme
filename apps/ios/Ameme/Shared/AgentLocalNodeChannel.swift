@@ -1,5 +1,6 @@
 import Foundation
 import CryptoKit
+import CoreFoundation
 
 /// The pairing material is public connection metadata. It is never sufficient to
 /// authenticate a peer; the credential is supplied separately at connect time.
@@ -118,7 +119,48 @@ public enum AgentLocalNodeChannelError: Error, Equatable, Sendable {
     case sequenceInvalid
     case replay
     case payloadInvalid
+    case operationUnsupported
     case transportFailed
+}
+
+public enum AgentLocalNodeErrorCode: String, CaseIterable, Equatable, Sendable {
+    case authRequired = "AUTH_REQUIRED"
+    case dataTypeDenied = "DATA_TYPE_DENIED"
+    case grantExpired = "GRANT_EXPIRED"
+    case grantRevoked = "GRANT_REVOKED"
+    case idempotencyConflict = "IDEMPOTENCY_CONFLICT"
+    case internalError = "INTERNAL_ERROR"
+    case invalidRequest = "INVALID_REQUEST"
+    case notVisible = "NOT_VISIBLE"
+    case operationUnsupported = "OPERATION_UNSUPPORTED"
+    case payloadDigestMismatch = "PAYLOAD_DIGEST_MISMATCH"
+    case payloadTooLarge = "PAYLOAD_TOO_LARGE"
+    case purposeDenied = "PURPOSE_DENIED"
+    case responseRequestMismatch = "RESPONSE_REQUEST_MISMATCH"
+    case resultDigestMismatch = "RESULT_DIGEST_MISMATCH"
+    case revisionConflict = "REVISION_CONFLICT"
+    case schemaUnsupported = "SCHEMA_UNSUPPORTED"
+    case scopeMismatch = "SCOPE_MISMATCH"
+    case spaceDenied = "SPACE_DENIED"
+    case temporarilyUnavailable = "TEMPORARILY_UNAVAILABLE"
+
+    public var retryable: Bool {
+        self == .temporarilyUnavailable || self == .internalError
+    }
+}
+
+/// A valid, authenticated application error returned by the Local Node.
+///
+/// It contains only the frozen code/retryability pair. In particular,
+/// `NOT_VISIBLE` carries no target identity or existence detail.
+public struct AgentLocalNodeRemoteError: Error, Equatable, Sendable {
+    public let code: AgentLocalNodeErrorCode
+    public let retryable: Bool
+
+    fileprivate init(code: AgentLocalNodeErrorCode, retryable: Bool) {
+        self.code = code
+        self.retryable = retryable
+    }
 }
 
 public struct AgentLocalNodeClientHello: Equatable, @unchecked Sendable {
@@ -229,6 +271,142 @@ public struct AgentLocalNodeCreateEventDraft: Equatable, Sendable {
     }
 }
 
+public struct AgentLocalNodeAppendRevisionDraft: Equatable, Sendable {
+    public let requestID: String
+    public let idempotencyKey: String
+    public let eventID: String
+    public let space: String
+    public let content: String
+    public let evidenceState: String
+    public let factStatus: String
+    public let now: String
+    public let purpose: String
+
+    public init(
+        requestID: String,
+        idempotencyKey: String,
+        eventID: String,
+        space: String,
+        content: String,
+        evidenceState: String,
+        factStatus: String,
+        now: String,
+        purpose: String = "autonomous_memory"
+    ) {
+        self.requestID = requestID
+        self.idempotencyKey = idempotencyKey
+        self.eventID = eventID
+        self.space = space
+        self.content = content
+        self.evidenceState = evidenceState
+        self.factStatus = factStatus
+        self.now = now
+        self.purpose = purpose
+    }
+}
+
+public struct AgentLocalNodeUndoCaptureDraft: Equatable, Sendable {
+    public let requestID: String
+    public let idempotencyKey: String
+    public let undoToken: String
+    public let space: String
+    public let memoryType: String
+    public let now: String
+    public let purpose: String
+
+    public init(
+        requestID: String,
+        idempotencyKey: String,
+        undoToken: String,
+        space: String,
+        memoryType: String,
+        now: String,
+        purpose: String = "autonomous_memory"
+    ) {
+        self.requestID = requestID
+        self.idempotencyKey = idempotencyKey
+        self.undoToken = undoToken
+        self.space = space
+        self.memoryType = memoryType
+        self.now = now
+        self.purpose = purpose
+    }
+}
+
+public struct AgentLocalNodeVisibleEventsDraft: Equatable, Sendable {
+    public let requestID: String
+    public let idempotencyKey: String
+    public let spaces: [String]
+    public let memoryTypes: [String]
+    public let query: String?
+    public let allowHighRisk: Bool
+    public let limit: Int
+    public let startAt: String?
+    public let endAt: String?
+    public let purpose: String
+
+    public init(
+        requestID: String,
+        idempotencyKey: String,
+        spaces: [String],
+        memoryTypes: [String] = ["event"],
+        query: String? = nil,
+        allowHighRisk: Bool = false,
+        limit: Int,
+        startAt: String? = nil,
+        endAt: String? = nil,
+        purpose: String = "autonomous_memory"
+    ) {
+        self.requestID = requestID
+        self.idempotencyKey = idempotencyKey
+        self.spaces = spaces
+        self.memoryTypes = memoryTypes
+        self.query = query
+        self.allowHighRisk = allowHighRisk
+        self.limit = limit
+        self.startAt = startAt
+        self.endAt = endAt
+        self.purpose = purpose
+    }
+}
+
+public struct AgentLocalNodeCreateEventResult: Equatable, Sendable {
+    public let eventID: String
+    public let revision: Int
+}
+
+public struct AgentLocalNodeAppendRevisionResult: Equatable, Sendable {
+    public let eventRevisionID: String
+    public let revision: Int
+    public let targetEventID: String
+}
+
+public struct AgentLocalNodeUndoCaptureResult: Equatable, Sendable {
+    public let targetEventID: String
+    public let undoneObjectType: String
+    public let undoneObjectID: String
+    public let activityVisible: Bool
+    public let compensationRevisionID: String?
+}
+
+public struct AgentLocalNodeEventView: Equatable, Sendable {
+    public let eventID: String
+    public let spaceID: String
+    public let revision: Int
+    public let eventType: String
+    public let title: String
+    public let description: String
+    public let factStatus: String
+    public let evidenceState: String
+    public let sensitivity: String
+    public let contentTruncated: Bool
+}
+
+public struct AgentLocalNodeVisibleEventsResult: Equatable, Sendable {
+    public let events: [AgentLocalNodeEventView]
+    public let riskFiltered: Bool
+}
+
 /// Swift implementation of `ameme.agent-local-node.channel.v1`.
 ///
 /// This type is intentionally transport-free. It is usable by the iOS app,
@@ -240,6 +418,11 @@ public enum AgentLocalNodeChannelCodec {
     public static let maxChannelLineBytes = 786_432
     public static let maxRequestBytes = 65_536
     public static let maxResponseBytes = 524_288
+    public static let maxCanonicalPayloadBytes = 32_768
+    public static let operationCreateEvent = "create_event"
+    public static let operationAppendRevision = "append_revision"
+    public static let operationUndoCapture = "undo_capture"
+    public static let operationVisibleEvents = "visible_events"
 
     private static let identifierPattern = "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
     private static let referencePattern = "^[A-Za-z0-9][A-Za-z0-9._/-]{0,239}$"
@@ -248,6 +431,13 @@ public enum AgentLocalNodeChannelCodec {
     private static let digestPattern = "^sha256_[0-9a-f]{64}$"
     private static let proofPattern = "^hmac_[0-9a-f]{64}$"
     private static let idempotencyPattern = "^idem_[0-9a-f]{64}$"
+    private static let eventTypes = Set([
+        "activity", "communication", "decision", "result",
+        "state_change", "milestone", "experience",
+    ])
+    private static let evidenceStates = Set(["observed", "user_asserted", "inferred"])
+    private static let factStatuses = Set(["confirmed", "user_asserted", "low_confidence_candidate"])
+    private static let sensitivities = Set(["public", "personal", "confidential", "restricted"])
 
     private static let pairingKeys: Set<String> = [
         "channel_protocol", "endpoint_ref", "credential_ref", "expected_device_id",
@@ -304,35 +494,35 @@ public enum AgentLocalNodeChannelCodec {
         return "idem_" + SHA256.hash(data: Data(material.utf8)).hexString
     }
 
-    /// Builds the only application write currently exposed by the Android
-    /// Local Node endpoint and authorizes its exact scope before serialization.
+    /// Builds a bounded Event write and authorizes its exact minimal scope
+    /// before serialization.
     public static func buildCreateEventRequest(
         draft: AgentLocalNodeCreateEventDraft,
         grant: AgentAccessGrant,
         authorizationDate: Date
     ) throws -> Data {
-        guard let space = grant.spaces.first, let dataType = grant.dataTypes.first,
-              let purpose = grant.purposes.first else {
+        guard let space = grant.spaces.first, let purpose = grant.purposes.first,
+              grant.dataTypes.contains("event") else {
             throw AgentLocalNodeChannelError.payloadInvalid
         }
-        let request = AgentAccessGrantRequest(
-            callerID: grant.callerID,
-            grantID: grant.grantID,
-            purpose: purpose,
-            space: space,
-            dataType: dataType,
-            operation: "create_event"
-        )
-        do { try grant.authorize(request, at: authorizationDate) }
+        do {
+            try grant.authorizeScope(
+                callerID: grant.callerID,
+                grantID: grant.grantID,
+                purpose: purpose,
+                spaces: [space],
+                dataTypes: ["event"],
+                at: authorizationDate
+            )
+        }
         catch { throw AgentLocalNodeChannelError.authenticationFailed }
-        guard isIdentifier(draft.requestID), draft.idempotencyKey.count >= 8,
-              !draft.content.isEmpty, draft.content.count <= 4_000,
-              ["activity", "communication", "decision", "result", "state_change", "milestone", "experience"].contains(draft.eventType),
-              ["observed", "user_asserted", "inferred"].contains(draft.evidenceState),
-              ["confirmed", "user_asserted", "low_confidence_candidate"].contains(draft.factStatus),
-              ["public", "personal", "confidential", "restricted"].contains(draft.sensitivity),
-              !draft.now.isEmpty, draft.now.count <= 64,
-              draft.eventTime?.count ?? 0 <= 64 else {
+        guard isIdentifier(draft.requestID), isRawIdempotencyKey(draft.idempotencyKey),
+              isContent(draft.content, maximum: 4_000),
+              eventTypes.contains(draft.eventType),
+              isFactPair(evidenceState: draft.evidenceState, factStatus: draft.factStatus),
+              sensitivities.contains(draft.sensitivity),
+              parseTimestamp(draft.now) != nil,
+              draft.eventTime == nil || parseTimestamp(draft.eventTime!) != nil else {
             throw AgentLocalNodeChannelError.payloadInvalid
         }
         var payload: [String: Any] = [
@@ -343,27 +533,263 @@ public enum AgentLocalNodeChannelCodec {
             "evidence_state": draft.evidenceState,
             "fact_status": draft.factStatus,
             "sensitivity": draft.sensitivity,
-            "data_class": dataType == "event" ? "structured" : dataType,
+            "data_class": "structured",
             "now": draft.now,
         ]
         if let eventTime = draft.eventTime { payload["event_time"] = eventTime }
-        let payloadData = try canonicalJSONData(payload)
-        let control: [String: Any] = [
-            "caller_id": grant.callerID,
-            "grant_id": grant.grantID,
-            "purpose": purpose,
-            "spaces": [space],
-            "memory_types": ["event"],
-            "operation": "create_event",
-            "idempotency_slot": deriveIdempotencySlot(rawKey: draft.idempotencyKey, operation: "create_event"),
-            "payload_digest": digest(payloadData),
+        return try buildApplicationRequest(
+            requestID: draft.requestID,
+            idempotencyKey: draft.idempotencyKey,
+            purpose: purpose,
+            spaces: [space],
+            memoryTypes: ["event"],
+            operation: operationCreateEvent,
+            payload: payload,
+            grant: grant,
+            authorizationDate: authorizationDate
+        )
+    }
+
+    public static func buildAppendRevisionRequest(
+        draft: AgentLocalNodeAppendRevisionDraft,
+        grant: AgentAccessGrant,
+        authorizationDate: Date
+    ) throws -> Data {
+        guard isIdentifier(draft.requestID), isRawIdempotencyKey(draft.idempotencyKey),
+              isIdentifier(draft.eventID), isIdentifier(draft.space),
+              isIdentifier(draft.purpose), isContent(draft.content, maximum: 4_000),
+              isFactPair(evidenceState: draft.evidenceState, factStatus: draft.factStatus),
+              parseTimestamp(draft.now) != nil else {
+            throw AgentLocalNodeChannelError.payloadInvalid
+        }
+        let payload: [String: Any] = [
+            "event_id": draft.eventID,
+            "space": draft.space,
+            "memory_type": "revision",
+            "content": draft.content,
+            "evidence_state": draft.evidenceState,
+            "fact_status": draft.factStatus,
+            "now": draft.now,
         ]
-        return try canonicalJSONData([
-            "protocol_version": applicationProtocol,
-            "request_id": draft.requestID,
-            "control": control,
-            "payload": payload,
-        ])
+        return try buildApplicationRequest(
+            requestID: draft.requestID,
+            idempotencyKey: draft.idempotencyKey,
+            purpose: draft.purpose,
+            spaces: [draft.space],
+            memoryTypes: ["revision"],
+            operation: operationAppendRevision,
+            payload: payload,
+            grant: grant,
+            authorizationDate: authorizationDate
+        )
+    }
+
+    public static func buildUndoCaptureRequest(
+        draft: AgentLocalNodeUndoCaptureDraft,
+        grant: AgentAccessGrant,
+        authorizationDate: Date
+    ) throws -> Data {
+        guard isIdentifier(draft.requestID), isRawIdempotencyKey(draft.idempotencyKey),
+              isIdentifier(draft.undoToken), isIdentifier(draft.space),
+              ["event", "revision"].contains(draft.memoryType),
+              isIdentifier(draft.purpose), parseTimestamp(draft.now) != nil else {
+            throw AgentLocalNodeChannelError.payloadInvalid
+        }
+        let payload: [String: Any] = [
+            "undo_token": draft.undoToken,
+            "space": draft.space,
+            "memory_type": draft.memoryType,
+            "now": draft.now,
+        ]
+        return try buildApplicationRequest(
+            requestID: draft.requestID,
+            idempotencyKey: draft.idempotencyKey,
+            purpose: draft.purpose,
+            spaces: [draft.space],
+            memoryTypes: [draft.memoryType],
+            operation: operationUndoCapture,
+            payload: payload,
+            grant: grant,
+            authorizationDate: authorizationDate
+        )
+    }
+
+    public static func buildVisibleEventsRequest(
+        draft: AgentLocalNodeVisibleEventsDraft,
+        grant: AgentAccessGrant,
+        authorizationDate: Date
+    ) throws -> Data {
+        let spaces = Array(Set(draft.spaces)).sorted()
+        let memoryTypes = Array(Set(draft.memoryTypes)).sorted()
+        let start = draft.startAt.flatMap(parseTimestamp)
+        let end = draft.endAt.flatMap(parseTimestamp)
+        guard isIdentifier(draft.requestID), isRawIdempotencyKey(draft.idempotencyKey),
+              draft.spaces.count == spaces.count, spaces.count <= 8,
+              spaces.allSatisfy(isIdentifier),
+              draft.memoryTypes.count == memoryTypes.count,
+              memoryTypes == ["event"],
+              draft.query == nil || isContent(draft.query!, maximum: 1_000, allowEmpty: true),
+              (1...100).contains(draft.limit), isIdentifier(draft.purpose),
+              draft.startAt == nil || start != nil,
+              draft.endAt == nil || end != nil,
+              start == nil || end == nil || start! <= end! else {
+            throw AgentLocalNodeChannelError.payloadInvalid
+        }
+        var payload: [String: Any] = [
+            "spaces": spaces,
+            "memory_types": memoryTypes,
+            "allow_high_risk": draft.allowHighRisk,
+            "limit": draft.limit,
+        ]
+        if let query = draft.query { payload["query"] = query }
+        if let startAt = draft.startAt { payload["start_at"] = startAt }
+        if let endAt = draft.endAt { payload["end_at"] = endAt }
+        return try buildApplicationRequest(
+            requestID: draft.requestID,
+            idempotencyKey: draft.idempotencyKey,
+            purpose: draft.purpose,
+            spaces: spaces,
+            memoryTypes: memoryTypes,
+            operation: operationVisibleEvents,
+            payload: payload,
+            grant: grant,
+            authorizationDate: authorizationDate
+        )
+    }
+
+    public static func parseCreateEventResponse(
+        _ applicationLine: Data,
+        expectedRequestID: String
+    ) throws -> AgentLocalNodeCreateEventResult {
+        let result = try applicationResult(applicationLine, expectedRequestID: expectedRequestID)
+        try exact(result, keys: ["event_id", "object_type", "revision"])
+        let eventID = string(result, "event_id")
+        guard isIdentifier(eventID), string(result, "object_type") == "event",
+              let revision = safeInteger(result["revision"]), revision >= 1 else {
+            throw AgentLocalNodeChannelError.payloadInvalid
+        }
+        return AgentLocalNodeCreateEventResult(eventID: eventID, revision: revision)
+    }
+
+    public static func parseAppendRevisionResponse(
+        _ applicationLine: Data,
+        expectedRequestID: String
+    ) throws -> AgentLocalNodeAppendRevisionResult {
+        let result = try applicationResult(applicationLine, expectedRequestID: expectedRequestID)
+        try exact(
+            result,
+            keys: ["event_revision_id", "object_type", "revision", "target_event_id"]
+        )
+        let eventRevisionID = string(result, "event_revision_id")
+        let targetEventID = string(result, "target_event_id")
+        guard isIdentifier(eventRevisionID), isIdentifier(targetEventID),
+              string(result, "object_type") == "revision",
+              let revision = safeInteger(result["revision"]), revision >= 2 else {
+            throw AgentLocalNodeChannelError.payloadInvalid
+        }
+        return AgentLocalNodeAppendRevisionResult(
+            eventRevisionID: eventRevisionID,
+            revision: revision,
+            targetEventID: targetEventID
+        )
+    }
+
+    public static func parseUndoCaptureResponse(
+        _ applicationLine: Data,
+        expectedRequestID: String
+    ) throws -> AgentLocalNodeUndoCaptureResult {
+        let result = try applicationResult(applicationLine, expectedRequestID: expectedRequestID)
+        let objectType = string(result, "undone_object_type")
+        var expectedKeys: Set<String> = [
+            "state", "target_event_id", "undone_object_type",
+            "undone_object_id", "activity_visible",
+        ]
+        if objectType == "revision" {
+            expectedKeys.insert("compensation_revision_id")
+        }
+        try exact(result, keys: expectedKeys)
+        let targetEventID = string(result, "target_event_id")
+        let undoneObjectID = string(result, "undone_object_id")
+        let compensationRevisionID = result["compensation_revision_id"] as? String
+        guard string(result, "state") == "undone",
+              ["event", "revision"].contains(objectType),
+              isIdentifier(targetEventID), isIdentifier(undoneObjectID),
+              boolean(result["activity_visible"]) == true else {
+            throw AgentLocalNodeChannelError.payloadInvalid
+        }
+        if objectType == "event" {
+            guard undoneObjectID == targetEventID, compensationRevisionID == nil else {
+                throw AgentLocalNodeChannelError.payloadInvalid
+            }
+        } else {
+            guard let compensationRevisionID, isIdentifier(compensationRevisionID) else {
+                throw AgentLocalNodeChannelError.payloadInvalid
+            }
+        }
+        return AgentLocalNodeUndoCaptureResult(
+            targetEventID: targetEventID,
+            undoneObjectType: objectType,
+            undoneObjectID: undoneObjectID,
+            activityVisible: true,
+            compensationRevisionID: compensationRevisionID
+        )
+    }
+
+    public static func parseVisibleEventsResponse(
+        _ applicationLine: Data,
+        expectedRequestID: String
+    ) throws -> AgentLocalNodeVisibleEventsResult {
+        let result = try applicationResult(applicationLine, expectedRequestID: expectedRequestID)
+        try exact(result, keys: ["events", "risk_filtered"])
+        guard let rawEvents = result["events"] as? [Any], rawEvents.count <= 100,
+              let riskFiltered = boolean(result["risk_filtered"]) else {
+            throw AgentLocalNodeChannelError.payloadInvalid
+        }
+        var eventIDs = Set<String>()
+        let events = try rawEvents.map { raw -> AgentLocalNodeEventView in
+            guard let event = raw as? [String: Any] else {
+                throw AgentLocalNodeChannelError.payloadInvalid
+            }
+            try exact(
+                event,
+                keys: [
+                    "event_id", "space_id", "memory_type", "revision", "event_type",
+                    "title", "description", "fact_status", "evidence_state",
+                    "sensitivity", "data_class", "content_truncated",
+                ]
+            )
+            let eventID = string(event, "event_id")
+            let spaceID = string(event, "space_id")
+            let title = string(event, "title")
+            let description = string(event, "description")
+            let factStatus = string(event, "fact_status")
+            guard isIdentifier(eventID), eventIDs.insert(eventID).inserted,
+                  isIdentifier(spaceID), string(event, "memory_type") == "event",
+                  let revision = safeInteger(event["revision"]), revision >= 1,
+                  eventTypes.contains(string(event, "event_type")),
+                  isContent(title, maximum: 240),
+                  isContent(description, maximum: 1_000, allowEmpty: true),
+                  !factStatus.isEmpty, factStatus.unicodeScalars.count <= 64,
+                  evidenceStates.contains(string(event, "evidence_state")),
+                  sensitivities.contains(string(event, "sensitivity")),
+                  string(event, "data_class") == "structured",
+                  let contentTruncated = boolean(event["content_truncated"]) else {
+                throw AgentLocalNodeChannelError.payloadInvalid
+            }
+            return AgentLocalNodeEventView(
+                eventID: eventID,
+                spaceID: spaceID,
+                revision: revision,
+                eventType: string(event, "event_type"),
+                title: title,
+                description: description,
+                factStatus: factStatus,
+                evidenceState: string(event, "evidence_state"),
+                sensitivity: string(event, "sensitivity"),
+                contentTruncated: contentTruncated
+            )
+        }
+        return AgentLocalNodeVisibleEventsResult(events: events, riskFiltered: riskFiltered)
     }
 
     public static func buildClientHello(
@@ -525,6 +951,125 @@ public enum AgentLocalNodeChannelCodec {
         return AgentLocalNodeResponseFrame(sessionID: requestFrame.sessionID, sequence: requestFrame.sequence, nonce: responseNonce, applicationLine: applicationLine)
     }
 
+    private static func buildApplicationRequest(
+        requestID: String,
+        idempotencyKey: String,
+        purpose: String,
+        spaces: [String],
+        memoryTypes: [String],
+        operation: String,
+        payload: [String: Any],
+        grant: AgentAccessGrant,
+        authorizationDate: Date
+    ) throws -> Data {
+        let sortedSpaces = Array(Set(spaces)).sorted()
+        let sortedMemoryTypes = Array(Set(memoryTypes)).sorted()
+        guard isIdentifier(requestID), isRawIdempotencyKey(idempotencyKey),
+              isIdentifier(purpose),
+              spaces.count == sortedSpaces.count, spaces.count <= 8,
+              sortedSpaces.allSatisfy(isIdentifier),
+              memoryTypes.count == sortedMemoryTypes.count, memoryTypes.count <= 8,
+              sortedMemoryTypes.allSatisfy({ ["event", "revision"].contains($0) }),
+              [
+                  operationCreateEvent, operationAppendRevision,
+                  operationUndoCapture, operationVisibleEvents,
+              ].contains(operation) else {
+            throw AgentLocalNodeChannelError.payloadInvalid
+        }
+        do {
+            try grant.authorizeScope(
+                callerID: grant.callerID,
+                grantID: grant.grantID,
+                purpose: purpose,
+                spaces: Set(sortedSpaces),
+                dataTypes: Set(sortedMemoryTypes),
+                at: authorizationDate
+            )
+        } catch {
+            throw AgentLocalNodeChannelError.authenticationFailed
+        }
+        let payloadData = try canonicalJSONData(payload)
+        guard !payloadData.isEmpty, payloadData.count <= maxCanonicalPayloadBytes else {
+            throw AgentLocalNodeChannelError.payloadInvalid
+        }
+        let control: [String: Any] = [
+            "caller_id": grant.callerID,
+            "grant_id": grant.grantID,
+            "purpose": purpose,
+            "spaces": sortedSpaces,
+            "memory_types": sortedMemoryTypes,
+            "operation": operation,
+            "idempotency_slot": deriveIdempotencySlot(
+                rawKey: idempotencyKey,
+                operation: operation
+            ),
+            "payload_digest": digest(payloadData),
+        ]
+        let request = try canonicalJSONData([
+            "protocol_version": applicationProtocol,
+            "request_id": requestID,
+            "control": control,
+            "payload": payload,
+        ])
+        guard request.count <= maxRequestBytes else {
+            throw AgentLocalNodeChannelError.payloadInvalid
+        }
+        return request
+    }
+
+    private static func applicationResult(
+        _ applicationLine: Data,
+        expectedRequestID: String
+    ) throws -> [String: Any] {
+        guard isIdentifier(expectedRequestID) else {
+            throw AgentLocalNodeChannelError.payloadInvalid
+        }
+        let application = try parseObject(applicationLine, maximum: maxResponseBytes)
+        guard try canonicalJSONData(application) == applicationLine else {
+            throw AgentLocalNodeChannelError.payloadInvalid
+        }
+        try exact(
+            application,
+            keys: [
+                "protocol_version", "request_id", "status",
+                "result", "result_digest", "error",
+            ]
+        )
+        guard string(application, "protocol_version") == applicationProtocol,
+              string(application, "request_id") == expectedRequestID else {
+            throw AgentLocalNodeChannelError.bindingFailed
+        }
+        switch string(application, "status") {
+        case "error":
+            guard application["result"] is NSNull,
+                  application["result_digest"] is NSNull,
+                  let error = application["error"] as? [String: Any] else {
+                throw AgentLocalNodeChannelError.payloadInvalid
+            }
+            try exact(error, keys: ["code", "retryable"])
+            guard let code = AgentLocalNodeErrorCode(rawValue: string(error, "code")),
+                  let retryable = boolean(error["retryable"]),
+                  retryable == code.retryable else {
+                throw AgentLocalNodeChannelError.payloadInvalid
+            }
+            throw AgentLocalNodeRemoteError(code: code, retryable: retryable)
+        case "ok":
+            guard application["error"] is NSNull,
+                  let result = application["result"] as? [String: Any],
+                  let resultDigest = application["result_digest"] as? String,
+                  isDigest(resultDigest) else {
+                throw AgentLocalNodeChannelError.payloadInvalid
+            }
+            let resultData = try canonicalJSONData(result)
+            guard digest(resultData) == resultDigest else {
+                throw AgentLocalNodeChannelError.payloadInvalid
+            }
+            return result
+        default:
+            throw AgentLocalNodeChannelError.payloadInvalid
+        }
+    }
+
     private static func parseObject(_ data: Data, maximum: Int) throws -> [String: Any] {
         guard !data.isEmpty, data.count <= maximum, !data.contains(0x00), !data.contains(0x0A), !data.contains(0x0D) else {
             throw AgentLocalNodeChannelError.invalidChannelMessage
@@ -555,6 +1100,67 @@ public enum AgentLocalNodeChannelCodec {
 
     private static func integer(_ document: [String: Any], _ key: String) -> Int64 {
         (document[key] as? NSNumber)?.int64Value ?? Int64.min
+    }
+
+    private static func boolean(_ value: Any?) -> Bool? {
+        guard let number = value as? NSNumber,
+              CFGetTypeID(number) == CFBooleanGetTypeID() else {
+            return nil
+        }
+        return number.boolValue
+    }
+
+    private static func safeInteger(_ value: Any?) -> Int? {
+        guard let number = value as? NSNumber,
+              CFGetTypeID(number) != CFBooleanGetTypeID() else {
+            return nil
+        }
+        let candidate = number.doubleValue
+        guard candidate.isFinite, candidate.rounded(.towardZero) == candidate,
+              abs(candidate) <= 9_007_199_254_740_991 else {
+            return nil
+        }
+        return Int(candidate)
+    }
+
+    private static func isRawIdempotencyKey(_ value: String) -> Bool {
+        value.unicodeScalars.count >= 8
+            && value.unicodeScalars.count <= 1_024
+            && !value.contains("\0")
+    }
+
+    private static func isContent(
+        _ value: String,
+        maximum: Int,
+        allowEmpty: Bool = false
+    ) -> Bool {
+        guard !value.contains("\0"), value.unicodeScalars.count <= maximum else {
+            return false
+        }
+        if allowEmpty { return true }
+        return !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private static func isFactPair(evidenceState: String, factStatus: String) -> Bool {
+        evidenceStates.contains(evidenceState)
+            && factStatuses.contains(factStatus)
+            && [
+                "observed|confirmed",
+                "user_asserted|user_asserted",
+                "inferred|low_confidence_candidate",
+            ].contains("\(evidenceState)|\(factStatus)")
+    }
+
+    private static func parseTimestamp(_ value: String) -> Date? {
+        guard !value.isEmpty, value.unicodeScalars.count <= 64, !value.contains("\0") else {
+            return nil
+        }
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let parsed = fractional.date(from: value) { return parsed }
+        let wholeSeconds = ISO8601DateFormatter()
+        wholeSeconds.formatOptions = [.withInternetDateTime]
+        return wholeSeconds.date(from: value)
     }
 
     private static func proof(_ document: [String: Any], key: Data, label: String) throws -> String {

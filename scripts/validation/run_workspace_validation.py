@@ -81,6 +81,13 @@ COMMANDS = [
         ],
     ),
     (
+        "ios_agent_local_node_client_contract",
+        [
+            sys.executable,
+            "scripts/validation/validate_ios_agent_local_node_client_contract.py",
+        ],
+    ),
+    (
         "mobile_local_space_deletion_contract",
         [
             sys.executable,

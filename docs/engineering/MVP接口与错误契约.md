@@ -61,7 +61,9 @@ Skill 文档负责“何时调用”和对用户的确认文案，不能放长�
 
 `visible_events` 不是任意 ID 读取：只接受当前绑定的 Personal space、`event`、`structured`，查询最多 1,000 code points、结果 1–100 条，并在 SQLCipher current active projection 上执行 AND 关键词、时区化时间范围和 session sensitivity 交集。生产 runtime 只授予 `public/personal/confidential`；Restricted 即使存在也不能越过 session，且只有 session 本身获准 Restricted 时，`risk_filtered` 才可反映策略过滤，避免向未授权 caller 泄漏存在性。返回仅含 bounded title（240）、description（1,000）、Event/revision/type/evidence/fact/sensitivity 与 `content_truncated`，不含 user words、source label/ID、locator、路径或 Raw。Host 对成功结果再次做 exact key/scope/type/sensitivity/长度/数量绑定，恶意结果会毒化会话；`get_context` 仍把正文视为不可信数据并执行 injection、item/token budget。`get_event` 与 `set_policy_blocked` 继续返回 `OPERATION_UNSUPPORTED`，因此 Revision 写入不会用目标读取把旧正文复制进 Host control state。
 
-当前仓库证据覆盖 canonical 应用层、Host TLS 1.3 adapter、Android 配对 listener/凭据生命周期、SQLCipher 原子写入/读取与历史 AVD `create_event` 纵向 smoke。`append_revision`、精确撤销和 `visible_events` 有 JVM、Host MCP/TLS 回归及已编译的 SQLCipher 关闭重开 instrumentation source，但本轮读取/Revision/撤销没有 AVD 或物理设备执行。共享账户 Grant registry、物理 LAN/NSD、Android 后台生命周期、跨端撤销传播、真实 Codex/Claude Code/Cursor 生产宿主以及真实设备 ContextPack/Recall 闭环仍未证明。
+iOS 生产客户端也实现这四种操作的 canonical request builder、exact Grant scope 子集校验、typed response/result digest/错误形状和冻结 retryability 校验；握手未声明 operation 时不发送，malformed 响应关闭通道，合法远端应用错误只作为 content-free typed error 返回。原始 application exchange 不公开，生产 exchange 只按当前时间授权。普通用户二维码入口的默认 Grant 与展示仍为 event-only，Revision/read/undo 只能由另行明确授权的 Grant 构造，不能因客户端支持而静默扩权。
+
+当前仓库证据覆盖 canonical 应用层、Host TLS 1.3 adapter、Android 配对 listener/凭据生命周期、SQLCipher 原子写入/读取、iOS Shared smoke/静态契约，以及 API 36 / 16 KB arm64 AVD 上 Swift Network.framework→Android SQLCipher→Today 的 create/read/revision/exact undo 纵向闭环。该 Smoke 使用 ADB forward 与显式 expanded Grant，不证明物理 LAN、普通用户 scope 扩张、共享账户 Grant registry、Android 后台生命周期、跨端撤销传播、真实 Codex/Claude Code/Cursor 生产宿主或真实设备 ContextPack/Recall。
 
 ## 5. 错误码目录
 
