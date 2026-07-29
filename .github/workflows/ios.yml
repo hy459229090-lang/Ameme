@@ -45,6 +45,7 @@ jobs:
           xcodebuild \
             -project Ameme.xcodeproj \
             -scheme Ameme \
+            -derivedDataPath "$RUNNER_TEMP/AmemeBuild" \
             -sdk iphonesimulator \
             -destination 'generic/platform=iOS Simulator' \
             CODE_SIGNING_ALLOWED=NO \
@@ -60,6 +61,16 @@ jobs:
           xcrun simctl bootstatus "$normal_device_id" -b
           xcrun simctl ui "$normal_device_id" appearance light
           xcrun simctl ui "$normal_device_id" content_size large
+          app_path="$RUNNER_TEMP/AmemeBuild/Build/Products/Debug-iphonesimulator/Ameme.app"
+          test -d "$app_path"
+          # Xcode 26 can time out when its first interaction with a freshly
+          # migrated runtime is an XCTest launch. Install and start the exact
+          # app built above once; XCTest still terminates and relaunches it with
+          # the test-specific arguments and environment.
+          xcrun simctl install "$normal_device_id" "$app_path"
+          xcrun simctl launch "$normal_device_id" com.ameme.ios \
+            -AppleLanguages "(zh-Hans)" \
+            -AppleLocale "zh_CN"
           xcodebuild \
             -project Ameme.xcodeproj \
             -scheme Ameme \
@@ -81,6 +92,10 @@ jobs:
           xcrun simctl bootstatus "$accessibility_device_id" -b
           xcrun simctl ui "$accessibility_device_id" appearance dark
           xcrun simctl ui "$accessibility_device_id" content_size accessibility-extra-extra-extra-large
+          xcrun simctl install "$accessibility_device_id" "$app_path"
+          xcrun simctl launch "$accessibility_device_id" com.ameme.ios \
+            -AppleLanguages "(zh-Hans)" \
+            -AppleLocale "zh_CN"
           xcodebuild \
             -project Ameme.xcodeproj \
             -scheme Ameme \
