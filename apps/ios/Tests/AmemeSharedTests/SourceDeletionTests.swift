@@ -334,7 +334,7 @@ final class SourceDeletionTests: XCTestCase {
             factStatus: .planned,
             importance: .high,
             confidence: 1,
-            sourceObjectIDs: sourceObjectIDs,
+            sourceObjectIDs: sourceObjectIDs.sorted(),
             observedAt: "2026-07-26T08:00:00Z",
             timeRange: CoverageTimeRange(
                 start: "2026-07-26T10:00:00Z",
