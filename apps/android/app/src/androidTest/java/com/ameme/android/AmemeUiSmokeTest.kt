@@ -85,6 +85,14 @@ class AmemeUiSmokeTest {
         }
     }
 
+    private fun waitForReuseJourneyLauncher() {
+        composeRule.waitUntil(timeoutMillis = 15_000) {
+            composeRule.onAllNodesWithTag("reuse-journey-launcher")
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
+    }
+
     @Test
     fun onboardingTodayAndCaptureSheet_areReachableWithoutPermissions() {
         composeRule.onNodeWithText("自动整理你的一天").assertIsDisplayed()
@@ -102,6 +110,7 @@ class AmemeUiSmokeTest {
     @Test
     fun searchAndProductionSettings_shareTheSameShell() {
         composeRule.onNodeWithText("查看今天").performClick()
+        waitForCaptureEntry()
         composeRule.onNodeWithContentDescription("打开设置").performClick()
         composeRule.onNodeWithTag("settings-list").performScrollToNode(hasText("AI 小结"))
         composeRule.onNodeWithText("AI 小结").assertIsDisplayed()
@@ -111,6 +120,7 @@ class AmemeUiSmokeTest {
         composeRule.onNodeWithContentDescription("搜索历史记录").performClick()
         composeRule.onNodeWithText("搜索历史记录").assertIsDisplayed()
         composeRule.onNodeWithText("按日期从新到旧浏览，底部可加载更早记录").assertIsDisplayed()
+        waitForReuseJourneyLauncher()
         composeRule.onNodeWithTag("reuse-journey-launcher")
             .performScrollTo()
             .assertIsDisplayed()

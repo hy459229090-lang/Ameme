@@ -567,7 +567,7 @@
 
 ### 失败日志
 
-本 Job 不删除历史验证报告中的首次失败。新一轮已记录 Android 缺失 `JAVA_HOME`、iOS 本机缺失 XCTest、iOS CI 的 `CoverageCompilerTests` 手工重建 `CoverageSignal` 漏传 `importance`、gap scope 语义过严、跨端静态验证器、Swift `Sendable`、SQLite replace-upsert 外键风险、并行视觉中间态导致的构建失败、长期 Memory 类型策略表达与静态门注释误报、recovery SQL bind 数组误替换、复用 helper 缺失显式删除参数、TTL 边界断言偏移、source tombstone helper 缺失显式 return、动态 trigger 静态门误匹配、删除后恢复入口错误分层/调用方水位降级旁路、字段证据 v6→v7 装载缺口、旧多来源静态断言、Agent operation 字段误加到 canonical Grant、撤销测试 token 长度少一位、撤销 Schema `$ref` 误判、多行静态 marker 误判、Host unittest module 路径误用、读取切片的 Android 工具链环境错误、系统 Python 缺少 TLS 1.3、instrumentation helper 漏标 `suspend`、Context budget sentinel 回归、workspace Python 缺 PyYAML、隐藏 `sourceLabel/userWords` query oracle，以及索引先引用未落盘报告导致的治理失败；仓库根既存未跟踪 `outputs/` 敏感文件失败已通过完整移至仓库外同工作区 `ameme-untracked-evidence-20260726-191150/` 收敛，未删除证据。命令、根因、修复、重跑和未解决影响见各 P0 独立报告。
+本 Job 不删除历史验证报告中的首次失败。新一轮已记录 Android 缺失 `JAVA_HOME`、Android CI Search 用例未等待异步生产 repository 就绪而提前断言复用入口、iOS 本机缺失 XCTest、iOS CI 的 `CoverageCompilerTests` 手工重建 `CoverageSignal` 漏传 `importance`、gap scope 语义过严、跨端静态验证器、Swift `Sendable`、SQLite replace-upsert 外键风险、并行视觉中间态导致的构建失败、长期 Memory 类型策略表达与静态门注释误报、recovery SQL bind 数组误替换、复用 helper 缺失显式删除参数、TTL 边界断言偏移、source tombstone helper 缺失显式 return、动态 trigger 静态门误匹配、删除后恢复入口错误分层/调用方水位降级旁路、字段证据 v6→v7 装载缺口、旧多来源静态断言、Agent operation 字段误加到 canonical Grant、撤销测试 token 长度少一位、撤销 Schema `$ref` 误判、多行静态 marker 误判、Host unittest module 路径误用、读取切片的 Android 工具链环境错误、系统 Python 缺少 TLS 1.3、instrumentation helper 漏标 `suspend`、Context budget sentinel 回归、workspace Python 缺 PyYAML、隐藏 `sourceLabel/userWords` query oracle，以及索引先引用未落盘报告导致的治理失败；仓库根既存未跟踪 `outputs/` 敏感文件失败已通过完整移至仓库外同工作区 `ameme-untracked-evidence-20260726-191150/` 收敛，未删除证据。命令、根因、修复、重跑和未解决影响见各 P0 独立报告。
 
 ### 当前生产切片证据
 
