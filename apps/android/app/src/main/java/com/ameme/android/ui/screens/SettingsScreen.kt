@@ -130,6 +130,9 @@ fun SettingsScreen(
     var pairingBusy by remember { mutableStateOf(false) }
     var pairingSuccess by remember { mutableStateOf<PairingExperienceConnection?>(null) }
     var pairingError by remember { mutableStateOf<String?>(null) }
+    var showManualPairingCode by remember { mutableStateOf(false) }
+    var manualPairingCode by remember { mutableStateOf("") }
+    var manualPairingError by remember { mutableStateOf<String?>(null) }
     var disconnecting by remember { mutableStateOf(false) }
     var showLocalSpaceDeletion by remember { mutableStateOf(false) }
     var localSpaceDeletionConfirmation by remember { mutableStateOf("") }
@@ -167,7 +170,8 @@ fun SettingsScreen(
             pairingError = when (failure) {
                 PairingQrScanFailure.Cancelled -> null
                 PairingQrScanFailure.ModuleUnavailable ->
-                    "此设备的 Google Play 扫码服务不可用；本机没有获得相机权限，也没有建立连接。"
+                    "此设备的 Google Play 扫码服务不可用；本机没有获得相机权限，也没有建立连接。" +
+                        "可重新打开连接方式并粘贴完整配对码。"
                 PairingQrScanFailure.InvalidResult ->
                     "没有读到有效二维码；本机没有建立连接。"
                 PairingQrScanFailure.Failed ->
@@ -764,6 +768,16 @@ fun SettingsScreen(
                             resolve(PairingExperienceMethod.QrCode)
                         }
                     }
+                    PairingMethodRow(
+                        "粘贴完整配对码",
+                        "无扫码服务时使用 · 不读取剪贴板",
+                        "pairing-method-manual",
+                    ) {
+                        showPairingChooser = false
+                        manualPairingCode = ""
+                        manualPairingError = null
+                        showManualPairingCode = true
+                    }
                     PairingMethodRow("账户设备", "适合同一账户下的已登录设备", "pairing-method-account") {
                         resolve(PairingExperienceMethod.AccountDevice)
                     }
@@ -771,6 +785,95 @@ fun SettingsScreen(
             },
             confirmButton = {},
             dismissButton = { TextButton(onClick = { showPairingChooser = false }) { Text("取消") } },
+        )
+    }
+
+    if (showManualPairingCode) {
+        AlertDialog(
+            modifier = Modifier.testTag("manual-pairing-code-dialog"),
+            onDismissRequest = {
+                if (!pairingBusy) {
+                    showManualPairingCode = false
+                    manualPairingCode = ""
+                    manualPairingError = null
+                }
+            },
+            title = { Text("粘贴完整配对码") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        "Ameme 不会读取剪贴板。请自行粘贴另一台设备显示的完整 " +
+                            "ameme-pairing-v2 配对码；验证后仍需确认 event-only 授权。",
+                    )
+                    OutlinedTextField(
+                        value = manualPairingCode,
+                        onValueChange = {
+                            manualPairingCode = it.take(MAX_MANUAL_PAIRING_CODE_CHARACTERS + 1)
+                            manualPairingError = null
+                        },
+                        enabled = !pairingBusy,
+                        minLines = 2,
+                        maxLines = 5,
+                        label = { Text("完整配对码") },
+                        isError =
+                            manualPairingCode.length > MAX_MANUAL_PAIRING_CODE_CHARACTERS ||
+                                manualPairingError != null,
+                        supportingText = {
+                            val message = manualPairingError ?: if (
+                                manualPairingCode.length > MAX_MANUAL_PAIRING_CODE_CHARACTERS
+                            ) {
+                                "配对码超过 16,384 字符；不会验证或建立连接。"
+                            } else {
+                                "配对码只保留在当前输入窗口；取消或提交后清除。"
+                            }
+                            Text(message)
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("manual-pairing-code-input"),
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled =
+                        !pairingBusy &&
+                            manualPairingCode.isNotBlank() &&
+                            manualPairingCode.length <= MAX_MANUAL_PAIRING_CODE_CHARACTERS,
+                    modifier = Modifier.testTag("validate-manual-pairing-code-button"),
+                    onClick = {
+                        val payload = manualPairingCode.trim()
+                        manualPairingCode = ""
+                        pairingBusy = true
+                        manualPairingError = null
+                        scope.launch {
+                            runCatching { onResolvePairingPayload(payload) }
+                                .onSuccess {
+                                    showManualPairingCode = false
+                                    pairingCandidate = it
+                                }
+                                .onFailure {
+                                    manualPairingError = it.pairingExperienceMessage()
+                                }
+                            pairingBusy = false
+                        }
+                    },
+                ) {
+                    Text(if (pairingBusy) "正在验证" else "验证配对码")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    enabled = !pairingBusy,
+                    onClick = {
+                        showManualPairingCode = false
+                        manualPairingCode = ""
+                        manualPairingError = null
+                    },
+                ) {
+                    Text("取消")
+                }
+            },
         )
     }
 
@@ -1086,6 +1189,8 @@ fun SettingsScreen(
         )
     }
 }
+
+private const val MAX_MANUAL_PAIRING_CODE_CHARACTERS = 16_384
 
 @Composable
 private fun AgentAccessAuditRow(record: AgentAccessAuditRecord) {

@@ -331,6 +331,16 @@ def main() -> int:
         checks,
     )
     require(
+        '"pairing-method-manual"' in kotlin_settings
+        and 'testTag("manual-pairing-code-input")' in kotlin_settings
+        and 'testTag("validate-manual-pairing-code-button")' in kotlin_settings
+        and "MAX_MANUAL_PAIRING_CODE_CHARACTERS = 16_384" in kotlin_settings
+        and "onResolvePairingPayload(payload)" in kotlin_settings
+        and "getClipEntry" not in kotlin_settings,
+        "Android offers a bounded explicit-paste fallback without reading the clipboard",
+        checks,
+    )
+    require(
         "play-services-code-scanner" in android_version_catalog
         and 'android:name="com.google.mlkit.vision.DEPENDENCIES"' in android_manifest
         and 'android:value="barcode_ui"' in android_manifest
@@ -481,6 +491,7 @@ def main() -> int:
                 "persistent_reconnect_credential_rotation_claim": True,
                 "release_developer_bearer_absent_claim": True,
                 "android_permissionless_system_scanner_wiring_claim": True,
+                "android_manual_pairing_code_fallback_claim": True,
                 "android_physical_scanner_execution_claim": False,
                 "account_or_shared_grant_registry_claim": False,
                 "physical_device_execution_claim": False,
