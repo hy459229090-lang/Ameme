@@ -39,6 +39,7 @@ import java.time.LocalTime
 import java.io.File
 import kotlin.math.roundToInt
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TestRule
@@ -91,6 +92,18 @@ class AmemeUiSmokeTest {
 
     @get:Rule(order = 1)
     val composeRule = createAndroidComposeRule<MainActivity>()
+
+    @Before
+    fun waitForInitialComposeHierarchy() {
+        composeRule.activityRule.scenario.onActivity { }
+        composeRule.waitUntil(timeoutMillis = 15_000) {
+            runCatching {
+                composeRule.onAllNodesWithText("自动整理你的一天")
+                    .fetchSemanticsNodes()
+                    .isNotEmpty()
+            }.getOrDefault(false)
+        }
+    }
 
     private fun waitForCaptureEntry() {
         composeRule.waitUntil(timeoutMillis = 15_000) {
