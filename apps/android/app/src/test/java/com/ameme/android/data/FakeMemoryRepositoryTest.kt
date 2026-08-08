@@ -110,4 +110,38 @@ class FakeMemoryRepositoryTest {
         assertTrue(!json.contains("evt_restricted"))
         assertTrue(!json.contains("受限示例"))
     }
+
+    @Test
+    fun reuseJourney_resolvesMockEventsAndRecordsContentFreeFeedback() {
+        val now = clock.instant()
+        val context = repository.buildReuseContext(
+            ReuseRequest(
+                spaceId = "space_personal",
+                intent = ReuseIntent.DecisionCommitmentRecall,
+                requestedAt = now,
+            ),
+        )
+
+        val resolved = repository.resolveReuseContext(context, now.plusSeconds(1))
+
+        assertTrue(resolved.items.isNotEmpty())
+        assertTrue(resolved.items.all { it.reference.revision == it.sourceEvent.revision })
+        assertTrue(
+            repository.recordReuseOutcome(
+                ReuseOutcomeSubmission(
+                    attemptId = context.attemptId,
+                    outcome = ReuseOutcome.Useful,
+                    submittedAt = now.plusSeconds(2),
+                ),
+            ),
+        )
+        assertEquals(1, repository.helpfulReuseCount(now))
+        assertEquals(1, repository.reuseTelemetryAggregates(now).single().attemptCount)
+
+        val changed = resolved.items.first().sourceEvent
+        repository.updateEvent(changed.id, factStatus = FactStatus.Confirmed, userWords = "已更新")
+        val stale = repository.revalidateReuseContext(context, now.plusSeconds(3))
+        assertTrue(stale.references.none { it.objectId == changed.id })
+        assertTrue(ReuseExclusion.Invalidated in stale.exclusions)
+    }
 }

@@ -376,7 +376,7 @@ fun SearchScreen(
                 }
             }
 
-            if (reuseRepository != null && !demoMode) {
+            if (reuseRepository != null) {
                 item(key = "reuse-launcher") {
                     ReuseJourneyLauncher(
                         enabled = !reuseInFlight,

@@ -30,7 +30,7 @@ import java.util.UUID
  */
 class FakeMemoryRepository(
     private val clock: Clock = Clock.systemDefaultZone(),
-) : MemoryRepository {
+) : MemoryRepository, ReuseRepository {
     private val captureCounter = AtomicInteger(100)
     private val events by lazy { seedEvents().toMutableList() }
     private val locators = mutableMapOf<String, SourceLocator>()
@@ -39,6 +39,7 @@ class FakeMemoryRepository(
     private val summaries = mutableMapOf<LocalDate, DaySummary>()
     private val ledgerRevisions = mutableMapOf<LocalDate, Int>()
     private val agentRevisionSnapshots = mutableMapOf<String, MemoryEvent>()
+    private val reuseAttempts = mutableMapOf<String, FakeReuseAttempt>()
 
     fun seedEvents(): List<MemoryEvent> {
         val today = LocalDate.now(clock)
@@ -467,6 +468,147 @@ class FakeMemoryRepository(
         )
     }
 
+    override fun buildReuseContext(request: ReuseRequest): ReuseContext {
+        require(request.spaceId == "space_personal") { "reuse request space is not available in demo mode" }
+        val effectiveStart = request.startDate ?: request.meetingAnchorDate
+            ?.takeIf { request.intent == ReuseIntent.PreMeetingContext && request.endDate == null }
+        val effectiveEnd = request.endDate ?: request.meetingAnchorDate
+            ?.takeIf { request.intent == ReuseIntent.PreMeetingContext && request.startDate == null }
+        val matching = search(events, request.query, effectiveStart, effectiveEnd)
+            .flatMap(DayGroup::events)
+        val visible = matching.filter { it.sensitivity != Sensitivity.Restricted }
+        val selected = visible.take(request.limit)
+        val selectionReason = when (request.intent) {
+            ReuseIntent.HistoricalSearch -> if (request.query.isBlank()) {
+                ReuseSelectionReason.DateMatch
+            } else {
+                ReuseSelectionReason.KeywordMatch
+            }
+            ReuseIntent.ProjectResume -> ReuseSelectionReason.KeywordMatch
+            ReuseIntent.PreMeetingContext -> if (request.meetingAnchorDate != null) {
+                ReuseSelectionReason.MeetingAnchor
+            } else {
+                ReuseSelectionReason.KeywordMatch
+            }
+            ReuseIntent.DecisionCommitmentRecall -> ReuseSelectionReason.ActiveDecision
+        }
+        val references = selected.map { event ->
+            ReuseReference(
+                objectType = ReuseObjectType.Event,
+                objectId = event.id,
+                revision = event.revision,
+                localDate = event.localDate,
+                sensitivity = event.sensitivity,
+                selectionReason = selectionReason,
+            )
+        }
+        val context = ReuseContext(
+            attemptId = "reuse_${UUID.randomUUID()}",
+            intent = request.intent,
+            rangeState = when {
+                references.isEmpty() -> ReuseRangeState.Empty
+                visible.size > request.limit -> ReuseRangeState.PartialForLocalScope
+                else -> ReuseRangeState.CompleteForLocalScope
+            },
+            references = references,
+            exclusions = if (matching.any { it.sensitivity == Sensitivity.Restricted }) {
+                setOf(ReuseExclusion.Restricted)
+            } else {
+                emptySet()
+            },
+            createdAt = request.requestedAt,
+            expiresAt = request.requestedAt.plusSeconds(REUSE_CONTEXT_TTL_SECONDS),
+        )
+        reuseAttempts[context.attemptId] = FakeReuseAttempt(context)
+        return context
+    }
+
+    override fun revalidateReuseContext(context: ReuseContext, at: Instant): ReuseContext {
+        if (!context.expiresAt.isAfter(at)) {
+            return context.copy(
+                rangeState = ReuseRangeState.Empty,
+                references = emptyList(),
+                exclusions = context.exclusions + ReuseExclusion.Expired,
+            )
+        }
+        val exclusions = context.exclusions.toMutableSet()
+        val valid = context.references.filter { reference ->
+            val event = events.firstOrNull { it.id == reference.objectId }
+            when {
+                event == null -> {
+                    exclusions += ReuseExclusion.Deleted
+                    false
+                }
+                event.revision != reference.revision || event.sensitivity != reference.sensitivity -> {
+                    exclusions += ReuseExclusion.Invalidated
+                    false
+                }
+                event.sensitivity == Sensitivity.Restricted -> {
+                    exclusions += ReuseExclusion.Restricted
+                    false
+                }
+                else -> true
+            }
+        }
+        return context.copy(
+            rangeState = when {
+                valid.isEmpty() -> ReuseRangeState.Empty
+                context.rangeState == ReuseRangeState.PartialForLocalScope ->
+                    ReuseRangeState.PartialForLocalScope
+                else -> ReuseRangeState.CompleteForLocalScope
+            },
+            references = valid,
+            exclusions = exclusions,
+        )
+    }
+
+    override fun resolveReuseContext(context: ReuseContext, at: Instant): ResolvedReuseContext {
+        val valid = revalidateReuseContext(context, at)
+        val items = valid.references.map { reference ->
+            val event = checkNotNull(events.firstOrNull { it.id == reference.objectId })
+            check(event.revision == reference.revision)
+            ResolvedReuseItem(reference = reference, sourceEvent = event)
+        }
+        return ResolvedReuseContext(valid, items)
+    }
+
+    override fun recordReuseOutcome(submission: ReuseOutcomeSubmission): Boolean {
+        val attempt = reuseAttempts[submission.attemptId] ?: return false
+        if (attempt.outcome != null || !attempt.context.expiresAt.isAfter(submission.submittedAt)) return false
+        reuseAttempts[submission.attemptId] = attempt.copy(
+            outcome = submission.outcome,
+            userAction = submission.userAction,
+            submittedAt = submission.submittedAt,
+        )
+        return true
+    }
+
+    override fun reuseTelemetryAggregates(since: Instant): List<ReuseTelemetryAggregate> =
+        reuseAttempts.values
+            .filter { !it.context.createdAt.isBefore(since) }
+            .groupBy { attempt ->
+                FakeReuseAggregateKey(
+                    intent = attempt.context.intent,
+                    outcome = attempt.outcome,
+                    userAction = attempt.userAction,
+                    resultCountBucket = ReuseResultCountBucket.from(attempt.context.references.size),
+                )
+            }
+            .map { (key, attempts) ->
+                ReuseTelemetryAggregate(
+                    intent = key.intent,
+                    outcome = key.outcome,
+                    userAction = key.userAction,
+                    resultCountBucket = key.resultCountBucket,
+                    attemptCount = attempts.size,
+                )
+            }
+
+    override fun helpfulReuseCount(since: Instant): Int = reuseAttempts.values.count { attempt ->
+        attempt.outcome == ReuseOutcome.Useful &&
+            attempt.submittedAt?.let { !it.isBefore(since) } == true
+    }
+
     private fun SourceCaptureRequest.sourceIdentity(): String? {
         val uri = locatorUri ?: return null
         val instance = sourceInstanceKey ?: return null
@@ -481,5 +623,20 @@ class FakeMemoryRepository(
 
     private companion object {
         const val MAX_SEARCH_TERMS = 16
+        const val REUSE_CONTEXT_TTL_SECONDS = 15L * 60L
     }
 }
+
+private data class FakeReuseAttempt(
+    val context: ReuseContext,
+    val outcome: ReuseOutcome? = null,
+    val userAction: ReuseUserAction? = null,
+    val submittedAt: Instant? = null,
+)
+
+private data class FakeReuseAggregateKey(
+    val intent: ReuseIntent,
+    val outcome: ReuseOutcome?,
+    val userAction: ReuseUserAction?,
+    val resultCountBucket: ReuseResultCountBucket,
+)

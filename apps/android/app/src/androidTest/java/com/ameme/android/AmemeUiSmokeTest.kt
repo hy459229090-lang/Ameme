@@ -550,6 +550,18 @@ class AmemeUiSmokeTest {
         composeRule.onNodeWithText("准备会面").assertIsDisplayed()
         composeRule.onNodeWithText("决定与承诺").assertIsDisplayed()
         saveVisualEvidence("07-reuse-choices")
+        composeRule.onNodeWithText("决定与承诺").performClick()
+        composeRule.waitUntil(timeoutMillis = 15_000) {
+            composeRule.onAllNodesWithTag("reuse-result-0").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithTag("reuse-result-0").assertIsDisplayed()
+        composeRule.onNodeWithTag("reuse-feedback-useful").performClick()
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            composeRule.onAllNodesWithText("反馈已保存", substring = true)
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
+        composeRule.onNodeWithText("关闭").performClick()
     }
 
     @Test
