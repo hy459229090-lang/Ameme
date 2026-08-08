@@ -110,7 +110,7 @@ Host；账户/多设备 owner audit、安全导出、真实用户理解、物理
 - 迁移快照只在升级/回滚窗口存在，到期进入 DeletionJob。
 - MVP 不提供记忆数据云备份/灾备。peer 恢复必须先应用 tombstone/删除水位再接收对象，恢复演练验证不会复活已删对象。
 - Python Core reference 已用 synthetic 数据证明一致 SQLite 快照、已加密 Raw 密文、hash/`quick_check`、损坏拒绝、无密钥备份和恢复到新目录。这不是生产移动备份：其结构化 SQLite 为明文，密钥需外部提供，也未证明 OS 调度、Keychain/Keystore 恢复、E2EE 云传输、账户恢复或物理设备灾难恢复。
-- 双端同安装候选现在可在 exact backup 短时确认后进入可回滚 live-store 激活内核：候选与权威 tombstone 在切换前后复核，HMAC journal 只保留版本、状态、确认 ID、backup ID 与 MAC，不含正文、路径或 key；`PREPARED` 失败回旧 live，`COMMITTED` 只保留已验证新 live，原候选不消费。设置页提供普通用户“同安装恢复”：创建/更新有界 current/previous 恢复点，健康必须来自真实隔离恢复，展示创建、验证和最近成功恢复时间，并要求逐字输入 `恢复`。receipt 仍为 `productionRecoveryClaim=false`；界面明确点只在当前安装、依赖当前设备 Keychain/Keystore key，卸载、换机或设备丢失后不可用。
+- 双端同安装候选现在可在 exact backup 短时确认后进入可回滚 live-store 激活内核：候选与权威 tombstone 在切换前后复核，HMAC journal 只保留版本、状态、确认 ID、backup ID 与 MAC，不含正文、路径或 key；`PREPARED` 失败回旧 live，`COMMITTED` 只保留已验证新 live，原候选不消费。设置页提供普通用户“同安装恢复”：创建/更新有界 current/previous 恢复点，健康必须来自真实隔离恢复，展示创建、验证和最近成功恢复时间，并要求逐字输入 `恢复`。receipt 仍为 `production_recovery_claim=false`；界面明确点只在当前安装、依赖当前设备 Keychain/Keystore key，卸载、换机或设备丢失后不可用。
 - Android 激活时将 content-free 安全审计视为不可回退账本：只把旧 live 中激活时仍未过期的记录并入候选，精确重复去重，冲突/容量异常拒绝整个激活，并在原子换库前后复核账本与 SQLCipher 文件摘要。Android JVM 112/112 与 API 36 / 16 KB AVD 105/98/7/0（完整 UI 14/14）已执行；iOS Debug/Release build 与生产 Smoke 已执行，本机 XCTest 因 Command Line Tools 缺少 `XCTest` 未执行。真实进程终止、磁盘满、断电、OEM 文件系统和双端物理设备仍待独立演练。
 
 ## 7. 权利请求与身份校验

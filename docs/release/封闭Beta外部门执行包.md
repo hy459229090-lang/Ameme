@@ -1,9 +1,19 @@
 # Ameme 封闭 Beta 外部门执行包 v0.1
 
 > 状态：`ready_to_execute / blocked_external`；当前总 verdict 为 `hold`
-> 更新日期：2026-07-29
+> 更新日期：2026-08-08
 > 适用范围：真实参与者、物理设备、真实读屏、签名/Provisioning、内部商店分发、真实 Agent 宿主、生产恢复、付费服务/成本、安全事故和回滚
 > 证据边界：Simulator、AVD、Mock、合成夹具、Swift smoke、静态门和计划只能证明准备度，不能关闭本文件的 Gate
+
+> 2026-08-08 补充：仓库内基线复核继续通过（隔离 Python 3.12 venv 安装 `scripts/requirements-dev.txt` 后，run_workspace_validation 28/28，含用户确认 provenance 合同门；`external_gate_packs.overall_verdict=hold`），并补齐本轮执行日志。首次缺 PyYAML 与默认 Python 3.9 不满足同步协议的 Python 3.10+ 语法要求均已作为环境失败保留；真实外部账号/设备/真实模型对应 Gate 继续保持 hold。
+
+> 2026-08-08 外部执行准备复测：已创建并完成一次“可复执行”初始化（不含真实敏感数据）
+> - run-id：`demo-20260808e`（此前已完成 `demo-20260808b/c/d`）
+> - 输出目录：`data/private/external-gates/demo-20260808e`
+> - manifest：`template-manifest.json`（`gate_claim=false`，`evidence_status=blank_templates_only`，`external_gate_pack=true`）
+> - 验证结果：`validate_external_gate_packs.py` 输出 `checks=80` / `overall_verdict=hold`
+> - `real_participant_claim/physical_device_claim/signing_store_claim/production_recovery_claim/paid_provider_claim` 均为 `false`
+> - 这份记录只证明仓库内准备与模板可复跑，不替代真实参与者、物理设备、签名发布、共享 Grant/生产恢复和付费成本闭环
 
 ## 1. 进入条件、人员与停止权
 
@@ -158,7 +168,7 @@ python3.12 scripts/validation/prepare_external_gate_run.py \
 当前仓库已完成同安装、设备 key 尚在时的有界恢复点与 exact-confirmation/HMAC journal
 可回滚激活内核。双端设置页已显示实际隔离恢复得出的健康、创建/验证/最近成功恢复状态，并以
 逐字 `恢复` 确认切换；同时明确卸载、换机或设备丢失后不可用。artifact 与 receipt 仍为
-`productionRecoveryClaim=false`，不提供 recovery secret、跨设备 key、用户自有/E2EE
+`production_recovery_claim=false`，不提供 recovery secret、跨设备 key、用户自有/E2EE
 存储、全设备丢失恢复或生产支持流程。在上述路线和物理演练前，本 Gate 必须保持 `hold`。
 
 ## 7. 签名、商店、隐私、付费服务与成本

@@ -14,7 +14,7 @@ Date / Environment: 2026-07-29；macOS Command Line Tools、隔离 Python 3.12�
 
 iOS 在网络请求前把 envelope、P-256 私钥和 key thumbprint 保存到 `kSecAttrAccessibleWhenUnlockedThisDeviceOnly` Keychain。启动时可以用同一 key 重试 pending bootstrap，或加载已签发 credential 重新完成 TLS 1.3/pin/HMAC 应用通道认证；断开和本机 Space 删除会清除该记录。这里的“设备 key 绑定”精确指签发时验证私钥持有、Android 保存绑定记录、iOS 设备专属存储并在恢复时复核 key thumbprint。当前冻结应用通道仍使用已签发 bearer，并未在每次重连时再次执行 P-256 持有证明。
 
-仓库工程子门判定 `conditional_pass`。静态契约、双端编解码、Android Keystore/消费状态、iOS Keychain pending→active→expiry、AVD 上 Swift→Android v2 bootstrap→四操作应用通道和 Debug Host 独立凭据路径已执行。本报告记录的是 bootstrap/轮换切片的历史执行点；后续 Android 系统扫码与显式粘贴生产 client 已由 `P0-Android普通用户QRv2生产扫码与认证验证-20260729.md` 补齐。共享账户 Grant/revocation registry、两台物理设备扫码/无 Play 真机/真实 LAN/后台、iOS 最终 head XCTest 和发布签名仍为真实 Gate。
+仓库工程子门判定 `conditional_pass`。静态契约、双端编解码、Android Keystore/消费状态、iOS Keychain pending→active→expiry、AVD 上 Swift→Android v2 bootstrap→四操作应用通道和 Debug Host 独立凭据路径已执行。本报告记录的是 bootstrap/轮换切片的历史执行点；后续 Android 系统扫码与显式粘贴生产 client 已由 `P0-Android普通用户QRv2生产扫码与认证验证-20260729.md` 补齐，iOS 最终 head XCTest 已由 Xcode CI `31246698219` 补齐。共享账户 Grant/revocation registry、两台物理设备扫码/无 Play 真机/真实 LAN/后台和发布签名仍为真实 Gate。
 
 ## 实现边界
 
@@ -25,7 +25,7 @@ iOS 在网络请求前把 envelope、P-256 私钥和 key thumbprint 保存到 `k
 | 响应丢失恢复 | 最长 5 分钟且仅同一 P-256 公钥可重取同一 credential | `pass`（AVD instrumentation） |
 | 凭据分离 | QR bootstrap secret 与签发的应用 channel secret 不同；应用 listener 从不接受 bootstrap secret | `pass`（静态 + 跨端 AVD smoke） |
 | Release 隔离 | Release pairing 没有 developer bearer；签发前可仅监听 bootstrap，签发后只加载 QR credential | `pass`（Release source/build + AVD instrumentation） |
-| iOS 进程重启 | pending/active 状态保存在 device-only Keychain，pending 使用同一私钥重试，active 重新认证后才恢复 UI 连接 | `conditional_pass`（本机 Keychain Smoke；XCTest 源码未在最终 head 执行） |
+| iOS 进程重启 | pending/active 状态保存在 device-only Keychain，pending 使用同一私钥重试，active 重新认证后才恢复 UI 连接 | `conditional_pass`（本机 Keychain Smoke + 最终 head Xcode CI XCTest；物理进程终止仍待设备门） |
 | 每次重连 P-256 证明 | 冻结应用通道仍使用签发 bearer；P-256 只约束签发与同 key receipt retry | `not_claimed` |
 | Android 扫码客户端（历史点） | 本报告执行时尚未实现；后续系统 QR-only scanner 与显式粘贴 client 已由独立报告补齐 | `superseded_by_later_slice` |
 | 账户/共享 Grant | pairing-scoped 本机 policy 仍是 trust root，没有共享 registry 或跨设备撤销传播 | `hold` |
@@ -145,7 +145,7 @@ Debug Host→Android smoke 使用隔离 Python 3.12 重跑并通过 durable/loca
 ## 保留 Gate
 
 - 在至少一台 iPhone 与一台 Android 物理设备上执行真实相机扫码、二维码泄露/并发抢占、重复扫描、过期、响应丢失、进程终止、后台、撤销和真实 LAN。
-- 用完整 Xcode 在当前最终 head 执行新增 bootstrap/Keychain XCTest；本机 parse 和 Shared Smoke 不替代 XCTest。
+- 最终 head 的 bootstrap/Keychain XCTest 已由 Xcode CI `31246698219` 执行；下一步是在签名物理 iPhone 上完成进程终止与真实 Keychain 生命周期复验。
 - 若 Beta 要求 Android 作为 client，需要新增 Android 相机扫码→production client transport；当前产品只证明 Android host/iOS client 的非对称角色。
 - 用共享账户 Grant/revocation registry 替代 pairing-scoped trust root，并验证跨设备撤销、Space 删除传播和审计汇总。
 - 若要求凭据被复制后仍不可使用，需为冻结应用通道设计每次连接的 P-256 proof-of-possession 或硬件不可导出 key 派生；当前 v2 只声明签发时 key-bound。
@@ -153,4 +153,4 @@ Debug Host→Android smoke 使用隔离 Python 3.12 重跑并通过 durable/loca
 
 ## Verdict
 
-`P0-QR-ONE-TIME-BOOTSTRAP-V2-11` 关闭了仓库实现中“5 分钟 UI/parser 过期被误当作服务端一次性”的 P0 缺口：Release QR bearer 只能用于服务端原子消费的一次性 bootstrap，并轮换为独立、签发时客户端 key-bound 的应用 credential；进程重启与响应丢失有有界恢复路径。由于最终 head iOS XCTest、Android client 扫码、共享 Grant 和双端物理设备/LAN 未完成，仓库工程结论为 `conditional_pass`，封闭 Beta 外部门仍为 `hold`。
+`P0-QR-ONE-TIME-BOOTSTRAP-V2-11` 关闭了仓库实现中“5 分钟 UI/parser 过期被误当作服务端一次性”的 P0 缺口：Release QR bearer 只能用于服务端原子消费的一次性 bootstrap，并轮换为独立、签发时客户端 key-bound 的应用 credential；进程重启与响应丢失有有界恢复路径。最终 head iOS XCTest 与 Android client 已由后续 CI/实现补齐；共享 Grant、双端物理扫码/LAN、无 Play 真机与发布签名仍未完成，因此仓库工程结论为 `conditional_pass`，封闭 Beta 外部门仍为 `hold`。

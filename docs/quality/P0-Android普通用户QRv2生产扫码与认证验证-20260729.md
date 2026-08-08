@@ -122,7 +122,7 @@ env JAVA_HOME=/private/tmp/ameme-jdk17-runtime/Contents/Home \
 | 新 UI 测试误导入 `assertDoesNotExist` | 当前 Compose v2 API 以节点扩展提供，无需显式 import | 删除无效 import；androidTest 编译和设备 3/3 通过 | 无 |
 | 首轮纵向 TLS 测试在 bootstrap 后应用重连失败 | P-256 客户端 key 与 RSA 服务端 key 共处 Android Keystore；默认 KeyManager 选错 EC alias，TLS 尝试未获授权的 digest 后关闭 listener | 新增 alias-pinned server KeyManager，只允许专用 RSA TLS alias；同一测试通过，随后完整 112 项回归 0 fail | 真实 OEM TLS provider 仍需物理设备矩阵 |
 | 新候选替换单测首次使用不存在的 `copy()` | pairing material 是验证型普通 class，不是 data class | 用完整构造器建立第二个严格 pairing；同一测试通过 | 无 |
-| 旧 HEAD `1acc1af` Android CI 的 Event 详情 UI 用例找不到刚保存的动态标题 | 用例只等待保存弹窗消失，没有等待异步写入后的 Event 进入 LazyColumn 语义树 | `7ec7a16` 在点击前对 `today-list` 执行精确 `performScrollToNode` 并断言显示；本地完整回归与远端 Android CI `30457406008` 均通过 | 最终 head 仍需独立 CI 签收 |
+| 旧 HEAD `1acc1af` Android CI 的 Event 详情 UI 用例找不到刚保存的动态标题 | 用例只等待保存弹窗消失，没有等待异步写入后的 Event 进入 LazyColumn 语义树 | `7ec7a16` 在点击前对 `today-list` 执行精确 `performScrollToNode` 并断言显示；最终实现/证据 head `8291ced` 的 Android CI `31246698217` 再次通过 | 物理设备/OEM 仍待外部门 |
 | 手工替代静态门首轮期待字面 `testTag("pairing-method-manual")` | 生产组件通过参数传入 tag，验证器把等价实现误写成字面形状 | 改为校验稳定 tag 值、输入/提交 tag、长度、resolver 与无剪贴板读取；62/62 | 无 |
 | 清空输入测试首轮使用 `assertTextEquals("")` 失败 | `OutlinedTextField` 为空时仍在 `Text` 语义中包含 label/错误文案，实际 `EditableText` 已为空 | 对 `SemanticsProperties.EditableText` 精确断言空值；目标 6/6、完整回归通过 | 无 |
 | 定向 runner 后的两次全量运行分别在 1/115、0/115 被强杀 | 另一仓库会话同时在同一 serial 启动 instrumentation；logcat 明确显示第二个 `start instr` 杀死首个进程 | 不删除失败；等待对方结束后独占重跑 | 无产品影响 |

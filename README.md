@@ -137,8 +137,12 @@ JOBS/          工作队列、证据、阻塞与确认门
 完整、无网络的 Workspace / 契约 / Skill / 文档验证：
 
 ```powershell
-python scripts/validation/run_workspace_validation.py
+python3.12 -m venv /tmp/ameme-project-py312
+/tmp/ameme-project-py312/bin/python -m pip install -r scripts/requirements-dev.txt
+/tmp/ameme-project-py312/bin/python scripts/validation/run_workspace_validation.py
 ```
+
+该基线要求 Python 3.10+；macOS Command Line Tools 自带的 Python 3.9 会被入口脚本明确拒绝，避免在中途 Sync Gate 才因语法不兼容失败。
 
 Android 构建与单元测试（JDK 17、Android SDK Platform 36）：
 

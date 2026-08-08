@@ -14,7 +14,7 @@ Python 也可使用 `# 用途：` / `# 输入：` / `# 输出：`。
 
 当前入口：
 
-- `validation/run_workspace_validation.py`：完整无网络 Python/契约/Skill/文档/治理基线；
+- `validation/run_workspace_validation.py`：完整无网络 Python/契约/Skill/文档/治理基线；要求 Python 3.10+，低版本解释器在启动前以机器可读结果失败，推荐隔离 Python 3.12 + `scripts/requirements-dev.txt`；
 - `validation/run_ai_reference_eval.py`：固定合成 AI Eval、攻击/删除集与差分报告校验；
 - `governance/check_workspace.py`：仅工作区结构与治理规则；
 - `validation/run_contract_quality.py`：仅机器契约质量基线。

@@ -10,7 +10,7 @@
 > 恢复审计补充：Android 激活内核现会在已认证 staging 副本中，把旧 live 在激活时仍处于 180 天窗口内的 Agent 审计与候选账本做单调 union；精确重复只保留一份，同 `audit_id` 或同 trace/phase 的不同内容、50,000 行容量溢出均 fail closed。该增量只完成 JVM、androidTest 编译和静态门验证，未借用并行 AVD，也不扩张 iOS Host、账户审计或用户可见生产恢复结论。
 > 当前复验补充：上述 v14 与恢复审计增量随后已进入同一 API 36 / 16 KB AVD 全量 100/93/7/0。产品级本机 Space 删除还会在 root freeze 后收敛当前安装 Agent runtime/pairing/连接状态与 pending action/export/incoming-share，并以 content-free marker 防复活；跨端静态 Gate 为 206/206。AVD 不是物理设备，当前安装 pairing 撤销也不是账号或共享 Grant registry 撤销。
 > QR Bootstrap v2 补充：Release 普通用户入口现只展示短时、HMAC 完整性保护的一次性 bootstrap envelope；客户端以 P-256 key 证明持有后换取独立随机会话凭据。Android 原子记录 consumed/key/issued credential，同一 key 可安全重取首次响应、换 key 或重放失败；Release artifact 不再内置开发者 bearer。iOS 把 pending/active bootstrap 状态仅存 device-only Keychain，并在进程重启后恢复或完成交换。Android Release 可通过不申请 App 相机权限的系统 QR-only scanner，或不读剪贴板、16,384 字符有界且取消/提交清除的显式粘贴入口接收 envelope；两者复用同一 event-only 确认和认证链。该绑定覆盖签发和同 key 响应重取；冻结的 v1 应用通道仍使用 bearer，不宣称每次重连都有 P-256 proof。当前 Android 独占 API 36 / 16 KB AVD 全量口径为 115 discovered / 108 passed / 7 外部门 skipped / 0 failed。共享账户 Grant registry、物理扫码/无 Play 真机、物理 LAN/设备和真实用户配对仍是 Gate。
-> 同安装恢复 UI 补充：双端设置页现可创建/更新 current/previous 有界恢复点，只有真实恢复并打开隔离候选后才显示健康，展示创建/验证/最近成功切换状态，并要求逐字输入 `恢复`。Android 会先停止 Agent、关闭 SQLCipher repository，激活后重开并重载 Today；iOS 使用 live 根同级受控目录，避免激活移动 `Application Support/Ameme` 时把恢复点一起移动。Android API 36 / 16 KB AVD 全量为 105/98/7/0、完整 UI 14/14；iOS Debug/Release build 与生产 Smoke 通过，本机 XCTest 仍因缺少 `XCTest` 真实失败。该入口仅服务当前安装，依赖当前设备 Keystore/Keychain key，不改变 `productionRecoveryClaim=false`。
+> 同安装恢复 UI 补充：双端设置页现可创建/更新 current/previous 有界恢复点，只有真实恢复并打开隔离候选后才显示健康，展示创建/验证/最近成功切换状态，并要求逐字输入 `恢复`。Android 会先停止 Agent、关闭 SQLCipher repository，激活后重开并重载 Today；iOS 使用 live 根同级受控目录，避免激活移动 `Application Support/Ameme` 时把恢复点一起移动。Android API 36 / 16 KB AVD 全量为 105/98/7/0、完整 UI 14/14；iOS Debug/Release build 与生产 Smoke 通过，本机 XCTest 仍因缺少 `XCTest` 真实失败。该入口仅服务当前安装，依赖当前设备 Keystore/Keychain key，不改变 `production_recovery_claim=false`。
 
 ## 1. 设备内逻辑分区
 
@@ -176,7 +176,7 @@ Core reference 提供一个非生产恢复 Oracle：SQLite online backup 生成�
 
 Android schema v14 的 Agent 访问审计属于安全账本而不是可随业务快照回滚的用户内容。激活内核因此先写认证 `PREPARED` journal，再创建 staging，并在 rollback-journal 模式下把旧 live 的未过期审计与候选审计做单调 union：精确相同的 `audit_id`/trace-phase 去重，不同内容冲突、非法记录或 50,000 行容量溢出均在 live 换库前失败关闭。union 后同时固定 retained-ledger digest、记录数、合并后 SQLCipher 文件 size/SHA-256，再在 staging 与原子换库后的 live 上复核；业务 deletion-watermark digest 不得变化。崩溃恢复会删除 staging/live 的专用 WAL/SHM/journal sidecar，`PREPARED` 仍回旧 live，`COMMITTED` 仍只保留已经验证的 union。过期审计不会从旧 live 重新引入，候选内尚未清理的过期行也不会进入 retained digest。
 
-artifact、authorization 和 receipt 都明确 `productionRecoveryClaim=false` 与 `external_same_install_required`，不包含 SQLCipher raw key、Keychain/Keystore key、Agent pairing secret 或 pending-action/export snapshot。内核关闭仓库内 live-store 文件切换和失败回旧库的空白；双端设置页现把它限制为“同安装恢复”，仅展示实际隔离恢复得出的健康、创建/验证/最近成功切换状态，并要求逐字确认。生产 SQLCipher/Keychain/Keystore 跨设备 key recovery、E2EE/用户自有存储路线、OS 调度、账户恢复、卸载/设备丢失、支持状态与物理设备演练仍是独立 Gate。
+artifact、authorization 和 receipt 都明确 `production_recovery_claim=false` 与 `external_same_install_required`，不包含 SQLCipher raw key、Keychain/Keystore key、Agent pairing secret 或 pending-action/export snapshot。内核关闭仓库内 live-store 文件切换和失败回旧库的空白；双端设置页现把它限制为“同安装恢复”，仅展示实际隔离恢复得出的健康、创建/验证/最近成功切换状态，并要求逐字确认。生产 SQLCipher/Keychain/Keystore 跨设备 key recovery、E2EE/用户自有存储路线、OS 调度、账户恢复、卸载/设备丢失、支持状态与物理设备演练仍是独立 Gate。
 
 1. 数据库迁移前做本地加密快照和可用空间检查；快照保留不超过迁移/回滚所需窗口。
 2. 迁移脚本单调、可重复检测，记录 checksum/app version；失败回滚到旧库，不在半迁移库继续写。
@@ -206,7 +206,7 @@ schema v11/envelope v6 引入本机 source identity 与删除执行边界，sche
 
 Android v7–v13 instrumentation 已在 API 36、16 KB arm64 AVD 全量执行，XML 精确结果为 91 discovered / 84 passed / 7 外部门 skipped / 0 failed；恢复激活专项 3/3、完整 UI 套件 12/12。这仍不等于物理设备或 OEM 证明。iOS 已由生产 smoke 走过确认、上游 revision 失效、四类短时复用、无正文 telemetry、app-owned Raw-only、外部原件边界、单来源 cascade/source watermark、多来源 exact-revision 字段证据重算、完整用户确认删源保留、partial 确认 fail-closed、删除水位、认证备份、exact-confirmation 激活、当前安装 Personal space root freeze、旧快照拒绝和重载不复活，但新 UI/激活的 XCTest、真实用户确认触发面、真实 helpful 结果、进程终止与跨设备物理恢复仍待完整 Xcode/真机。account/Grant/Contract delete、peer ack、分布式权威水位与生产删除证明仍是后续 Gate。
 
-2026-07-29 的本机删除切片复验把当时 Android 全量推进到 100 discovered / 93 passed / 7 外部门 skipped / 0 failed，包含删除确认 UI 2/2、待处理动作存储 3/3 与 pairing manager 4/4；后续 QR v2 切片的当前口径见本文件顶部补充。iOS 生产 Smoke 已执行 transport/连接/pending export/incoming share 收敛及 marker 后拒绝，新增 XCTest 尚待最终 head Xcode。跨端本机删除静态契约 206/206；这些证据仍不关闭物理设备、共享 Grant registry 或分布式删除 Gate。
+2026-07-29 的本机删除切片复验把当时 Android 全量推进到 100 discovered / 93 passed / 7 外部门 skipped / 0 failed，包含删除确认 UI 2/2、待处理动作存储 3/3 与 pairing manager 4/4；后续 QR v2 切片的当前口径见本文件顶部补充。iOS 生产 Smoke 已执行 transport/连接/pending export/incoming share 收敛及 marker 后拒绝，该切片当时待补的新增 XCTest 已由最终 head Xcode CI `31246698219` 签收。跨端本机删除静态契约 206/206；这些证据仍不关闭物理设备、共享 Grant registry 或分布式删除 Gate。
 
 2026-07-14 的 Android 切片已经实现并在 API 36 x86_64 AVD 验证：注入式 `DatabaseKeyProvider`、Keystore AES-256-GCM 包裹随机数据库 key、SQLCipher WAL、数据库 trigger 强制 `event_revisions` 禁止 UPDATE/DELETE、`events_current` 投影、Repository 显式绑定 `space_id`、commit 后再展示、tombstone 后重建仍不可见，以及 v1→v2 Revision backfill、v2→v3 `space_legacy` 隔离、v3→v4 `source_locators`、v4→v5 来源实例和 v5→v6 Event policy/DayLedger/Summary/Agent 幂等迁移。跨空间相同 Event ID 可共存且不可互读/互删。错误密钥被拒绝，主库文件头不是明文 SQLite header；SQLCipher/应用日志不输出正文或 key。Compose 的 open/read/write/search/来源访问和授权清理由统一 I/O 边界执行，取消后的 open 不泄漏 repository，重组也不会提前关闭当前实例。
 

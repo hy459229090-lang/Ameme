@@ -40,7 +40,7 @@ REQUIRED_ROOT_DIRS = {
     ".github",
 }
 
-ALLOWED_ROOT_DIRS = REQUIRED_ROOT_DIRS | {".git", ".codex", ".obsidian"}
+ALLOWED_ROOT_DIRS = REQUIRED_ROOT_DIRS | {".git", ".codex", ".obsidian", "data"}
 
 DOC_DOMAINS = {
     "product",

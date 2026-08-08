@@ -1,5 +1,12 @@
 # quality 质量与验证索引
 
+> 文档状态：当前有效
+>
+> 适合读者：研发、测试、发布、安全与产品负责人
+>
+> 人类快速阅读：先查看“当前证据”中的最新 P0 基线与外部门 verdict，再按主题打开对应报告。
+> AI 阅读提示：优先使用最新日期且标记当前有效的报告；历史执行点不能覆盖外部门 `hold` 边界。
+
 ## 当前证据
 
 | 证据 | 路径 | Verdict |
@@ -20,7 +27,7 @@
 | P0 双端生产长期 Memory 边界 | `P0-双端生产长期Memory边界验证-20260726.md` | conditional_pass；9 类 Memory、exact Event revision、显式确认、有效期、替代、上游失效与不复活通过；Android SQLCipher 后续已由 2026-07-29 API 36 / 16 KB 全量回归补证，iOS XCTest、ContextPack/恢复/真机待补 |
 | P0 双端本机恢复候选与删除水位 | `P0-双端本机恢复候选与删除水位验证-20260726.md` | conditional_pass；双端持久删除水位、认证同安装备份、损坏/错 key/旧水位/非空目标 fail-closed 与隔离候选通过，跨设备密钥、用户流程和物理恢复 hold |
 | P0 双端本机恢复候选可回滚激活内核（历史执行点） | `P0-双端本机恢复候选可回滚激活内核验证-20260729.md` | conditional_pass；exact backup 短时确认、PREPARED-before-staging、HMAC crash journal、失败回旧 live与候选不消费已实现；后续普通用户 UI 由下一项补齐，跨设备 key、iOS fault-injection XCTest 与物理恢复 hold |
-| P0 双端普通用户同安装恢复与健康状态 | `P0-双端普通用户同安装恢复与健康状态验证-20260729.md` | conditional_pass；双端设置页创建/更新有界恢复点，以真实隔离恢复判定健康、展示最近成功并要求逐字 `恢复`；Android JVM 112/112、API 36 / 16 KB AVD 105/98/7/0 与 UI 14/14、iOS Debug/Release Smoke、静态 Gate 210 通过，跨设备 key、最终 head Xcode、物理恢复和真实用户 hold |
+| P0 双端普通用户同安装恢复与健康状态 | `P0-双端普通用户同安装恢复与健康状态验证-20260729.md` | conditional_pass；双端设置页创建/更新有界恢复点，以真实隔离恢复判定健康、展示最近成功并要求逐字 `恢复`；Android JVM 112/112、API 36 / 16 KB AVD 105/98/7/0 与 UI 14/14、iOS Debug/Release Smoke、静态 Gate 210 和最终 head Xcode/XCUITest 通过，跨设备 key、物理恢复和真实用户 hold |
 | P0 双端生产复用运行时与无正文遥测 | `P0-双端生产复用运行时与无正文遥测验证-20260726.md` | conditional_pass；四类本机复用、事务内 exact revision 解析、双端 Search 单入口/五类反馈、Restricted 排除与无正文遥测通过；Android API 36 / 16 KB AVD 已执行，iOS 新 Xcode/XCUITest、真实 helpful 与物理设备 hold |
 | P0 双端本机来源谱系与删除语义 | `P0-双端本机来源谱系与删除语义验证-20260726.md` | conditional_pass；v11/v6 引入 terminal identity guard/单来源 cascade/外部 Raw 边界、app-owned Raw-only/pending retry/SourceObject 权威备份/source watermark；Android SQLCipher 后续已由 2026-07-29 API 36 / 16 KB 全量回归补证，多来源由字段证据报告收敛，account/space、peer proof 与物理设备仍 hold |
 | P0 双端本机 Space 冻结与删除水位 | `P0-双端本机Space冻结与删除水位验证-20260726.md` | conditional_pass；v11/v6 引入并在当前 Android v14/iOS v8 继续保留的 Personal space 根水位、投影收敛、写入冻结、app-owned Raw/locator cleanup、旧备份拒绝与重载防复活通过；Android v7–v13 SQLCipher 后续已由 2026-07-29 API 36 / 16 KB 全量回归补证，账号/Grant/peer/provider 原件/物理擦除与物理设备 hold |
@@ -33,8 +40,10 @@
 | P0 iOS 生产 Agent 四操作客户端与响应校验 | `P0-iOS生产Agent-四操作客户端与响应校验-20260729.md` | conditional_pass；iOS 四项 Android 生产 v1 operation 已有最小 Grant builder、握手 capability、typed result、canonical/result-digest/error-shape fail-closed，并在 API 36 / 16 KB AVD 完成 Swift→Android 四操作纵向 Smoke；普通用户默认仍 event-only，物理设备、共享 Grant 与发布 hold |
 | P0 Android 生产 Agent 访问审计与只读投影 | `P0-Android生产Agent-访问审计与只读投影-20260729.md` | conditional_pass；SQLCipher schema v14 增加 STARTED/COMPLETED content-free access audit、180 天保留、append-only/提前删除保护、审计故障失败关闭、幂等重试和设置页最近 20 条；同安装恢复单调保全未过期账本，相关 instrumentation 已在 API 36 / 16 KB AVD 全量 100/93/7/0 执行；iOS Host/账户审计、真实用户/物理设备 hold |
 | P0 QR 配对一次性凭据安全审计（历史） | `P0-QR配对一次性凭据安全审计-20260729.md` | 历史 hold；记录 v1 QR 与 30 天 channel 共用 bearer 的发现，当前实现以后一项 v2 报告为准 |
-| P0 QR 一次性 Bootstrap 与设备凭据轮换 | `P0-QR一次性Bootstrap与设备凭据轮换验证-20260729.md` | conditional_pass；Android server 原子消费、P-256 签发绑定、独立 credential、Release 无 developer bearer与 iOS device-only pending/active 恢复已实现；当时记录的 Android scanner client 缺口已由下一项补齐，共享 Grant、最终 head XCTest、物理扫码/LAN hold |
+| P0 QR 一次性 Bootstrap 与设备凭据轮换 | `P0-QR一次性Bootstrap与设备凭据轮换验证-20260729.md` | conditional_pass；Android server 原子消费、P-256 签发绑定、独立 credential、Release 无 developer bearer与 iOS device-only pending/active 恢复已实现；当时记录的 Android scanner client 与最终 head XCTest 缺口已由后续实现/CI 补齐，共享 Grant、物理扫码/LAN hold |
 | P0 Android 普通用户 QR v2 生产扫码与认证 | `P0-Android普通用户QRv2生产扫码与认证验证-20260729.md` | conditional_pass；Release 系统扫码或不读剪贴板的显式粘贴、设备 P-256 key、TLS 1.3/pin、独立应用 credential、真实重连和 event-only UI 已实现；API 36 / 16 KB AVD 115/108/7/0，物理扫码/LAN、无 Play 真机、共享 Grant 和发布 hold |
+| P0 工作区基线复核 | `P0-工作区基线复核-20260808.md` | conditional_pass；仓库内静态与单元基线通过；外部真实参与者/物理设备/签名发布/真实模型/`production_recovery_claim`/`cross_device_recovery_claim` hold |
+| P0 内部验证摘要 | `P0-内部验证摘要-20260808.md` | conditional_pass（仅仓库内）；28/28、当前治理 185 项与外部门模板预检 80 项可复核，外部门 verdict 继续 hold |
 
 ## 当前正本
 
@@ -94,13 +103,16 @@
 | 2026-07-26 | 新增/验证 | P0 Android Agent 最小读取：冻结 v1 上接通 Android/Host bounded `visible_events`，限定 Personal/Event/structured、query/time/limit/session sensitivity，Restricted 不泄漏、正文截断，Host Recall/Context injection/budget 与 TLS 回归通过；`get_event`/策略/长期 Memory 关闭，真实 Host/设备/共享 Grant/发布 hold |
 | 2026-07-29 | 新增/验证 | P0 双端用户确认字段证据与来源删除保留：Android schema v13 / iOS envelope v8 新增 content-free exact-revision `EventUserConfirmation`；完整显式 Candidate 确认删源后保留 Event 但终结 source claim，partial/stale/legacy 删除或 fail closed，迁移不猜测旧动作；iOS 生产 Smoke 与 Android API 36 / 16 KB SQLCipher instrumentation 已实际通过，iOS XCTest/真实用户/物理设备 hold |
 | 2026-07-29 | 更新/验证 | 双端复用与当前平台 UI 收敛：iOS Search 改为单一扁平入口、原生 `confirmationDialog` 与结果 Sheet；Android 保持当前 Material 3，把 Search 改为单一 `LazyColumn` 并在 API 36 / 16 KB、320dp、130% 字号下完成 91/84/7/0 全量回归、完整 UI 12/12 和截图复核。iOS 新 Xcode/XCUITest/截图、物理设备与真实读屏/用户仍 hold |
-| 2026-07-29 | 更新/验证 | 双端本机 Space 删除入口补齐本机授权与待处理载荷收敛：Android 停止 Local Node、撤 pairing、冻结 Keystore pending actions；iOS 断开 Agent、冻结 Pending Export 与 App Group handoff，并清理隐藏原子临时载荷。Android 107/107 JVM、API 36 / 16 KB AVD 100/93/7/0、iOS Shared/App/Smoke、跨端静态 Gate 206 和 workspace 28/28 通过；账号/共享 Grant/provider/peer/物理擦除、最终 Xcode head 与物理设备继续 hold |
+| 2026-07-29 | 更新/验证 | 双端本机 Space 删除入口补齐本机授权与待处理载荷收敛：Android 停止 Local Node、撤 pairing、冻结 Keystore pending actions；iOS 断开 Agent、冻结 Pending Export 与 App Group handoff，并清理隐藏原子临时载荷。Android 107/107 JVM、API 36 / 16 KB AVD 100/93/7/0、iOS Shared/App/Smoke、跨端静态 Gate 206 和 workspace 28/28 通过；该历史点待补的最终 Xcode head 已由后续 CI 补齐，账号/共享 Grant/provider/peer/物理擦除与物理设备继续 hold |
 | 2026-07-29 | 新增/验证 | P0 双端本机恢复候选可回滚激活：exact backup 15 分钟确认、切换前后水位/完整性复核、HMAC `prepared/committed` journal、中途失败回旧 live、成功后候选不消费和伪造 journal fail closed；iOS 生产 Smoke 与 Android API 36 / 16 KB AVD 恢复类 3/3、全量 91/84/7/0 通过，用户 UI/跨设备 key/物理故障注入继续 hold |
 | 2026-07-29 | 新增/验证 | P0 iOS Agent 四操作客户端：在普通用户 QR Grant 仍为 event-only 的前提下，为 `append_revision`、exact `undo_capture`、bounded `visible_events` 补齐 canonical builder、握手 operation 检查、typed result 与 result digest/严格 error-shape 校验；原始 exchange 私有化且生产 exchange 只按当前时间授权。Shared/App/Smoke build、生产 Shared Smoke、82 项静态门、workspace 27/27 与 API 36 / 16 KB AVD 四操作纵向 Smoke 通过，物理设备/共享 Grant/真实 Host hold |
 | 2026-07-29 | 新增/验证 | P0 Android Agent 访问审计：schema v14 为四项生产 operation 增加 repository 前 STARTED 与完成态 COMPLETED、180 天单点保留、数量桶、append-only/提前删除保护、失败关闭和设置页只读投影；JVM 与 androidTest 编译通过，新增 instrumentation 未争用并行 AVD，iOS Host/账户审计、真实用户/物理设备 hold |
 | 2026-07-29 | 更新/验证 | Android 同安装恢复不再回退安全账本：PREPARED journal 前移覆盖 staging/merge 崩溃窗口，未过期 Agent audit 按 exact ID/trace-phase 单调 union，冲突/50,000 容量溢出 fail closed，并以账本与合并 SQLCipher 双摘要绑定原子换库；JVM 103/103、非设备构建、audit 143、recovery 138 与 workspace 28/28 通过，新增 instrumentation 仅编译 |
 | 2026-07-29 | 更新/验证 | Android Agent 审计与恢复账本设备复验：API 36 / 16 KB、320dp、130% 字号 AVD 全量 100/93/7/0，恢复 5/5、审计持久化 2/2、生产端点 3/3、完整 UI 13/13；这是后续设备补证，不把 AVD 扩写为物理设备 |
 | 2026-07-29 | 审计/Gate | QR 配对安全复核确认 5 分钟 envelope 只由 parser/UI 限时，Android server 在 30 天 pairing 内复用同一 secret，iOS 仅本进程消费；QR 静态门扩为 34 项并机器可读保持 server-enforced one-time、credential rotation、Android scanner、共享 Grant 与物理设备 claim 为 false，安全闭环 hold |
-| 2026-07-29 | 新增/验证 | 以 `ameme.agent-pairing-bootstrap.v2` 收敛前项审计：Android 原子消费 5 分钟 bootstrap、验证 P-256 key possession、签发独立 30 天 credential、同 key 有界响应恢复，Release 无 developer bearer；iOS device-only Keychain 保存 pending/active 并实际认证后恢复。该历史点 QR Gate 54/54、Android manager AVD 7/7、Swift→Android v2 与独立 Debug Host smoke、workspace 28/28 通过；当时的 Android scanner client 缺口后续已补齐，共享 Grant、最终 head XCTest、物理设备/LAN hold |
+| 2026-07-29 | 新增/验证 | 以 `ameme.agent-pairing-bootstrap.v2` 收敛前项审计：Android 原子消费 5 分钟 bootstrap、验证 P-256 key possession、签发独立 30 天 credential、同 key 有界响应恢复，Release 无 developer bearer；iOS device-only Keychain 保存 pending/active 并实际认证后恢复。该历史点 QR Gate 54/54、Android manager AVD 7/7、Swift→Android v2 与独立 Debug Host smoke、workspace 28/28 通过；当时的 Android scanner client 与最终 head XCTest 缺口均已由后续实现/CI 补齐，共享 Grant、物理设备/LAN hold |
 | 2026-07-29 | 新增/验证 | 双端普通用户同安装恢复：设置页可创建/更新 current/previous 有界点，以实际隔离恢复判定健康，展示创建/验证/最近成功并要求逐字 `恢复`；Android JVM 112/112、API 36 / 16 KB AVD 105/98/7/0、UI 14/14，iOS Debug/Release build + Smoke 与跨端静态 Gate 210 通过。该路径依赖当前安装设备 key，卸载/换机/物理恢复和真实用户 Gate 保持 hold |
 | 2026-07-29 | 新增/验证 | Android Release 普通用户 QR v2 client：Google Play 系统扫码不向 App 授予 camera permission；显式粘贴替代不读剪贴板、16,384 字符有界且取消/提交清除。Keystore P-256 possession、AES-GCM pending/active、TLS 1.3 certificate pin、独立应用 credential、真实重连和 event-only 授权已接通；修复同 Keystore 多 key 导致 TLS server alias 误选。QR 静态门 62/62，API 36 / 16 KB AVD 115/108/7/0；物理光学、无 Play 真机、真实 LAN/用户和发布 hold |
+| 2026-08-08 | 验证 | 仓库级基线复核补全：隔离 Python 3.12 venv 安装 `scripts/requirements-dev.txt` 后复跑 `run_workspace_validation.py` 28/28；首次缺 PyYAML 与系统 Python 3.9 不兼容已保留为环境失败记录。合同/运行时/仓库治理、AI fixed eval 与外部门禁预检通过，外部真实参与者、物理设备、签名发布、真实模型与 `production_recovery_claim`/`cross_device_recovery_claim` 继续 hold |
+| 2026-08-08 | 新增 | 登记内部验证摘要：记录 28/28、当前治理 185 项、`demo-20260808e` 空白外部门模板预检 80 项，以及全部外部 claim 继续为 false/hold 的可复核边界 |
+| 2026-08-08 | 更新/验证 | M25 当前稳定平台线复认：iOS 以第一个方向再减法，Liquid Glass 只位于控制面；Android 保持 SDK 36 / Compose BOM 2026.06.00 / Material 3 1.4.0 稳定线，不全量采用 1.5.0-alpha25，并将 AVD 视觉证据扩展为 10 步核心旅程。自动化可达性不代替真实 VoiceOver/TalkBack 与物理设备签收 |
