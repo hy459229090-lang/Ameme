@@ -109,6 +109,53 @@ class AmemeUiSmokeTest {
         }
     }
 
+    private fun saveVisualEvidence(name: String) {
+        composeRule.waitForIdle()
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val fontScale = instrumentation.targetContext.resources.configuration.fontScale
+        val scaleLabel = (fontScale * 100).roundToInt()
+        val resolver = instrumentation.targetContext.contentResolver
+        val displayName = "$name-font$scaleLabel.png"
+        val relativePath = "${Environment.DIRECTORY_PICTURES}/AmemeTestEvidence/"
+        resolver.delete(
+            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+            "${MediaStore.Images.Media.DISPLAY_NAME} = ? AND " +
+                "${MediaStore.Images.Media.RELATIVE_PATH} = ?",
+            arrayOf(displayName, relativePath),
+        )
+        val screenshot = checkNotNull(
+            resolver.insert(
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                ContentValues().apply {
+                    put(MediaStore.Images.Media.DISPLAY_NAME, displayName)
+                    put(MediaStore.Images.Media.MIME_TYPE, "image/png")
+                    put(MediaStore.Images.Media.RELATIVE_PATH, relativePath)
+                    put(MediaStore.Images.Media.IS_PENDING, 1)
+                },
+            ),
+        ) { "MediaStore could not create screenshot $displayName" }
+        try {
+            checkNotNull(resolver.openOutputStream(screenshot)).use { output ->
+                assertTrue(
+                    "UIAutomation could not encode screenshot $displayName",
+                    instrumentation.uiAutomation.takeScreenshot()
+                        .compress(Bitmap.CompressFormat.PNG, 100, output),
+                )
+            }
+            resolver.update(
+                screenshot,
+                ContentValues().apply {
+                    put(MediaStore.Images.Media.IS_PENDING, 0)
+                },
+                null,
+                null,
+            )
+        } catch (error: Throwable) {
+            resolver.delete(screenshot, null, null)
+            throw error
+        }
+    }
+
     @Test
     fun onboardingTodayAndCaptureSheet_areReachableWithoutPermissions() {
         composeRule.onNodeWithText("自动整理你的一天").assertIsDisplayed()
@@ -377,9 +424,11 @@ class AmemeUiSmokeTest {
             .assertIsDisplayed()
             .performClick()
         composeRule.onNodeWithText("事件详情").assertIsDisplayed()
+        saveVisualEvidence("08-event-detail-real")
         composeRule.onNodeWithText("查看删除影响").performScrollTo().performClick()
         composeRule.onNodeWithText("删除影响与进度").assertIsDisplayed()
         composeRule.onNodeWithText("影响范围").assertIsDisplayed()
+        saveVisualEvidence("09-delete-impact-real")
         composeRule.onNodeWithText("确认删除")
             .performScrollTo()
             .assertIsDisplayed()
@@ -389,6 +438,7 @@ class AmemeUiSmokeTest {
             composeRule.onAllNodesWithText("返回今天").fetchSemanticsNodes().isNotEmpty() ||
                 composeRule.onAllNodesWithText("重试删除").fetchSemanticsNodes().isNotEmpty()
         }
+        saveVisualEvidence("10-delete-complete-real")
         composeRule.onNodeWithText("返回今天").performScrollTo().assertIsDisplayed().performClick()
         composeRule.onNodeWithContentDescription("搜索历史记录").performClick()
         composeRule.onNodeWithTag("search-query").performTextInput(title)
@@ -438,10 +488,28 @@ class AmemeUiSmokeTest {
     }
 
     @Test
-    fun visualEvidence_demoTodayUsesCurrentPlatformDesign() {
+    fun visualEvidence_coreJourneyUsesCurrentPlatformDesign() {
+        composeRule.onNodeWithText("自动整理你的一天").assertIsDisplayed()
+        saveVisualEvidence("01-onboarding")
         composeRule.onNodeWithText("查看今天").performClick()
         waitForCaptureEntry()
+        composeRule.onNodeWithText("今天").assertIsDisplayed()
+        saveVisualEvidence("02-today-real")
+        composeRule.onNodeWithContentDescription("记录一件事").performClick()
+        composeRule.onNodeWithText("文字").assertIsDisplayed()
+        composeRule.onNodeWithText("语音").assertIsDisplayed()
+        composeRule.onNodeWithTag("capture-photo").assertIsDisplayed()
+        saveVisualEvidence("03-capture-sheet")
+        composeRule.activityRule.scenario.onActivity { activity ->
+            activity.onBackPressedDispatcher.onBackPressed()
+        }
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            composeRule.onAllNodesWithTag("capture-photo").fetchSemanticsNodes().isEmpty()
+        }
+        waitForCaptureEntry()
         composeRule.onNodeWithContentDescription("打开设置").performClick()
+        composeRule.onNodeWithText("设置").assertIsDisplayed()
+        saveVisualEvidence("04-settings")
         composeRule.onNodeWithTag("settings-list")
             .performScrollToNode(hasTestTag("load-demo-button"))
         composeRule.onNodeWithTag("load-demo-button").performClick()
@@ -456,51 +524,20 @@ class AmemeUiSmokeTest {
         composeRule.onNodeWithContentDescription("搜索历史记录").assertIsDisplayed()
         composeRule.onNodeWithContentDescription("打开设置").assertIsDisplayed()
         composeRule.onNodeWithContentDescription("记录一件事").assertIsDisplayed()
-        composeRule.waitForIdle()
-
-        val instrumentation = InstrumentationRegistry.getInstrumentation()
-        val fontScale = instrumentation.targetContext.resources.configuration.fontScale
-        val scaleLabel = (fontScale * 100).roundToInt()
-        val resolver = instrumentation.targetContext.contentResolver
-        val displayName = "android-today-demo-font$scaleLabel.png"
-        val relativePath = "${Environment.DIRECTORY_PICTURES}/AmemeTestEvidence/"
-        resolver.delete(
-            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-            "${MediaStore.Images.Media.DISPLAY_NAME} = ? AND " +
-                "${MediaStore.Images.Media.RELATIVE_PATH} = ?",
-            arrayOf(displayName, relativePath),
-        )
-        val screenshot = checkNotNull(
-            resolver.insert(
-                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                ContentValues().apply {
-                    put(MediaStore.Images.Media.DISPLAY_NAME, displayName)
-                    put(MediaStore.Images.Media.MIME_TYPE, "image/png")
-                    put(MediaStore.Images.Media.RELATIVE_PATH, relativePath)
-                    put(MediaStore.Images.Media.IS_PENDING, 1)
-                },
-            ),
-        ) { "MediaStore could not create the Today screenshot entry" }
-        try {
-            checkNotNull(resolver.openOutputStream(screenshot)).use { output ->
-                assertTrue(
-                    "UIAutomation could not encode the current Today screenshot",
-                    instrumentation.uiAutomation.takeScreenshot()
-                        .compress(Bitmap.CompressFormat.PNG, 100, output),
-                )
-            }
-            resolver.update(
-                screenshot,
-                ContentValues().apply {
-                    put(MediaStore.Images.Media.IS_PENDING, 0)
-                },
-                null,
-                null,
-            )
-        } catch (error: Throwable) {
-            resolver.delete(screenshot, null, null)
-            throw error
-        }
+        saveVisualEvidence("05-today-demo")
+        composeRule.onNodeWithContentDescription("搜索历史记录").performClick()
+        composeRule.onNodeWithText("搜索历史记录").assertIsDisplayed()
+        waitForReuseJourneyLauncher()
+        saveVisualEvidence("06-search-demo")
+        composeRule.onNodeWithTag("reuse-journey-launcher")
+            .performScrollTo()
+            .assertIsDisplayed()
+            .performClick()
+        composeRule.onNodeWithText("历史找回").assertIsDisplayed()
+        composeRule.onNodeWithText("继续项目").assertIsDisplayed()
+        composeRule.onNodeWithText("准备会面").assertIsDisplayed()
+        composeRule.onNodeWithText("决定与承诺").assertIsDisplayed()
+        saveVisualEvidence("07-reuse-choices")
     }
 
     @Test

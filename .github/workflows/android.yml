@@ -131,10 +131,25 @@ jobs:
           test "$(adb shell getconf PAGE_SIZE | tr -d '\r')" = "16384"
           adb shell settings put system font_scale 1.3
           timeout 30m ./gradlew --no-daemon --console=plain connectedDebugAndroidTest
-          screenshot_path="/sdcard/Pictures/AmemeTestEvidence/android-today-demo-font130.png"
-          adb shell test -s "$screenshot_path"
+          screenshot_dir="/sdcard/Pictures/AmemeTestEvidence"
+          expected_screenshots=(
+            "01-onboarding-font130.png"
+            "02-today-real-font130.png"
+            "03-capture-sheet-font130.png"
+            "04-settings-font130.png"
+            "05-today-demo-font130.png"
+            "06-search-demo-font130.png"
+            "07-reuse-choices-font130.png"
+            "08-event-detail-real-font130.png"
+            "09-delete-impact-real-font130.png"
+            "10-delete-complete-real-font130.png"
+          )
+          for screenshot in "${expected_screenshots[@]}"; do
+            adb shell test -s "$screenshot_dir/$screenshot"
+          done
           mkdir -p "$RUNNER_TEMP/AmemeAndroidScreenshots"
-          adb pull "$screenshot_path" "$RUNNER_TEMP/AmemeAndroidScreenshots/"
+          adb pull "$screenshot_dir/." "$RUNNER_TEMP/AmemeAndroidScreenshots/"
+          test "$(find "$RUNNER_TEMP/AmemeAndroidScreenshots" -type f -name '*.png' | wc -l)" -eq 10
       - name: Upload Android device evidence
         if: always()
         uses: actions/upload-artifact@v4.6.2
