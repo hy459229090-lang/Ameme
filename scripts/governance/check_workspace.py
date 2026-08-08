@@ -40,7 +40,7 @@ REQUIRED_ROOT_DIRS = {
     ".github",
 }
 
-ALLOWED_ROOT_DIRS = REQUIRED_ROOT_DIRS | {".git", ".codex", ".obsidian"}
+ALLOWED_ROOT_DIRS = REQUIRED_ROOT_DIRS | {".git", ".codex", ".obsidian", "data"}
 
 DOC_DOMAINS = {
     "product",
@@ -58,11 +58,14 @@ DOC_DOMAINS = {
 FORBIDDEN_DIR_NAMES = {
     "node_modules",
     "__pycache__",
+    ".build",
+    ".gradle",
     ".venv",
     "venv",
     ".pytest_cache",
     ".mypy_cache",
     ".ruff_cache",
+    "DerivedData",
     "dist",
     "build",
     "coverage",

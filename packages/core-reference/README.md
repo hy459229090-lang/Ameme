@@ -16,7 +16,9 @@ AcquisitionContract
   -> append-only EpisodeRevision / current Episode projection
   -> DayLedger Today view
   -> date/FTS Recall with day + field evidence
+  -> SourceCapability + CoverageObservation + ContextGap
   -> encrypted Raw Vault manifest/file lifecycle
+  -> verified reference backup + restore into a new root
   -> durable processing/sync/delete/export/recompute jobs
   -> source tombstone/deletion projection
   -> deletion lineage impact + local/replica proof state
@@ -40,6 +42,9 @@ The Oracle enforces:
 - two-phase Raw deletion: first commit `delete_pending`, then remove the ciphertext, then commit the final manifest state and reconcile proof; every persisted interruption point is recoverable on reopen;
 - deletion impact calculated from lineage, with `completed` allowed only after Raw/structured/derived/index cleanup and every declared replica acknowledgement are satisfied;
 - tombstone precedence during rebuild so deleted objects do not return through Today or FTS Recall.
+- evidence-backed context coverage that does not invent events for empty time, treats calendar as planned, suppresses weak inferred candidates and never emits a whole-day coverage percentage;
+- two distinct user-intent deletion paths: Raw evidence deletion can preserve structured lineage, while source deletion cascades through affected structured/derived/index projections;
+- consistent SQLite plus already-encrypted Raw Vault backup snapshots with hashes, `quick_check`, undeclared-file rejection, external key requirement and restore-only-to-new-root behavior.
 
 The committed fixture is fully synthetic: `tests/fixtures/core/synthetic_core_day.json`.
 
@@ -61,18 +66,22 @@ python scripts/dev/core/run_demo.py --database scripts/dev/core/.tmp/core-demo.s
 
 The demo deliberately deletes the synthetic river-walk source, rebuilds every projection, and verifies that the deleted Event is not resurrected. The Raw Vault and durable queue failure matrix is in `tests/core/test_raw_vault_and_queues.py`; all inputs are synthetic.
 
+The context/source planning fixture is `tests/fixtures/coverage/target-user-context-source-matrix-v1.json`. Its compiler tests prove only deterministic policy behavior. The backup tests restore synthetic data and decrypt Raw ciphertext only when the caller supplies the original external test key.
+
 ## Explicit non-production boundaries
 
 This package is an executable semantic and failure oracle. It is **not** the Mobile Local Node and must not be shipped or reused as production storage.
 
-- SQLite metadata and structured content are plaintext in this reference database. SQLCipher-at-rest, migration and backup behavior are unimplemented.
+- SQLite metadata and structured content are plaintext in this reference database. SQLCipher-at-rest and migration behavior are unimplemented. The reference backup copies this plaintext structured database plus encrypted Raw ciphertext; it does not prove production mobile backup security.
 - AES-GCM proves the reference file format and fail-closed calls only. The key is supplied by the test/caller and held in process memory; OS Data Protection, iOS Keychain/Secure Enclave, Android Keystore, key rotation, backup exclusion and secure key deletion are unimplemented.
 - Schema v3 labels pre-AAD-v2 rows as `aad_version=1` and fails closed with an explicit re-encryption-migration error. This Oracle does not silently reinterpret or automatically re-encrypt legacy ciphertext, so upgrading an existing reference database does not make legacy Raw objects readable.
 - On POSIX, the reference fsyncs the encrypted file and containing directory around atomic rename. Python/Windows does not expose the same directory-fsync primitive here, so Windows proves same-volume `os.replace` behavior and recovery cleanup, not power-loss durability. Mobile filesystem durability still requires platform Spike evidence.
 - The manifest contains non-content metadata (`key_id`, nonce, hashes, sizes, retention, relative private path and authenticated identifiers), never the key or plaintext. Hashes, sizes and MIME types can still reveal information, and this plaintext reference database does not protect them. Directory permissions are best-effort process calls, not evidence for app-sandbox/ACL enforcement. The Oracle has no logging pipeline; production redaction and access audit are not proven.
+- The reference backup deliberately excludes keys and reports `external_required`. It proves snapshot consistency, corruption detection and restore mechanics only. OS backup scheduling, Keychain/Keystore recovery, E2EE cloud transport, account recovery, retention, ransomware resistance, physical-device disaster recovery and production restore UX remain external/platform gates.
 - Quota is a configured ciphertext-byte cap and TTL is caller-driven cleanup. Production storage pressure signals, background schedulers and OS lifecycle recovery are unimplemented.
 - Durable queues prove SQLite state transitions for one local process/database. They do not prove mobile schedulers, multi-process fairness, network delivery, cloud queues or real peer synchronization.
 - A deletion job reaches `completed` only after every affected Raw manifest is in a final deleted state, its ciphertext path is absent, local synthetic cleanup checks pass and every replica ID explicitly declared to this Oracle is acknowledged. A missing file behind `delete_pending` remains proof-incomplete until manifest reconciliation. This is useful proof-state semantics, not evidence that real devices received, verified or cryptographically attested deletion. Unknown/offline peers, physical/cryptographic erasure and account-wide discovery remain unimplemented.
+- Context coverage observations describe evidence present in explicit synthetic signals. They do not detect everything that happened, infer events from unobserved time, estimate a population or validate user willingness.
 - System Health/Location APIs, LAN transport, network APIs, real model calls, performance, accessibility, observability and release readiness are outside this package.
 
 Revision snapshots retain synthetic text so the Oracle can prove replay and tombstone precedence. Production content erasure requires the approved encrypted storage/Raw Vault design plus DEL/SEC evidence. No real user data may be loaded here.

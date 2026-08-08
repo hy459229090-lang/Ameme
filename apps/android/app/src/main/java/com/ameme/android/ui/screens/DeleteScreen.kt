@@ -5,12 +5,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.outlined.CheckCircle
-import androidx.compose.material.icons.outlined.DeleteForever
-import androidx.compose.material.icons.outlined.ErrorOutline
-import androidx.compose.material.icons.outlined.HourglassTop
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -29,10 +25,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.ameme.android.domain.DeleteStep
 import com.ameme.android.domain.MemoryEvent
+import com.ameme.android.ui.icons.AmemeSymbols
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -41,11 +40,30 @@ fun DeleteScreen(
     event: MemoryEvent?,
     onBack: () -> Unit,
     onDeleteLocally: suspend () -> Boolean,
+    onDeleteComplete: () -> Unit,
 ) {
     var stepName by rememberSaveable { mutableStateOf(DeleteStep.Queued.name) }
     var deleteInFlight by rememberSaveable { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val step = DeleteStep.valueOf(stepName)
+
+    fun startDeletion() {
+        if (deleteInFlight || event == null) return
+        deleteInFlight = true
+        stepName = DeleteStep.LocalDeleting.name
+        scope.launch {
+            try {
+                val deleted = onDeleteLocally()
+                stepName = if (deleted) DeleteStep.Completed.name else DeleteStep.PartialFailed.name
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) {
+                stepName = DeleteStep.PartialFailed.name
+            } finally {
+                deleteInFlight = false
+            }
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -53,71 +71,54 @@ fun DeleteScreen(
                 title = { Text("删除影响与进度") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "返回")
+                        Icon(AmemeSymbols.ArrowBack, contentDescription = "返回")
                     }
                 },
             )
         },
     ) { padding ->
         Column(
-            modifier = Modifier.fillMaxSize().padding(padding).padding(20.dp),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .verticalScroll(rememberScrollState())
+                .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Text(event?.title ?: "事件已不存在", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("合成影响范围", fontWeight = FontWeight.SemiBold)
+                    Text("影响范围", fontWeight = FontWeight.SemiBold)
                     Text("• 当前 Event 与 DayLedger 条目")
                     Text("• 今日小结和本地搜索索引")
-                    Text("• 1 台合成离线设备的待确认副本")
+                    Text("• 其他已授权设备的删除传播状态（若存在）")
                     Text("• 不会删除任何系统照片、文件或真实来源")
                 }
             }
-            ProgressCard(step)
+            ProgressCard(step, Modifier.testTag("delete-step-${step.name}"))
             when (step) {
                 DeleteStep.Queued -> Button(
-                    onClick = { stepName = DeleteStep.LocalDeleting.name },
+                    onClick = ::startDeletion,
                     modifier = Modifier.fillMaxWidth(),
-                    enabled = event != null,
+                    enabled = event != null && !deleteInFlight,
                 ) {
-                    Icon(Icons.Outlined.DeleteForever, contentDescription = null)
-                    Text("确认删除合成事件", modifier = Modifier.padding(start = 8.dp))
+                    Icon(AmemeSymbols.DeleteForever, contentDescription = null)
+                    Text("确认删除", modifier = Modifier.padding(start = 8.dp))
                 }
-                DeleteStep.LocalDeleting -> Button(
-                    onClick = { stepName = DeleteStep.SyncPropagating.name },
-                    modifier = Modifier.fillMaxWidth(),
-                ) { Text("模拟完成本机清理") }
-                DeleteStep.SyncPropagating -> {
-                    Button(
-                        onClick = { stepName = DeleteStep.Recomputing.name },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) { Text("模拟设备确认") }
-                    OutlinedButton(
-                        onClick = { stepName = DeleteStep.PartialFailed.name },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) { Text("模拟离线设备失败") }
+                DeleteStep.LocalDeleting,
+                DeleteStep.SyncPropagating,
+                DeleteStep.Recomputing -> {
+                    Text("正在处理删除任务…", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                DeleteStep.Recomputing -> Button(
-                    onClick = { stepName = DeleteStep.Completed.name },
-                    modifier = Modifier.fillMaxWidth(),
-                ) { Text("模拟完成重算") }
                 DeleteStep.PartialFailed -> Button(
-                    onClick = { stepName = DeleteStep.Recomputing.name },
-                    modifier = Modifier.fillMaxWidth(),
-                ) { Text("重试失败步骤") }
-                DeleteStep.Completed -> Button(
-                    onClick = {
-                        if (!deleteInFlight) {
-                            deleteInFlight = true
-                            scope.launch {
-                                if (!onDeleteLocally()) stepName = DeleteStep.PartialFailed.name
-                                deleteInFlight = false
-                            }
-                        }
-                    },
+                    onClick = ::startDeletion,
                     modifier = Modifier.fillMaxWidth(),
                     enabled = !deleteInFlight,
-                ) { Text(if (deleteInFlight) "正在提交删除…" else "返回今天") }
+                ) { Text("重试删除") }
+                DeleteStep.Completed -> Button(
+                    onClick = onDeleteComplete,
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("返回今天") }
             }
             OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) { Text("离开，任务状态保留") }
         }
@@ -125,24 +126,24 @@ fun DeleteScreen(
 }
 
 @Composable
-private fun ProgressCard(step: DeleteStep) {
+private fun ProgressCard(step: DeleteStep, modifier: Modifier = Modifier) {
     val icon: ImageVector = when (step) {
-        DeleteStep.Completed -> Icons.Outlined.CheckCircle
-        DeleteStep.PartialFailed -> Icons.Outlined.ErrorOutline
-        else -> Icons.Outlined.HourglassTop
+        DeleteStep.Completed -> AmemeSymbols.CheckCircle
+        DeleteStep.PartialFailed -> AmemeSymbols.Error
+        else -> AmemeSymbols.HourglassTop
     }
-    Card(Modifier.fillMaxWidth()) {
+    Card(modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
             Text(step.label, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text(
                 when (step) {
-                    DeleteStep.Queued -> "尚未开始传播。确认后才会修改合成 repository。"
+                    DeleteStep.Queued -> "尚未开始传播。确认后才会修改本机加密节点。"
                     DeleteStep.LocalDeleting -> "本机对象进入不可见与清理步骤。"
                     DeleteStep.SyncPropagating -> "未收到全部副本确认前不会显示全部完成。"
                     DeleteStep.Recomputing -> "正在重算日流、小结和索引。"
-                    DeleteStep.PartialFailed -> "本机内容已安全处理，但副本证明不完整。"
-                    DeleteStep.Completed -> "所有合成步骤已完成，可从当前会话移除事件。"
+                    DeleteStep.PartialFailed -> "本机内容已安全处理，但其他设备的删除证明不完整。"
+                    DeleteStep.Completed -> "所有已知步骤已完成，可从当前会话移除事件。"
                 },
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

@@ -46,6 +46,11 @@ fun interface AndroidLocalNodeApplicationRequestHandler {
     fun handle(request: AndroidLocalNodeApplicationRequest): ByteArray
 }
 
+fun interface AndroidPairingBootstrapHandler {
+    /** Return one strict `ameme.agent-pairing-bootstrap.v2` server response line. */
+    fun provision(clientHelloLine: ByteArray): ByteArray
+}
+
 interface AndroidLocalNodeChannelIdentitySource {
     fun nextNonce(): String
 
@@ -54,6 +59,7 @@ interface AndroidLocalNodeChannelIdentitySource {
 
 data class SingleConnectionTlsResult(
     val requestsHandled: Int,
+    val bootstrapProvisioned: Boolean = false,
 )
 
 /**
@@ -64,13 +70,14 @@ data class SingleConnectionTlsResult(
  */
 class SingleConnectionTlsLocalNodeListener(
     private val pairing: AndroidLocalNodePairingMaterial,
-    pairingSecret: ByteArray,
+    pairingSecrets: List<ByteArray>,
     private val sslServerSocketFactory: SSLServerSocketFactory,
     private val applicationRequestHandler: AndroidLocalNodeApplicationRequestHandler,
     private val supportedOperations: Set<String>,
+    private val bootstrapHandler: AndroidPairingBootstrapHandler? = null,
     private val identitySource: AndroidLocalNodeChannelIdentitySource = SecureChannelIdentitySource(),
 ) : Closeable {
-    private val secret = pairingSecret.copyOf()
+    private val secrets = pairingSecrets.map(ByteArray::copyOf)
     private val used = AtomicBoolean(false)
     private val closed = AtomicBoolean(false)
     private val stateLock = Any()
@@ -78,8 +85,11 @@ class SingleConnectionTlsLocalNodeListener(
     private var activeConnection: SSLSocket? = null
 
     init {
-        if (secret.size !in 32..256) {
-            secret.fill(0)
+        if (
+            (secrets.isEmpty() && bootstrapHandler == null) ||
+            secrets.any { it.size !in 32..256 }
+        ) {
+            secrets.forEach { it.fill(0) }
             throw AgentLocalNodeChannelViolation(
                 AgentLocalNodeChannelErrorCode.CHANNEL_AUTH_FAILED,
             )
@@ -88,10 +98,27 @@ class SingleConnectionTlsLocalNodeListener(
             AndroidLocalNodeChannelCodec.validatePairingMaterial(pairing)
             AndroidLocalNodeChannelCodec.validateSupportedOperations(supportedOperations)
         } catch (failure: Exception) {
-            secret.fill(0)
+            secrets.forEach { it.fill(0) }
             throw failure
         }
     }
+
+    constructor(
+        pairing: AndroidLocalNodePairingMaterial,
+        pairingSecret: ByteArray,
+        sslServerSocketFactory: SSLServerSocketFactory,
+        applicationRequestHandler: AndroidLocalNodeApplicationRequestHandler,
+        supportedOperations: Set<String>,
+        identitySource: AndroidLocalNodeChannelIdentitySource = SecureChannelIdentitySource(),
+    ) : this(
+        pairing = pairing,
+        pairingSecrets = listOf(pairingSecret),
+        sslServerSocketFactory = sslServerSocketFactory,
+        applicationRequestHandler = applicationRequestHandler,
+        supportedOperations = supportedOperations,
+        bootstrapHandler = null,
+        identitySource = identitySource,
+    )
 
     fun serveSingleConnection(): SingleConnectionTlsResult {
         if (!used.compareAndSet(false, true) || closed.get()) {
@@ -145,15 +172,40 @@ class SingleConnectionTlsLocalNodeListener(
         val output = connection.outputStream
         val clientLine = readLine(input, allowCleanEnd = false)
             ?: throw AndroidLocalNodeTlsListenerException()
-        val clientHello = try {
-            AndroidLocalNodeChannelCodec.verifyClientHello(
-                clientLine,
-                pairing,
-                secret,
+        if (AgentPairingBootstrapV2Codec.isClientHello(clientLine)) {
+            val response = try {
+                requireNotNull(bootstrapHandler) {
+                    "android_pairing_bootstrap_unavailable"
+                }.provision(clientLine)
+            } finally {
+                clientLine.fill(0)
+            }
+            try {
+                writeLine(output, response)
+                return SingleConnectionTlsResult(
+                    requestsHandled = 0,
+                    bootstrapProvisioned = true,
+                )
+            } finally {
+                response.fill(0)
+            }
+        }
+        val verified = try {
+            secrets.firstNotNullOfOrNull { candidate ->
+                runCatching {
+                    AndroidLocalNodeChannelCodec.verifyClientHello(
+                        clientLine,
+                        pairing,
+                        candidate,
+                    ) to candidate
+                }.getOrNull()
+            } ?: throw AgentLocalNodeChannelViolation(
+                AgentLocalNodeChannelErrorCode.CHANNEL_AUTH_FAILED,
             )
         } finally {
             clientLine.fill(0)
         }
+        val (clientHello, secret) = verified
         val serverNonce = identitySource.nextNonce()
         val sessionId = identitySource.nextSessionId()
         val serverLine = AndroidLocalNodeChannelCodec.buildServerHello(
@@ -255,7 +307,7 @@ class SingleConnectionTlsLocalNodeListener(
     }
 
     override fun close() {
-        if (closed.compareAndSet(false, true)) secret.fill(0)
+        if (closed.compareAndSet(false, true)) secrets.forEach { it.fill(0) }
         synchronized(stateLock) {
             runCatching { activeConnection?.close() }
             runCatching { activeServer?.close() }

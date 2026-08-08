@@ -8,11 +8,13 @@ import com.ameme.android.domain.FactStatus
 import com.ameme.android.domain.EvidenceState
 import com.ameme.android.domain.LocatorPermissionState
 import com.ameme.android.domain.MemoryEvent
+import com.ameme.android.domain.Sensitivity
 import com.ameme.android.domain.SourceCaptureRequest
 import com.ameme.android.domain.SourceKind
 import java.time.Clock
 import java.time.LocalDate
 import java.time.LocalTime
+import java.util.UUID
 
 fun interface UriGrantResolver {
     fun resolve(uri: Uri, grantFlags: Int): LocatorPermissionState
@@ -86,6 +88,7 @@ class VoiceCaptureCoordinator(
                     locatorUri = uri.toString(),
                     mimeType = mimeType,
                     locatorPermissionState = permission,
+                    sensitivity = Sensitivity.Confidential,
                 ),
             )
         } catch (error: Throwable) {
@@ -150,6 +153,7 @@ class IncomingShareParser(
                 localDate = LocalDate.now(clock),
                 time = LocalTime.now(clock).withSecond(0).withNano(0),
                 userWords = text,
+                sourceInstanceKey = "share-text-${UUID.randomUUID()}",
                 evidenceState = EvidenceState.UserAsserted,
             )
         }
@@ -167,6 +171,8 @@ class IncomingShareParser(
             locatorUri = uri.toString(),
             mimeType = mime,
             locatorPermissionState = permissionState(uri, intent.flags),
+            sourceInstanceKey = "share-content-${UUID.randomUUID()}",
+            sensitivity = Sensitivity.Confidential,
         )
     }
 
@@ -199,12 +205,13 @@ class PhotoCaptureCoordinator(
                 } else {
                     "照片引用仅在当前授权会话可读取；事件事实已独立保存在本机。"
                 },
-                factStatus = FactStatus.Processing,
+                factStatus = FactStatus.Confirmed,
                 localDate = LocalDate.now(clock),
                 time = LocalTime.now(clock).withSecond(0).withNano(0),
                 locatorUri = uri.toString(),
                 mimeType = "image/*",
                 locatorPermissionState = permission,
+                sensitivity = Sensitivity.Confidential,
             ),
             )
         } catch (error: Throwable) {

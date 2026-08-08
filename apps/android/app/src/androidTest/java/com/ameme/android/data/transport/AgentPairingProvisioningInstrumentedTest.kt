@@ -21,10 +21,16 @@ class AgentPairingProvisioningInstrumentedTest {
         manager.revoke()
         val created = manager.create(host = "127.0.0.1", port = AgentPairingManager.DEFAULT_PORT)
         val outputDirectory = File(context.cacheDir, OUTPUT_DIRECTORY).apply { mkdirs() }
-        val secretFile = File(outputDirectory, SECRET_FILE)
-        secretFile.writeText(created.oneTimeSecret, Charsets.UTF_8)
+        val envelopeFile = File(outputDirectory, ENVELOPE_FILE)
+        val developerCredentialFile = File(outputDirectory, DEVELOPER_CREDENTIAL_FILE)
+        envelopeFile.writeText(created.pairingQrPayload(), Charsets.UTF_8)
+        developerCredentialFile.writeText(
+            requireNotNull(created.developerChannelSecret),
+            Charsets.UTF_8,
+        )
         assertTrue(manager.pairingFile().isFile)
-        assertTrue(secretFile.isFile)
+        assertTrue(envelopeFile.isFile)
+        assertTrue(developerCredentialFile.isFile)
     }
 
     @Test
@@ -33,7 +39,8 @@ class AgentPairingProvisioningInstrumentedTest {
         assumeTrue(arguments.getString(REVOKE_ARGUMENT) == "true")
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
         AgentPairingManager(context).revoke()
-        File(File(context.cacheDir, OUTPUT_DIRECTORY), SECRET_FILE).delete()
+        File(File(context.cacheDir, OUTPUT_DIRECTORY), ENVELOPE_FILE).delete()
+        File(File(context.cacheDir, OUTPUT_DIRECTORY), DEVELOPER_CREDENTIAL_FILE).delete()
         assertTrue(!AgentPairingManager(context).pairingFile().exists())
     }
 
@@ -41,6 +48,7 @@ class AgentPairingProvisioningInstrumentedTest {
         const val ARGUMENT = "amemeProvisionPairing"
         const val REVOKE_ARGUMENT = "amemeRevokePairing"
         const val OUTPUT_DIRECTORY = "agent-pairing-e2e"
-        const val SECRET_FILE = "secret.txt"
+        const val ENVELOPE_FILE = "pairing-envelope.txt"
+        const val DEVELOPER_CREDENTIAL_FILE = "developer-credential.txt"
     }
 }

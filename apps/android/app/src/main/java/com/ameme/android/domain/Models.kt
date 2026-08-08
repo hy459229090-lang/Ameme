@@ -11,20 +11,41 @@ enum class ExperienceMode(
     Empty("空白", "当前范围没有可见记录"),
     Sparse("稀疏", "当前只有少量获准记录"),
     Loading("加载中", "首次导入或索引正在更新"),
-    Partial("部分范围", "一台合成设备尚未参与"),
+    Partial("部分范围", "部分设备尚未参与"),
     Offline("离线", "继续使用本机记录"),
     RecoverableError("可恢复错误", "已有内容安全，可重试当前步骤"),
-    PermissionLimited("权限受限", "一个来源未连接，其他路径仍可用"),
+    PermissionLimited("权限受限", "一个来源未连接，其他路径仍可用");
+
+    /**
+     * Resolves the content-driven state used by the ordinary local product path.
+     * Explicit transport/permission states always win; test repositories can opt
+     * out so their requested mode remains deterministic.
+     */
+    fun resolvedFor(eventCount: Int, deriveFromEvents: Boolean): ExperienceMode {
+        require(eventCount >= 0) { "eventCount must not be negative" }
+        if (!deriveFromEvents) return this
+        return when (this) {
+            Loading, Partial, Offline, RecoverableError, PermissionLimited -> this
+            Ready, Empty, Sparse -> when (eventCount) {
+                0 -> Empty
+                1 -> Sparse
+                else -> Ready
+            }
+        }
+    }
 }
 
-enum class FactStatus(val label: String) {
-    Confirmed("已记录"),
-    UserAsserted("用户陈述"),
-    Planned("计划，未确认发生"),
-    Inferred("推测"),
-    NeedsReview("待核验"),
-    Conflict("冲突"),
-    Processing("整理中"),
+enum class FactStatus(
+    val label: String,
+    val wireValue: String,
+) {
+    Confirmed("已记录", "confirmed"),
+    UserAsserted("用户陈述", "user_asserted"),
+    Planned("计划，未确认发生", "planned"),
+    Inferred("推测", "inferred"),
+    NeedsReview("待核验", "needs_review"),
+    Conflict("冲突", "conflict"),
+    Processing("整理中", "processing"),
 }
 
 enum class CaptureKind(val label: String) {
@@ -170,7 +191,7 @@ data class DayGroup(
 enum class DeleteStep(val label: String) {
     Queued("已受理"),
     LocalDeleting("清理本机对象"),
-    SyncPropagating("等待合成设备确认"),
+    SyncPropagating("等待其他设备确认"),
     Recomputing("重算日流与索引"),
     PartialFailed("部分失败，可重试"),
     Completed("已完成"),

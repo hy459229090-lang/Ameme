@@ -1350,6 +1350,116 @@ class CoreOracle:
         except Exception:
             return self.get_deletion_job(staged["deletion_job_id"])
 
+    def delete_raw_evidence(
+        self,
+        source_object_id: str,
+        *,
+        idempotency_key: str,
+        reason: str = "user_delete_raw_keep_structured",
+        required_replica_ids: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Delete encrypted Raw bytes while preserving structured source lineage.
+
+        This models the user choice "delete original evidence, keep structured
+        events". It does not delete SourceObject, Observation, Event, Revision,
+        DayLedger or indexes. `delete_source` remains the cascade/recompute path.
+        """
+
+        replicas = sorted(set(required_replica_ids or []))
+        payload = {
+            "source_object_id": source_object_id,
+            "reason": reason,
+            "required_replica_ids": replicas,
+            "deletion_mode": "remove_raw_keep_structured",
+        }
+
+        def action() -> dict[str, Any]:
+            source = self._active_source(source_object_id)
+            impact = self.deletion_impact(source_object_id)
+            now = _utc_timestamp(self._now())
+            for raw_object_id in impact["raw_object_ids"]:
+                self._stage_raw_deletion_tx(raw_object_id, "deleted", now)
+            job_id = self._next_id("del")
+            local_cleanup_complete = self._raw_cleanup_complete(
+                impact["raw_object_ids"]
+            )
+            state = (
+                "completed"
+                if local_cleanup_complete and not replicas
+                else "partial_failed"
+            )
+            affected = {
+                "deletion_mode": "remove_raw_keep_structured",
+                "source_object_ids": [source_object_id],
+                "raw_object_ids": impact["raw_object_ids"],
+                "observation_ids": [],
+                "event_ids": [],
+                "retained_event_ids": impact["event_ids"],
+                "deleted_event_ids": [],
+                "episode_ids": [],
+                "day_ledger_ids": impact["day_ledger_ids"],
+                "lineage_edge_ids": [],
+                "failed_raw_object_ids": [],
+                "pending_raw_object_ids": (
+                    [] if local_cleanup_complete else impact["raw_object_ids"]
+                ),
+                "local_cleanup_complete": local_cleanup_complete,
+                "structured_source_preserved": True,
+                "pending_replica_ids": replicas,
+                "acked_replica_ids": [],
+                "proof_complete": state == "completed",
+                "tombstone_precedence": False,
+            }
+            proof_hash = _hash(affected)
+            self.connection.execute(
+                "INSERT INTO deletion_jobs VALUES (?, ?, ?, 'source_object', ?, ?, ?, ?, ?, ?)",
+                (
+                    job_id,
+                    source["owner_id"],
+                    source["space_id"],
+                    source_object_id,
+                    state,
+                    _canonical(affected),
+                    proof_hash,
+                    now,
+                    now,
+                ),
+            )
+            queue_job = self._enqueue_job_tx(
+                "delete",
+                {
+                    "deletion_job_id": job_id,
+                    "source_object_id": source_object_id,
+                    "deletion_mode": "remove_raw_keep_structured",
+                },
+                priority=100,
+                max_attempts=10,
+                available_at=now,
+                queue_idempotency_key=f"deletion:{job_id}",
+            )
+            if state == "completed":
+                self.connection.execute(
+                    "UPDATE durable_jobs SET state = 'completed', result_json = ?, updated_at = ? "
+                    "WHERE job_id = ?",
+                    (_canonical({"proof_hash": proof_hash}), now, queue_job["job_id"]),
+                )
+            self._fault("before_raw_delete_stage_commit")
+            return {
+                "deletion_job_id": job_id,
+                "queue_job_id": queue_job["job_id"],
+                "state": state,
+                "affected": affected,
+                "proof_hash": proof_hash,
+            }
+
+        staged = self._command(
+            "delete_raw_evidence", idempotency_key, payload, action
+        )
+        try:
+            return self._finalize_deletion_job_raw(staged["deletion_job_id"])
+        except Exception:
+            return self.get_deletion_job(staged["deletion_job_id"])
+
     def retry_deletion_job(
         self, deletion_job_id: str, *, idempotency_key: str
     ) -> dict[str, Any]:

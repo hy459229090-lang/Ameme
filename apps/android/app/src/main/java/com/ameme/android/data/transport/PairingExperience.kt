@@ -11,6 +11,13 @@ enum class PairingExperienceMethod(val wireValue: String) {
     AccountDevice("account_device"),
 }
 
+enum class PairingQrScanFailure {
+    Cancelled,
+    ModuleUnavailable,
+    InvalidResult,
+    Failed,
+}
+
 data class PairingExperienceCandidate(
     val id: String,
     val deviceName: String,
@@ -18,6 +25,7 @@ data class PairingExperienceCandidate(
     val method: PairingExperienceMethod,
     val capabilities: List<String>,
     val simulated: Boolean,
+    val authorizationExpiresAt: Instant? = null,
 ) {
     init {
         require(PAIRING_EXPERIENCE_ID.matches(id))
@@ -25,6 +33,7 @@ data class PairingExperienceCandidate(
         require(agentName.isNotBlank() && agentName.length <= 80)
         require(capabilities.isNotEmpty() && capabilities.size <= 8)
         require(capabilities.all { it.isNotBlank() && it.length <= 80 })
+        require(authorizationExpiresAt == null || authorizationExpiresAt.toEpochMilli() > 0)
     }
 }
 
@@ -35,6 +44,7 @@ data class PairingExperienceConnection(
     val method: PairingExperienceMethod,
     val capabilities: List<String>,
     val connectedAt: Instant,
+    val expiresAt: Instant,
     val simulated: Boolean,
 ) {
     init {
@@ -43,6 +53,13 @@ data class PairingExperienceConnection(
         require(agentName.isNotBlank() && agentName.length <= 80)
         require(capabilities.isNotEmpty() && capabilities.size <= 8)
         require(capabilities.all { it.isNotBlank() && it.length <= 80 })
+        require(expiresAt > connectedAt)
+    }
+
+    fun isValid(at: Instant = Instant.now()): Boolean = expiresAt > at
+
+    companion object {
+        const val DEFAULT_LIFETIME_SECONDS: Long = 30L * 24L * 60L * 60L
     }
 }
 
@@ -51,8 +68,34 @@ interface PairingExperienceConnector {
 
     suspend fun resolve(method: PairingExperienceMethod): PairingExperienceCandidate
 
+    suspend fun resolvePairingPayload(payload: String): PairingExperienceCandidate =
+        throw PairingExperienceException(PairingExperienceFailure.QrScannerUnavailable)
+
     suspend fun connect(candidate: PairingExperienceCandidate): PairingExperienceConnection
+
+    suspend fun disconnect(connection: PairingExperienceConnection)
+
+    suspend fun restoreConnection(): PairingExperienceConnection? = null
+
+    suspend fun clearLocalCredentials() = Unit
 }
+
+enum class PairingExperienceFailure(val wireValue: String) {
+    DiscoveryUnavailable("discovery_unavailable"),
+    NoDeviceFound("no_device_found"),
+    QrScannerUnavailable("qr_scanner_unavailable"),
+    QrScannerModuleUnavailable("qr_scanner_module_unavailable"),
+    InvalidPairingPayload("invalid_pairing_payload"),
+    AccountSignInRequired("account_sign_in_required"),
+    AuthorizationRequired("authorization_required"),
+    CandidateUnavailable("candidate_unavailable"),
+    ConnectionFailed("connection_failed"),
+}
+
+class PairingExperienceException(
+    val failure: PairingExperienceFailure,
+    cause: Throwable? = null,
+) : IllegalStateException(failure.wireValue, cause)
 
 class PairingExperienceStore(context: Context) {
     private val preferences = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
@@ -76,12 +119,14 @@ class PairingExperienceStore(context: Context) {
                 method = method,
                 capabilities = capabilities,
                 connectedAt = Instant.ofEpochMilli(preferences.getLong(KEY_CONNECTED_AT, 0L)),
+                expiresAt = Instant.ofEpochMilli(preferences.getLong(KEY_EXPIRES_AT, 0L)),
                 simulated = preferences.getBoolean(KEY_SIMULATED, false),
             )
-        }.getOrElse { clearInvalid() }
+        }.getOrNull()?.takeIf { it.isValid() && it.simulated } ?: clearInvalid()
     }
 
     fun save(connection: PairingExperienceConnection) {
+        check(connection.isValid()) { "Cannot persist an expired pairing experience" }
         check(
             preferences.edit()
                 .putString(KEY_ID, connection.id)
@@ -90,6 +135,7 @@ class PairingExperienceStore(context: Context) {
                 .putString(KEY_METHOD, connection.method.wireValue)
                 .putString(KEY_CAPABILITIES, connection.capabilities.joinToString(CAPABILITY_SEPARATOR))
                 .putLong(KEY_CONNECTED_AT, connection.connectedAt.toEpochMilli())
+                .putLong(KEY_EXPIRES_AT, connection.expiresAt.toEpochMilli())
                 .putBoolean(KEY_SIMULATED, connection.simulated)
                 .commit(),
         ) { "Could not persist pairing experience state" }
@@ -112,6 +158,7 @@ class PairingExperienceStore(context: Context) {
         private const val KEY_METHOD = "method"
         private const val KEY_CAPABILITIES = "capabilities"
         private const val KEY_CONNECTED_AT = "connected_at"
+        private const val KEY_EXPIRES_AT = "expires_at"
         private const val KEY_SIMULATED = "simulated"
         private const val CAPABILITY_SEPARATOR = "\u001f"
         private val EXPECTED_KEYS = setOf(
@@ -121,6 +168,7 @@ class PairingExperienceStore(context: Context) {
             KEY_METHOD,
             KEY_CAPABILITIES,
             KEY_CONNECTED_AT,
+            KEY_EXPIRES_AT,
             KEY_SIMULATED,
         )
     }

@@ -1,6 +1,8 @@
 package com.ameme.android.ui.screens
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -12,21 +14,13 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Description
-import androidx.compose.material.icons.outlined.CalendarMonth
-import androidx.compose.material.icons.outlined.EditNote
-import androidx.compose.material.icons.outlined.Menu
-import androidx.compose.material.icons.outlined.MicNone
-import androidx.compose.material.icons.outlined.PhotoCamera
-import androidx.compose.material.icons.outlined.Search
-import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material3.Button
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -36,8 +30,12 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.VerticalDivider
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -47,7 +45,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.onClick as semanticsOnClick
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -58,9 +64,11 @@ import com.ameme.android.domain.ExperienceMode
 import com.ameme.android.domain.FactStatus
 import com.ameme.android.domain.MemoryEvent
 import com.ameme.android.ui.components.EmptyMessage
+import com.ameme.android.ui.components.DemoModeNotice
 import com.ameme.android.ui.components.EventRow
 import com.ameme.android.ui.components.StateNotice
 import com.ameme.android.ui.displayDate
+import com.ameme.android.ui.icons.AmemeSymbols
 import java.time.LocalDate
 import kotlinx.coroutines.launch
 
@@ -83,11 +91,17 @@ fun TodayScreen(
     onRequestCalendar: () -> Unit,
     onCapture: suspend (CaptureKind, String) -> Boolean,
     onGenerateSummary: suspend () -> Boolean,
+    demoMode: Boolean = false,
 ) {
     var showCapture by remember { mutableStateOf(false) }
     var showSummaryConsent by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val today = LocalDate.now()
+    val fontScale = LocalDensity.current.fontScale
+    val useAccessibilityHeader = fontScale >= 1.5f
+    val useCompactCapture = useAccessibilityHeader ||
+        (fontScale >= 1.3f && LocalConfiguration.current.screenWidthDp <= 360)
+    val captureReady = experienceMode != ExperienceMode.Loading && experienceMode != ExperienceMode.RecoverableError
     val allToday = events.filter { it.localDate == today }.sortedBy { it.time }
     val visibleToday = when (experienceMode) {
         ExperienceMode.Empty -> emptyList()
@@ -98,51 +112,141 @@ fun TodayScreen(
     Scaffold(
         topBar = {
             TopAppBar(
+                expandedHeight = if (useAccessibilityHeader) 64.dp else 96.dp,
                 title = {
-                    Column {
-                        Text("今天", fontWeight = FontWeight.SemiBold)
-                        Text(today.displayDate(), style = MaterialTheme.typography.labelMedium)
+                    if (useAccessibilityHeader) {
+                        Text(
+                            "今天",
+                            style = MaterialTheme.typography.headlineMedium,
+                        )
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(
+                                "今天",
+                                style = MaterialTheme.typography.headlineMedium,
+                            )
+                            Text(
+                                today.displayDate(),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
                 },
                 actions = {
-                    IconButton(
-                        onClick = onSearch,
-                        modifier = Modifier.semantics { contentDescription = "搜索历史记录" },
+                    Surface(
+                        shape = MaterialTheme.shapes.extraLarge,
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
                     ) {
-                        Icon(Icons.Outlined.Search, contentDescription = null)
-                    }
-                    IconButton(
-                        onClick = onSettings,
-                        modifier = Modifier.semantics { contentDescription = "打开设置" },
-                    ) {
-                        Icon(Icons.Outlined.Menu, contentDescription = null)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            IconButton(
+                                onClick = onSearch,
+                                modifier = Modifier.semantics { contentDescription = "搜索历史记录" },
+                            ) {
+                                Icon(AmemeSymbols.Search, contentDescription = null)
+                            }
+                            VerticalDivider(
+                                modifier = Modifier.height(24.dp),
+                                color = MaterialTheme.colorScheme.outlineVariant,
+                            )
+                            IconButton(
+                                onClick = onSettings,
+                                modifier = Modifier.semantics { contentDescription = "打开设置" },
+                            ) {
+                                Icon(AmemeSymbols.Settings, contentDescription = null)
+                            }
+                        }
                     }
                 },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background,
+                    scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+                ),
             )
         },
         floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = { showCapture = true },
-                icon = { Icon(Icons.Rounded.Add, contentDescription = null) },
-                text = { Text("记录") },
-                modifier = Modifier.semantics { contentDescription = "记录一件事" },
-            )
+            val captureSemantics = Modifier.clearAndSetSemantics {
+                contentDescription = "记录一件事"
+                role = Role.Button
+                if (!captureReady) {
+                    disabled()
+                } else {
+                    semanticsOnClick {
+                        showCapture = true
+                        true
+                    }
+                }
+            }
+            val captureContainerColor = if (captureReady) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.surfaceVariant
+            }
+            val captureContentColor = if (captureReady) {
+                MaterialTheme.colorScheme.onPrimary
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            }
+            if (useCompactCapture) {
+                FloatingActionButton(
+                    onClick = { if (captureReady) showCapture = true },
+                    containerColor = captureContainerColor,
+                    contentColor = captureContentColor,
+                    shape = MaterialTheme.shapes.large,
+                    modifier = captureSemantics,
+                ) {
+                    Icon(AmemeSymbols.Add, contentDescription = null)
+                }
+            } else {
+                ExtendedFloatingActionButton(
+                    onClick = { if (captureReady) showCapture = true },
+                    icon = { Icon(AmemeSymbols.Add, contentDescription = null) },
+                    text = { Text("记录") },
+                    containerColor = captureContainerColor,
+                    contentColor = captureContentColor,
+                    shape = MaterialTheme.shapes.large,
+                    modifier = captureSemantics,
+                )
+            }
         },
+        containerColor = MaterialTheme.colorScheme.background,
     ) { padding ->
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
+                .testTag("today-list")
                 .padding(padding),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 20.dp, end = 20.dp, bottom = 96.dp),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                start = 20.dp,
+                end = 20.dp,
+                bottom = 96.dp,
+            ),
         ) {
+            if (useAccessibilityHeader) {
+                item {
+                    Text(
+                        today.displayDate(),
+                        modifier = Modifier.padding(top = 12.dp, bottom = 4.dp),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
             item {
+                val readyCount = visibleToday.count { it.factStatus != FactStatus.Processing }
                 Text(
-                    when {
-                        experienceMode == ExperienceMode.Empty -> "当前可见范围内还没有记录"
-                        experienceMode == ExperienceMode.Sparse -> "当前只有少量获准记录"
-                        else -> "已整理 ${visibleToday.count { it.factStatus != FactStatus.Processing }} 件事"
-                    },
-                    modifier = Modifier.padding(top = 8.dp, bottom = 12.dp),
+                    "$readyCount 件事",
+                    modifier = Modifier
+                        .padding(top = 12.dp, bottom = 16.dp)
+                        .semantics {
+                            contentDescription = when {
+                                experienceMode == ExperienceMode.Empty -> "当前可见范围内还没有记录"
+                                experienceMode == ExperienceMode.Sparse -> "当前只有少量获准记录"
+                                else -> "已整理 $readyCount 件事"
+                            }
+                        },
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -153,6 +257,11 @@ fun TodayScreen(
                     modifier = Modifier.padding(bottom = 12.dp),
                     onAction = if (experienceMode != ExperienceMode.Ready) onSettings else null,
                 )
+            }
+            if (demoMode) {
+                item {
+                    DemoModeNotice(modifier = Modifier.padding(bottom = 12.dp))
+                }
             }
             persistenceError?.let { error ->
                 item {
@@ -175,16 +284,16 @@ fun TodayScreen(
                 items(visibleToday, key = { it.id }) { event ->
                     EventRow(event = event, onClick = { onEvent(event.id) })
                     if (event.factStatus == FactStatus.NeedsReview) {
-                        VerificationPrompt(eventTitle = event.title)
+                        VerificationPrompt(eventTitle = event.title, onOpen = { onEvent(event.id) })
                     }
                 }
-                item {
-                    DaySummarySection(
-                        snapshot = daySummary,
-                        inFlight = summaryInFlight,
-                        onGenerate = { showSummaryConsent = true },
-                    )
-                }
+            }
+            item {
+                DaySummarySection(
+                    snapshot = daySummary,
+                    inFlight = summaryInFlight,
+                    onGenerate = { showSummaryConsent = true },
+                )
             }
         }
     }
@@ -251,16 +360,17 @@ fun TodayScreen(
 }
 
 @Composable
-private fun VerificationPrompt(eventTitle: String) {
+private fun VerificationPrompt(eventTitle: String, onOpen: () -> Unit) {
     Card(Modifier.fillMaxWidth().padding(vertical = 10.dp)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("需要核验", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-            Text("“$eventTitle”实际发生了吗？", fontWeight = FontWeight.Medium)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = {}) { Text("发生了") }
-                OutlinedButton(onClick = {}) { Text("没发生") }
-                OutlinedButton(onClick = {}) { Text("稍后") }
-            }
+            Text("“$eventTitle”需要你的确认。", fontWeight = FontWeight.Medium)
+            Text(
+                "打开详情后可补充原话、查看来源并继续处理；不会用未保存的按钮操作改变事实。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            OutlinedButton(onClick = onOpen) { Text("查看并核验") }
         }
     }
 }
@@ -347,12 +457,16 @@ private fun CaptureBottomSheet(
     var selectedKind by remember { mutableStateOf<CaptureKind?>(null) }
     var text by remember { mutableStateOf("") }
     var isSaving by remember { mutableStateOf(false) }
+    var saveError by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .testTag("capture-options")
+                .verticalScroll(rememberScrollState())
                 .navigationBarsPadding()
                 .padding(horizontal = 20.dp, vertical = 8.dp),
         ) {
@@ -364,22 +478,27 @@ private fun CaptureBottomSheet(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             if (selectedKind == null) {
-                CaptureChoice(Icons.Outlined.EditNote, CaptureKind.Text, "输入一句话") { selectedKind = it }
+                CaptureChoice(AmemeSymbols.EditNote, CaptureKind.Text, "输入一句话") { selectedKind = it }
                 CaptureChoice(
-                    Icons.Outlined.MicNone,
+                    AmemeSymbols.MicNone,
                     CaptureKind.Voice,
                     "调用系统录音，或选择已有音频",
                 ) { selectedKind = it }
-                CaptureChoice(Icons.Outlined.PhotoCamera, CaptureKind.Photo, "从系统照片选择器选择一张") {
+                CaptureChoice(
+                    AmemeSymbols.PhotoCamera,
+                    CaptureKind.Photo,
+                    "从系统照片选择器选择一张",
+                    modifier = Modifier.testTag("capture-photo"),
+                ) {
                     onRequestPhoto()
                 }
-                CaptureChoice(Icons.Outlined.CalendarMonth, CaptureKind.Import, "选择日历和最多 31 天的日期范围") {
+                CaptureChoice(AmemeSymbols.CalendarMonth, CaptureKind.Import, "选择日历和最多 31 天的日期范围") {
                     onRequestCalendar()
                 }
             } else {
                 val kind = requireNotNull(selectedKind)
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Outlined.Description, contentDescription = null)
+                    Icon(AmemeSymbols.Description, contentDescription = null)
                     Text(kind.label, modifier = Modifier.padding(start = 10.dp), style = MaterialTheme.typography.titleMedium)
                 }
                 if (kind == CaptureKind.Voice) {
@@ -405,7 +524,10 @@ private fun CaptureBottomSheet(
                 if (kind == CaptureKind.Text) {
                     OutlinedTextField(
                         value = text,
-                        onValueChange = { text = it },
+                        onValueChange = {
+                            text = it
+                            saveError = null
+                        },
                         modifier = Modifier.fillMaxWidth(),
                         label = { Text("写下一句话") },
                         minLines = 2,
@@ -418,8 +540,13 @@ private fun CaptureBottomSheet(
                             if (!isSaving) {
                                 isSaving = true
                                 scope.launch {
-                                    onSave(kind, text)
+                                    val saved = onSave(kind, text)
                                     isSaving = false
+                                    if (saved) {
+                                        onDismiss()
+                                    } else {
+                                        saveError = "保存失败；本机数据没有改变，请重试。"
+                                    }
                                 }
                             }
                         },
@@ -427,6 +554,14 @@ private fun CaptureBottomSheet(
                         enabled = !isSaving && (kind != CaptureKind.Text || text.isNotBlank()),
                     ) {
                         Text(if (isSaving) "正在保存…" else "保存到本机")
+                    }
+                    saveError?.let {
+                        Text(
+                            it,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(top = 8.dp),
+                        )
                     }
                 }
                 OutlinedButton(
@@ -446,12 +581,15 @@ private fun CaptureChoice(
     icon: ImageVector,
     kind: CaptureKind,
     detail: String,
+    modifier: Modifier = Modifier,
     onClick: (CaptureKind) -> Unit,
 ) {
     ListItem(
         headlineContent = { Text(kind.label) },
         supportingContent = { Text(detail) },
         leadingContent = { Icon(icon, contentDescription = null) },
-        modifier = Modifier.clickable { onClick(kind) },
+        modifier = modifier
+            .clickable(role = Role.Button) { onClick(kind) }
+            .semantics { contentDescription = "${kind.label}：$detail" },
     )
 }

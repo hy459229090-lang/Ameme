@@ -1,0 +1,133 @@
+name: iOS
+
+on:
+  pull_request:
+    paths:
+      - "apps/ios/**"
+      - "packages/contracts/**"
+      - ".github/workflows/ios.yml"
+  push:
+    branches: [main]
+    paths:
+      - "apps/ios/**"
+      - "packages/contracts/**"
+      - ".github/workflows/ios.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: macos-26
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: apps/ios
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - name: Select Xcode 26.6
+        run: sudo xcode-select -s /Applications/Xcode_26.6.app/Contents/Developer
+      - name: Install pinned XcodeGen
+        run: |
+          curl --fail --location --retry 3 \
+            --output /tmp/xcodegen.zip \
+            https://github.com/yonaskolb/XcodeGen/releases/download/2.46.0/xcodegen.zip
+          echo "4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806  /tmp/xcodegen.zip" | shasum -a 256 --check
+          unzip -q /tmp/xcodegen.zip -d /tmp/xcodegen
+          /tmp/xcodegen/xcodegen/bin/xcodegen --version
+      - name: Generate and verify the installable project
+        run: |
+          /tmp/xcodegen/xcodegen/bin/xcodegen generate
+          git diff --exit-code -- Ameme.xcodeproj
+      - name: Build app and embedded Share Extension
+        run: |
+          xcodebuild \
+            -project Ameme.xcodeproj \
+            -scheme Ameme \
+            -derivedDataPath "$RUNNER_TEMP/AmemeBuild" \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+      - name: Run unit and UI tests
+        run: |
+          normal_device_id="$(xcrun simctl create 'Ameme CI Normal' \
+            'com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro' \
+            'com.apple.CoreSimulator.SimRuntime.iOS-26-5')"
+          accessibility_device_id=""
+          trap 'xcrun simctl delete "$normal_device_id" 2>/dev/null || true; xcrun simctl delete "$accessibility_device_id" 2>/dev/null || true' EXIT
+          xcrun simctl boot "$normal_device_id"
+          xcrun simctl bootstatus "$normal_device_id" -b
+          xcrun simctl ui "$normal_device_id" appearance light
+          xcrun simctl ui "$normal_device_id" content_size large
+          app_path="$RUNNER_TEMP/AmemeBuild/Build/Products/Debug-iphonesimulator/Ameme.app"
+          test -d "$app_path"
+          # Xcode 26 can time out when its first interaction with a freshly
+          # migrated runtime is an XCTest launch. Install and start the exact
+          # app built above once; XCTest still terminates and relaunches it with
+          # the test-specific arguments and environment.
+          xcrun simctl install "$normal_device_id" "$app_path"
+          xcrun simctl launch "$normal_device_id" com.ameme.ios \
+            -AppleLanguages "(zh-Hans)" \
+            -AppleLocale "zh_CN"
+          xcodebuild \
+            -project Ameme.xcodeproj \
+            -scheme Ameme \
+            -destination "platform=iOS Simulator,id=$normal_device_id" \
+            -resultBundlePath "$RUNNER_TEMP/AmemeTests-Normal.xcresult" \
+            -retry-tests-on-failure \
+            -test-iterations 2 \
+            test
+          xcrun simctl shutdown "$normal_device_id" 2>/dev/null || true
+          xcrun simctl delete "$normal_device_id"
+          normal_device_id=""
+
+          # A fresh destination avoids Xcode 26 debugger/session state leaking
+          # from the full plan into the accessibility-only launch.
+          accessibility_device_id="$(xcrun simctl create 'Ameme CI Accessibility' \
+            'com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro' \
+            'com.apple.CoreSimulator.SimRuntime.iOS-26-5')"
+          xcrun simctl boot "$accessibility_device_id"
+          xcrun simctl bootstatus "$accessibility_device_id" -b
+          xcrun simctl ui "$accessibility_device_id" appearance dark
+          xcrun simctl ui "$accessibility_device_id" content_size accessibility-extra-extra-extra-large
+          xcrun simctl install "$accessibility_device_id" "$app_path"
+          xcrun simctl launch "$accessibility_device_id" com.ameme.ios \
+            -AppleLanguages "(zh-Hans)" \
+            -AppleLocale "zh_CN"
+          xcodebuild \
+            -project Ameme.xcodeproj \
+            -scheme Ameme \
+            -destination "platform=iOS Simulator,id=$accessibility_device_id" \
+            -resultBundlePath "$RUNNER_TEMP/AmemeTests-Accessibility.xcresult" \
+            -only-testing:AmemeUITests/AmemeUITests/testMockExperienceCoversTodaySearchAndSettings \
+            -retry-tests-on-failure \
+            -test-iterations 2 \
+            test
+      - name: Export reviewable UI screenshots
+        if: always()
+        run: |
+          for result in \
+            "$RUNNER_TEMP/AmemeTests-Normal.xcresult" \
+            "$RUNNER_TEMP/AmemeTests-Accessibility.xcresult"
+          do
+            if [[ -d "$result" ]]; then
+              name="$(basename "$result" .xcresult)"
+              mkdir -p "$RUNNER_TEMP/AmemeScreenshots/$name"
+              xcrun xcresulttool export attachments \
+                --path "$result" \
+                --output-path "$RUNNER_TEMP/AmemeScreenshots/$name"
+            fi
+          done
+      - name: Upload UI test evidence
+        if: always()
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: ameme-ios-test-evidence
+          path: |
+            ${{ runner.temp }}/AmemeTests-Normal.xcresult
+            ${{ runner.temp }}/AmemeTests-Accessibility.xcresult
+            ${{ runner.temp }}/AmemeScreenshots
+          if-no-files-found: warn
+          retention-days: 14

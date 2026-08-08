@@ -288,7 +288,10 @@ class JsonStore:
         allow_high_risk: bool,
         start_at: datetime | None,
         end_at: datetime | None,
+        limit: int = 100,
     ) -> tuple[list[dict[str, Any]], bool]:
+        if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 100:
+            raise ValueError("visible event limit is invalid")
         requested_spaces = set(spaces)
         requested_types = set(memory_types)
         for space in requested_spaces:
@@ -329,7 +332,7 @@ class JsonStore:
             key=lambda item: item.get("updated_at") or item.get("created_at") or "",
             reverse=True,
         )
-        return result, risk_filtered
+        return result[:limit], risk_filtered
 
     def set_policy_blocked(
         self,

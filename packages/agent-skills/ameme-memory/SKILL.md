@@ -35,14 +35,16 @@ Do not invoke the Skill for ordinary typos, generic note-taking, or a destructiv
 
 For implicit task context, use the active space, the previous 30 days, at most 12 items, and a host-rendered budget of 2,000 tokens. A ContextPack expires after 15 minutes and is bound to the caller, purpose, space, and grant.
 
-Implicit retrieval and direct durable write are allowed when an active `autonomous_memory` grant names the current caller, purpose, space, data classes, processing location, and expiry. Within that scope, write an Event/Revision directly with evidence state, visible activity, and undo; do not downgrade it to a merely temporary candidate. Otherwise ask before writing.
+Implicit retrieval and direct durable write are allowed when an active `autonomous_memory` grant names the current caller, purpose, space, data classes, processing location, and expiry. Within that scope, write an Event/Revision directly with evidence state, visible activity, and undo; do not downgrade the evidence record to a merely temporary candidate. This does not authorize promotion into a confirmed long-term Memory. Otherwise ask before writing.
+
+When the Host is backed by the current Android Local Node, retrieval is limited to its bounded structured Event projection. Do not infer arbitrary target lookup, source/Raw access, Restricted authority, long-term Memory access, or production-host validation from a successful Recall/Context result.
 
 ## Mode rules
 
 - `ameme.pair`: show caller, requested purposes, spaces, data classes, duration, processing location, and revocation path before confirmation.
 - `ameme.recall`: use when the user explicitly searches history. Report requested scope and whether the result is complete or partial.
 - `ameme.context`: retrieve the smallest relevant set for the current task. Prefer structured events and user-confirmed revisions over summaries and model inference.
-- `ameme.capture`: preserve the user's wording and provenance. Under `autonomous_memory`, write verified outcomes and user statements directly to durable memory; store inference as inference, never as confirmed fact.
+- `ameme.capture`: preserve the user's wording and provenance. Under `autonomous_memory`, write verified outcomes and user statements directly as durable Event/Revision records; store inference as inference, never as confirmed fact. Long-term facts pass through the memory compiler. Inferred memories and preference, relationship, health, financial, or major-decision memories remain `candidate_user_confirmation_required`.
 - `ameme.feedback`: use correction/rejection as a new feedback event. Do not silently rewrite source evidence.
 - `ameme.status`: report pairing, grant, source, queue, sync, or processing state without exposing memory content unnecessarily.
 

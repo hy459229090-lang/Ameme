@@ -159,7 +159,12 @@ class SyntheticTlsLocalNodeServer:
                     hello_secret,
                     server_nonce="nonce_" + "2" * 64,
                     session_id="sess_synthetic_tls_001",
-                    supported_operations={"create_event"},
+                    supported_operations={
+                        "create_event",
+                        "append_revision",
+                        "undo_capture",
+                        "visible_events",
+                    },
                 )
                 self._send_line(stream, server_line)
                 if self.behavior == "bad_server_proof":
@@ -187,11 +192,54 @@ class SyntheticTlsLocalNodeServer:
                 )
                 self.request_frame = frame
                 self.application_request = application
-                result = {
-                    "object_type": "event",
-                    "event_id": "evt_synthetic_tls_001",
-                    "revision": 1,
-                }
+                if application["control"]["operation"] == "append_revision":
+                    result = {
+                        "object_type": "revision",
+                        "event_revision_id": "rev_synthetic_tls_002",
+                        "target_event_id": application["payload"]["event_id"],
+                        "revision": 2,
+                    }
+                elif application["control"]["operation"] == "undo_capture":
+                    memory_type = application["payload"]["memory_type"]
+                    result = {
+                        "state": "undone",
+                        "target_event_id": "evt_synthetic_tls_001",
+                        "undone_object_type": memory_type,
+                        "undone_object_id": (
+                            "evt_synthetic_tls_001"
+                            if memory_type == "event"
+                            else "rev_synthetic_tls_002"
+                        ),
+                        "activity_visible": True,
+                    }
+                    if memory_type == "revision":
+                        result["compensation_revision_id"] = "rev_synthetic_tls_003"
+                elif application["control"]["operation"] == "visible_events":
+                    result = {
+                        "events": [
+                            {
+                                "event_id": "evt_synthetic_tls_visible",
+                                "space_id": application["payload"]["spaces"][0],
+                                "memory_type": "event",
+                                "revision": 2,
+                                "event_type": "result",
+                                "title": "Synthetic TLS visible event",
+                                "description": "Bounded structured memory over TLS.",
+                                "fact_status": "confirmed",
+                                "evidence_state": "observed",
+                                "sensitivity": "personal",
+                                "data_class": "structured",
+                                "content_truncated": False,
+                            }
+                        ],
+                        "risk_filtered": False,
+                    }
+                else:
+                    result = {
+                        "object_type": "event",
+                        "event_id": "evt_synthetic_tls_001",
+                        "revision": 1,
+                    }
                 application_response = canonical_json_bytes(
                     {
                         "protocol_version": application["protocol_version"],
@@ -299,6 +347,141 @@ class TlsAndroidLocalNodeChannelTests(unittest.TestCase):
         )
         self.assertTrue(all(not any(secret for secret in value) for _, value in resolver.resolved))
         self.assertNotIn("SYNTHETIC_TLS_MEMORY_CONTENT", repr(channel))
+        store.close()
+        server.join()
+        self.assertIsNone(server.error)
+
+    def test_tls13_pin_handshake_and_append_revision_end_to_end(self) -> None:
+        server = SyntheticTlsLocalNodeServer(self.root)
+        server.start()
+        pairing = server.pairing()
+        channel = TlsAndroidLocalNodeChannelFactory(
+            pairing,
+            SyntheticCredentialResolver(),
+        )(self.config(pairing))
+        store = AndroidLocalNodeStore(
+            self.root / "mcp-control.json",
+            channel=channel,
+            channel_config=self.config(pairing),
+        )
+        revision_scope = EventNodeScope(
+            owner_id="owner_synthetic",
+            caller_id="agent_synthetic",
+            grant_id="grant_synthetic_revision",
+            purpose="autonomous_memory",
+            spaces=("space_work",),
+            memory_types=("revision",),
+        )
+
+        result = store.append_revision(
+            scope=revision_scope,
+            space="space_work",
+            event_id="evt_synthetic_tls_001",
+            content="SYNTHETIC_TLS_REVISION_CONTENT",
+            evidence_state="user_asserted",
+            fact_status="user_asserted",
+            now="2026-07-14T08:02:00+00:00",
+            idempotency_key="RAW_SYNTHETIC_TLS_REVISION_KEY",
+        )
+
+        self.assertEqual("rev_synthetic_tls_002", result["event_revision_id"])
+        self.assertEqual("append_revision", server.application_request["control"]["operation"])
+        self.assertEqual(["revision"], server.application_request["control"]["memory_types"])
+        self.assertEqual("TLSv1.3", server.tls_version)
+        self.assertNotIn("RAW_SYNTHETIC_TLS_REVISION_KEY", str(server.request_frame))
+        self.assertNotIn("SYNTHETIC_TLS_REVISION_CONTENT", repr(channel))
+        store.close()
+        server.join()
+        self.assertIsNone(server.error)
+
+    def test_tls13_pin_handshake_and_event_undo_end_to_end(self) -> None:
+        server = SyntheticTlsLocalNodeServer(self.root)
+        server.start()
+        pairing = server.pairing()
+        channel = TlsAndroidLocalNodeChannelFactory(
+            pairing,
+            SyntheticCredentialResolver(),
+        )(self.config(pairing))
+        store = AndroidLocalNodeStore(
+            self.root / "mcp-control.json",
+            channel=channel,
+            channel_config=self.config(pairing),
+        )
+        undo_token = "idem_" + "4" * 64
+
+        result = store.undo_capture(
+            {
+                "target_event_id": "evt_synthetic_tls_001",
+                "created_object_type": "event",
+                "created_object_id": "evt_synthetic_tls_001",
+                "internal_lineage": "SYNTHETIC_INTERNAL_UNDO_LINEAGE",
+            },
+            scope=self.scope,
+            space="space_work",
+            memory_type="event",
+            now="2026-07-14T08:03:00+00:00",
+            idempotency_key=undo_token,
+        )
+
+        self.assertEqual("undone", result["state"])
+        self.assertEqual("undo_capture", server.application_request["control"]["operation"])
+        self.assertEqual(
+            {
+                "undo_token": undo_token,
+                "space": "space_work",
+                "memory_type": "event",
+                "now": "2026-07-14T08:03:00+00:00",
+            },
+            server.application_request["payload"],
+        )
+        self.assertNotIn("SYNTHETIC_INTERNAL_UNDO_LINEAGE", str(server.application_request))
+        self.assertEqual("TLSv1.3", server.tls_version)
+        store.close()
+        server.join()
+        self.assertIsNone(server.error)
+
+    def test_tls13_pin_handshake_and_visible_events_end_to_end(self) -> None:
+        server = SyntheticTlsLocalNodeServer(self.root)
+        server.start()
+        pairing = server.pairing()
+        channel = TlsAndroidLocalNodeChannelFactory(
+            pairing,
+            SyntheticCredentialResolver(),
+        )(self.config(pairing))
+        store = AndroidLocalNodeStore(
+            self.root / "mcp-control.json",
+            channel=channel,
+            channel_config=self.config(pairing),
+        )
+
+        events, risk_filtered = store.visible_events(
+            scope=self.scope,
+            spaces=("space_work",),
+            memory_types=("event",),
+            query="structured memory",
+            allow_high_risk=False,
+            start_at=datetime(2026, 7, 1, tzinfo=timezone.utc),
+            end_at=datetime(2026, 7, 31, tzinfo=timezone.utc),
+            limit=5,
+        )
+
+        self.assertFalse(risk_filtered)
+        self.assertEqual("evt_synthetic_tls_visible", events[0]["event_id"])
+        self.assertEqual("visible_events", server.application_request["control"]["operation"])
+        self.assertEqual(
+            {
+                "spaces": ["space_work"],
+                "memory_types": ["event"],
+                "query": "structured memory",
+                "allow_high_risk": False,
+                "start_at": "2026-07-01T00:00:00+00:00",
+                "end_at": "2026-07-31T00:00:00+00:00",
+                "limit": 5,
+            },
+            server.application_request["payload"],
+        )
+        self.assertEqual("TLSv1.3", server.tls_version)
+        self.assertNotIn("Bounded structured memory over TLS.", repr(channel))
         store.close()
         server.join()
         self.assertIsNone(server.error)

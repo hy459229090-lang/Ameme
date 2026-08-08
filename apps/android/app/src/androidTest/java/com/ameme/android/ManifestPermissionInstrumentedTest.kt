@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -24,6 +25,7 @@ class ManifestPermissionInstrumentedTest {
             .orEmpty()
 
         val forbidden = setOf(
+            Manifest.permission.CAMERA,
             Manifest.permission.READ_MEDIA_IMAGES,
             Manifest.permission.WRITE_CALENDAR,
             Manifest.permission.RECORD_AUDIO,
@@ -32,5 +34,19 @@ class ManifestPermissionInstrumentedTest {
         )
         assertTrue(Manifest.permission.READ_CALENDAR in requested)
         assertFalse(requested.any { it in forbidden })
+    }
+
+    @Test
+    fun qrScannerIsDeliveredByPlayServicesWithoutAnAppCameraPermission() {
+        @Suppress("DEPRECATION")
+        val application = context.packageManager.getApplicationInfo(
+            context.packageName,
+            PackageManager.GET_META_DATA,
+        )
+
+        assertEquals(
+            "barcode_ui",
+            application.metaData?.getString("com.google.mlkit.vision.DEPENDENCIES"),
+        )
     }
 }

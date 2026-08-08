@@ -1,7 +1,7 @@
-# Ameme MVP 数据分类、保留、删除与用户权利 v0.2
+# Ameme MVP 数据分类、保留、删除与用户权利 v0.3
 
 > 文档状态：已接受；分类、初始 TTL、生命周期和用户权利为研发基线，法律例外待目标市场审查\
-> 更新日期：2026-07-14\
+> 更新日期：2026-07-29\
 > 机器字段：`sensitivity`、`sync_mode`、`retention_class`、`expires_at`、`deletion_state`\
 > 上游：`../architecture/MVP本地存储同步与删除协议.md`
 
@@ -75,11 +75,31 @@ Gate 3/4 要为上述类别写入单一配置、迁移和到期测试；代码�
 
 ## 5. 删除语义
 
-1. **移除来源**：删 SourceObject/证据并重算；用户独立确认字段按选择保留。
-2. **删除事件**：Event/Episode、DayLedger entry、Summary/index/ContextPack manifest 和副本传播。
-3. **删除来源合同**：停止来源、删除获准范围历史或仅撤权由用户明确选择。
-4. **删除 space/account**：先冻结、撤 Grant/Contract，再全图删除。
-5. **系统原对象**：Ameme 不能声称删除系统相册、HealthKit/Health Connect、外部 Agent 或用户已分享的外部副本；只说明自己的引用/副本和可验证接收方。
+1. **仅删除 Ameme Raw 证据**：删除 Raw Vault 密文/manifest 并将证据标记不可用；用户明确选择时可保留 Event/Revision、SourceObject lineage 和可重建索引，但界面必须说明记录不再能回看原始证据。
+2. **移除来源并级联**：删 SourceObject/Observation/证据并重算；仅在用户明确选择时保留独立确认字段，否则删除只依赖该来源的 Event 与派生物。
+3. **删除事件**：Event/Episode、DayLedger entry、Summary/index/ContextPack manifest 和副本传播。
+4. **删除来源合同**：停止来源、删除获准范围历史或仅撤权由用户明确选择。
+5. **删除 space/account**：先冻结、撤 Grant/Contract，再全图删除。
+6. **系统原对象**：Ameme 不能声称删除系统相册、HealthKit/Health Connect、外部 Agent 或用户已分享的外部副本；只说明自己的引用/副本和可验证接收方。
+
+2026-07-29 达成边界：Android schema v13 与 iOS envelope v8 已在既有 SourceObject→Event lineage 和 content-free exact-revision 字段→来源证据之外，加入独立的用户确认 provenance。记录只含确认 ID、Event/revision、确认类型、字段名集合、是否覆盖完整 accepted field set、时间与 terminal state，不含字段值、正文、用户 ID 或来源内容。只有明确绑定完整 Candidate 字段集的 `completeFieldSet=true` 确认可以在唯一来源删除后独立支持 Event；来源 link/claim 仍被终结，Event 追加 revision 并显示“用户确认（来源已删除）”。缺少完整字段集合的 fact-status/用户修订只形成 `partial` 审计，不能保留失去来源的 Event；Agent revision/undo 不会创建确认，v12/v7 迁移也不会从旧状态猜测用户动作。多来源仍只有在每个 accepted field 获得剩余来源或完整用户确认支持时才重算；字段失去最后支持则删除 Event，legacy/stale/partial 必须 fail closed。Android 当前只有 provider/content locator，没有 app-owned Raw Vault，因此 Raw-only 只能返回 `external_not_owned/no_raw`；iOS 仅对 app-owned AES-GCM media 执行 pending→物理删除→完成并支持重启重试，Photos 等外部原件不变。这是仓库内实现与生产 Smoke 证据，不是真实用户、物理设备、source contract/account、peer ack 或合规删除证明；这些 Gate 继续 `hold`。
+
+同日 Android schema v14 增加生产 Local Node 的 content-free `STARTED`/`COMPLETED` 访问记录：
+只保存调用方声明、purpose、canonical space/data-type scope、operation、稳定结果码、对象数量桶、
+时间与 180 天 `retention_until`，明确不记录正文、搜索词、payload/digest、request/grant/object ID、
+source/locator/path、配对密钥、模型输入或自由异常。STARTED 在 repository 访问前持久化，失败则
+拒绝执行；COMPLETED 失败保留诚实的未完成 STARTED，并依靠写操作持久幂等安全重试。SQLCipher
+表禁止 UPDATE 和未到期 DELETE，最近读取/总容量有界；Android 设置页只读最近 20 条且不生成
+合成记录。v13→v14 migration/runtime/UI instrumentation 随后已进入 API 36 / 16 KB AVD 全量；
+QR v2 切片的启动口径为 103 discovered / 96 passed / 7 外部门 skipped / 0 failed；后续同安装
+恢复切片已更新为 105/98/7/0。
+同安装恢复激活现把旧 live 在激活时仍未过期的审计与候选账本做单调 union：精确重复去重，
+同 ID 或同 trace/phase 的不同内容、非法记录和 50,000 行容量溢出均在换库前失败关闭；retained
+ledger digest 与合并后 SQLCipher 文件 digest 在换库前后复核，PREPARED 崩溃回旧 live 并清理
+专用 sidecar。该合并不复活已过期审计，也不改变 180 天窗口。iOS 当前仍是客户端而非数据拥有型
+Host；账户/多设备 owner audit、安全导出、真实用户理解、物理设备和发布均继续 `hold`。
+
+同日补齐的产品级本机删除入口只处理当前安装 Personal space：先终结可读 Event/Coverage/长期 Memory/复用/source 投影并写不可被旧备份绕过的 SPACE 水位，再停止并等待当前安装 Agent runtime，验证清除本机 pairing/secret 和连接元数据，并清空/冻结 Android pending action、iOS pending export 与 App Group incoming-share handoff。Share Extension 和旧任务在 content-free marker 后写入 fail closed；iOS 删除 app-owned Raw ciphertext，Android 继续处理 persisted locator release。这里撤销的是当前安装 pairing，不是账户或共享 Grant registry；结果硬编码不宣称账号删除、peer proof、Photos/provider 原件、对端/云副本、外部分享或物理介质擦除。只有账户/共享 Grant、远端 ack、例外与用户可见权利请求流程完成后，才可把第 5 项“删除 space/account”报告为全局完成。
 
 审计证明保留不可逆对象摘要、步骤、时间、接收方/副本状态和错误码，不保正文。离线/丢失设备未 ack 时显示 proof incomplete。
 
@@ -89,6 +109,9 @@ Gate 3/4 要为上述类别写入单一配置、迁移和到期测试；代码�
 - App 卸载可能移除 app-specific storage；用户需要独立保存的数据通过显式导出/系统媒体库完成，不能让“卸载即丢失”成为隐藏设计。
 - 迁移快照只在升级/回滚窗口存在，到期进入 DeletionJob。
 - MVP 不提供记忆数据云备份/灾备。peer 恢复必须先应用 tombstone/删除水位再接收对象，恢复演练验证不会复活已删对象。
+- Python Core reference 已用 synthetic 数据证明一致 SQLite 快照、已加密 Raw 密文、hash/`quick_check`、损坏拒绝、无密钥备份和恢复到新目录。这不是生产移动备份：其结构化 SQLite 为明文，密钥需外部提供，也未证明 OS 调度、Keychain/Keystore 恢复、E2EE 云传输、账户恢复或物理设备灾难恢复。
+- 双端同安装候选现在可在 exact backup 短时确认后进入可回滚 live-store 激活内核：候选与权威 tombstone 在切换前后复核，HMAC journal 只保留版本、状态、确认 ID、backup ID 与 MAC，不含正文、路径或 key；`PREPARED` 失败回旧 live，`COMMITTED` 只保留已验证新 live，原候选不消费。设置页提供普通用户“同安装恢复”：创建/更新有界 current/previous 恢复点，健康必须来自真实隔离恢复，展示创建、验证和最近成功恢复时间，并要求逐字输入 `恢复`。receipt 仍为 `production_recovery_claim=false`；界面明确点只在当前安装、依赖当前设备 Keychain/Keystore key，卸载、换机或设备丢失后不可用。
+- Android 激活时将 content-free 安全审计视为不可回退账本：只把旧 live 中激活时仍未过期的记录并入候选，精确重复去重，冲突/容量异常拒绝整个激活，并在原子换库前后复核账本与 SQLCipher 文件摘要。Android JVM 112/112 与 API 36 / 16 KB AVD 105/98/7/0（完整 UI 14/14）已执行；iOS Debug/Release build 与生产 Smoke 已执行，本机 XCTest 因 Command Line Tools 缺少 `XCTest` 未执行。真实进程终止、磁盘满、断电、OEM 文件系统和双端物理设备仍待独立演练。
 
 ## 7. 权利请求与身份校验
 

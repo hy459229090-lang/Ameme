@@ -27,6 +27,10 @@ class DebugPairingExperienceConnectorTest {
             assertEquals("Codex", connection.agentName)
             assertEquals(listOf("写入结构化工作记录"), connection.capabilities)
             assertEquals(fixedInstant, connection.connectedAt)
+            assertEquals(
+                fixedInstant.plusSeconds(PairingExperienceConnection.DEFAULT_LIFETIME_SECONDS),
+                connection.expiresAt,
+            )
             assertTrue(connection.simulated)
         }
     }

@@ -1,0 +1,413 @@
+{
+  "fixture_version": 1,
+  "evidence_status": "synthetic_planning_baseline_not_market_evidence",
+  "context_types": [
+    "time_schedule",
+    "activity_result",
+    "content_consumption",
+    "content_creation",
+    "communication_relationship",
+    "decision_commitment",
+    "place_mobility",
+    "body_state",
+    "consumption_entertainment",
+    "intent_feeling"
+  ],
+  "segments": [
+    {
+      "segment_id": "segment_t0_ai_worker",
+      "priority": "T0",
+      "label": "AI knowledge worker",
+      "important_contexts": ["time_schedule", "activity_result", "content_creation", "communication_relationship", "decision_commitment"],
+      "minimum_capability_ids": ["cap_explicit_capture", "cap_share", "cap_agent", "cap_calendar"],
+      "scale_status": "not_estimated_market_scope_missing",
+      "scale_blockers": ["launch_region", "platform_mix", "reachable_channel", "authorization_rate", "daily_source_use", "retention_evidence"]
+    },
+    {
+      "segment_id": "segment_t1_communication",
+      "priority": "T1",
+      "label": "Communication-intensive professional",
+      "important_contexts": ["time_schedule", "communication_relationship", "decision_commitment", "activity_result"],
+      "minimum_capability_ids": ["cap_explicit_capture", "cap_share", "cap_calendar", "cap_meeting"],
+      "scale_status": "not_estimated_market_scope_missing",
+      "scale_blockers": ["launch_region", "platform_mix", "reachable_channel", "authorization_rate", "daily_source_use"]
+    },
+    {
+      "segment_id": "segment_t1_learner_creator",
+      "priority": "T1",
+      "label": "Learner or creator",
+      "important_contexts": ["content_consumption", "content_creation", "activity_result", "intent_feeling"],
+      "minimum_capability_ids": ["cap_explicit_capture", "cap_share", "cap_browser"],
+      "scale_status": "not_estimated_market_scope_missing",
+      "scale_blockers": ["launch_region", "platform_mix", "reachable_channel", "authorization_rate", "daily_source_use"]
+    },
+    {
+      "segment_id": "segment_t2_life_recorder",
+      "priority": "T2",
+      "label": "Everyday life recorder",
+      "important_contexts": ["activity_result", "communication_relationship", "place_mobility", "consumption_entertainment", "intent_feeling"],
+      "minimum_capability_ids": ["cap_explicit_capture", "cap_share", "cap_photo", "cap_calendar"],
+      "scale_status": "not_estimated_market_scope_missing",
+      "scale_blockers": ["launch_region", "platform_mix", "reachable_channel", "authorization_rate", "daily_source_use", "retention_evidence"]
+    },
+    {
+      "segment_id": "segment_t2_quantified_vertical",
+      "priority": "T2",
+      "label": "Quantified-self or vertical-service user",
+      "important_contexts": ["body_state", "place_mobility", "consumption_entertainment", "activity_result"],
+      "minimum_capability_ids": ["cap_explicit_capture", "cap_health", "cap_location"],
+      "scale_status": "not_estimated_market_scope_missing",
+      "scale_blockers": ["launch_region", "platform_mix", "reachable_channel", "authorization_rate", "daily_source_use", "retention_evidence"]
+    }
+  ],
+  "capabilities": [
+    {
+      "schema_version": 1,
+      "capability_id": "cap_explicit_capture",
+      "source_type": "text",
+      "acquisition_mode": "one_action",
+      "context_types": ["time_schedule", "activity_result", "content_consumption", "content_creation", "communication_relationship", "decision_commitment", "place_mobility", "body_state", "consumption_entertainment", "intent_feeling"],
+      "field_claims": [
+        {"field": "time", "authority": "supporting", "limitation": "Submission time does not prove the described event time."},
+        {"field": "action", "authority": "strong", "limitation": "Authoritative for the user's own explicit statement, not independent external verification."},
+        {"field": "result", "authority": "strong", "limitation": "Authoritative as a user assertion; platform outcomes still need source evidence."},
+        {"field": "intent", "authority": "strong", "limitation": "Only the user can authoritatively express their intent."},
+        {"field": "emotion", "authority": "strong", "limitation": "Only explicit user expression is accepted as authoritative."}
+      ],
+      "eligible_segment_ids": ["segment_t0_ai_worker", "segment_t1_communication", "segment_t1_learner_creator", "segment_t2_life_recorder", "segment_t2_quantified_vertical"],
+      "priority": "P0",
+      "permission_tier": "low",
+      "bystander_risk": "low",
+      "validation_status": "implemented_partial",
+      "hard_gates": ["source_explanation", "explicit_permission", "pause_and_revoke", "lineage", "cascade_delete", "recovery", "real_device", "real_user"]
+    },
+    {
+      "schema_version": 1,
+      "capability_id": "cap_share",
+      "source_type": "share",
+      "acquisition_mode": "one_action",
+      "context_types": ["content_consumption", "content_creation", "activity_result"],
+      "field_claims": [
+        {"field": "time", "authority": "supporting", "limitation": "Share time does not prove when the content was consumed."},
+        {"field": "action", "authority": "supporting", "limitation": "Sharing proves selection, not reading, agreement or completion."},
+        {"field": "intent", "authority": "weak", "limitation": "Importance and intended use require an optional user statement."}
+      ],
+      "eligible_segment_ids": ["segment_t0_ai_worker", "segment_t1_communication", "segment_t1_learner_creator", "segment_t2_life_recorder"],
+      "priority": "P0",
+      "permission_tier": "low",
+      "bystander_risk": "low",
+      "validation_status": "implemented_partial",
+      "hard_gates": ["source_explanation", "explicit_permission", "lineage", "cascade_delete", "retention_limit", "recovery", "real_device", "real_user"]
+    },
+    {
+      "schema_version": 1,
+      "capability_id": "cap_agent",
+      "source_type": "agent",
+      "acquisition_mode": "scene_triggered",
+      "context_types": ["activity_result", "content_creation", "decision_commitment"],
+      "field_claims": [
+        {"field": "time", "authority": "strong", "limitation": "Strong for tool execution time, not for external business events."},
+        {"field": "action", "authority": "strong", "limitation": "Strong for actions executed in the authorized Agent task."},
+        {"field": "result", "authority": "supporting", "limitation": "An Agent artifact does not prove deployment, acceptance or external completion."},
+        {"field": "intent", "authority": "none", "limitation": "Agent behavior cannot replace explicit user intent."}
+      ],
+      "eligible_segment_ids": ["segment_t0_ai_worker", "segment_t1_learner_creator"],
+      "priority": "P0",
+      "permission_tier": "medium",
+      "bystander_risk": "low",
+      "validation_status": "implemented_partial",
+      "hard_gates": ["source_explanation", "explicit_permission", "pause_and_revoke", "lineage", "cascade_delete", "platform_policy", "recovery", "real_user"]
+    },
+    {
+      "schema_version": 1,
+      "capability_id": "cap_calendar",
+      "source_type": "calendar",
+      "acquisition_mode": "automatic",
+      "context_types": ["time_schedule", "communication_relationship"],
+      "field_claims": [
+        {"field": "time", "authority": "strong", "limitation": "Strong for planned time only."},
+        {"field": "people", "authority": "supporting", "limitation": "Invitation does not prove attendance."},
+        {"field": "action", "authority": "weak", "limitation": "A calendar entry is a plan, not proof that the event occurred."}
+      ],
+      "eligible_segment_ids": ["segment_t0_ai_worker", "segment_t1_communication", "segment_t1_learner_creator", "segment_t2_life_recorder"],
+      "priority": "P0",
+      "permission_tier": "medium",
+      "bystander_risk": "medium",
+      "validation_status": "implemented_partial",
+      "hard_gates": ["source_explanation", "explicit_permission", "pause_and_revoke", "lineage", "cascade_delete", "retention_limit", "recovery", "real_device", "real_user"]
+    },
+    {
+      "schema_version": 1,
+      "capability_id": "cap_photo",
+      "source_type": "photo",
+      "acquisition_mode": "one_action",
+      "context_types": ["activity_result", "communication_relationship", "place_mobility", "consumption_entertainment"],
+      "field_claims": [
+        {"field": "time", "authority": "supporting", "limitation": "Metadata may be missing, edited or refer to import time."},
+        {"field": "place", "authority": "supporting", "limitation": "Location metadata may be absent or sensitive."},
+        {"field": "people", "authority": "weak", "limitation": "Identity and relationship require confirmation."},
+        {"field": "intent", "authority": "none", "limitation": "A photo cannot prove why the moment matters."}
+      ],
+      "eligible_segment_ids": ["segment_t1_learner_creator", "segment_t2_life_recorder"],
+      "priority": "P1",
+      "permission_tier": "medium",
+      "bystander_risk": "medium",
+      "validation_status": "implemented_partial",
+      "hard_gates": ["source_explanation", "explicit_permission", "pause_and_revoke", "lineage", "cascade_delete", "retention_limit", "bystander_notice", "recovery", "real_device", "real_user"]
+    },
+    {
+      "schema_version": 1,
+      "capability_id": "cap_browser",
+      "source_type": "browser",
+      "acquisition_mode": "one_action",
+      "context_types": ["content_consumption", "content_creation"],
+      "field_claims": [
+        {"field": "time", "authority": "supporting", "limitation": "Capture time does not prove full reading time."},
+        {"field": "action", "authority": "supporting", "limitation": "One-click capture proves selection, not understanding."},
+        {"field": "description", "authority": "strong", "limitation": "Strong only for the selected source excerpt and URL position."}
+      ],
+      "eligible_segment_ids": ["segment_t0_ai_worker", "segment_t1_learner_creator"],
+      "priority": "P1",
+      "permission_tier": "low",
+      "bystander_risk": "low",
+      "validation_status": "implemented_partial",
+      "hard_gates": ["source_explanation", "explicit_permission", "lineage", "cascade_delete", "platform_policy", "recovery", "real_user"]
+    },
+    {
+      "schema_version": 1,
+      "capability_id": "cap_meeting",
+      "source_type": "meeting",
+      "acquisition_mode": "scene_triggered",
+      "context_types": ["time_schedule", "communication_relationship", "decision_commitment", "activity_result"],
+      "field_claims": [
+        {"field": "time", "authority": "strong", "limitation": "Strong for the recording session boundary."},
+        {"field": "people", "authority": "supporting", "limitation": "Speaker and attendee identity may be ambiguous."},
+        {"field": "result", "authority": "supporting", "limitation": "Discussion must not be promoted to a final decision without evidence."},
+        {"field": "relationship", "authority": "weak", "limitation": "Contact frequency does not prove relationship type."}
+      ],
+      "eligible_segment_ids": ["segment_t0_ai_worker", "segment_t1_communication"],
+      "priority": "P2",
+      "permission_tier": "high",
+      "bystander_risk": "high",
+      "validation_status": "official_path_only",
+      "hard_gates": ["source_explanation", "explicit_permission", "pause_and_revoke", "lineage", "cascade_delete", "retention_limit", "bystander_notice", "platform_policy", "recovery", "real_device", "real_user"]
+    },
+    {
+      "schema_version": 1,
+      "capability_id": "cap_health",
+      "source_type": "health",
+      "acquisition_mode": "automatic",
+      "context_types": ["body_state", "activity_result"],
+      "field_claims": [
+        {"field": "time", "authority": "strong", "limitation": "Strong only for the authorized sample interval."},
+        {"field": "action", "authority": "supporting", "limitation": "A sample supports activity, not the user's purpose."},
+        {"field": "emotion", "authority": "none", "limitation": "Health signals cannot prove emotion or mental state."}
+      ],
+      "eligible_segment_ids": ["segment_t2_quantified_vertical", "segment_t2_life_recorder"],
+      "priority": "P2",
+      "permission_tier": "very_high",
+      "bystander_risk": "none",
+      "validation_status": "official_path_only",
+      "hard_gates": ["source_explanation", "explicit_permission", "pause_and_revoke", "lineage", "cascade_delete", "retention_limit", "platform_policy", "recovery", "real_device", "real_user"]
+    },
+    {
+      "schema_version": 1,
+      "capability_id": "cap_location",
+      "source_type": "location",
+      "acquisition_mode": "scene_triggered",
+      "context_types": ["place_mobility", "activity_result"],
+      "field_claims": [
+        {"field": "time", "authority": "supporting", "limitation": "Location samples may be delayed or imprecise."},
+        {"field": "place", "authority": "supporting", "limitation": "Indoor and dense-city accuracy varies."},
+        {"field": "intent", "authority": "none", "limitation": "A visit cannot prove purpose or meaning."}
+      ],
+      "eligible_segment_ids": ["segment_t2_quantified_vertical", "segment_t2_life_recorder"],
+      "priority": "P2",
+      "permission_tier": "very_high",
+      "bystander_risk": "low",
+      "validation_status": "official_path_only",
+      "hard_gates": ["source_explanation", "explicit_permission", "pause_and_revoke", "lineage", "cascade_delete", "retention_limit", "platform_policy", "recovery", "real_device", "real_user"]
+    },
+    {
+      "schema_version": 1,
+      "capability_id": "cap_continuous_screen",
+      "source_type": "continuous_screen",
+      "acquisition_mode": "continuous_opt_in",
+      "context_types": ["activity_result", "content_consumption", "content_creation", "communication_relationship"],
+      "field_claims": [
+        {"field": "time", "authority": "strong", "limitation": "A frame timestamp proves capture time only."},
+        {"field": "action", "authority": "weak", "limitation": "Visible content does not prove user attention or intent."},
+        {"field": "result", "authority": "weak", "limitation": "A visible state does not prove external completion."}
+      ],
+      "eligible_segment_ids": ["segment_t0_ai_worker", "segment_t1_communication", "segment_t1_learner_creator"],
+      "priority": "P3",
+      "permission_tier": "very_high",
+      "bystander_risk": "high",
+      "validation_status": "deferred",
+      "hard_gates": ["source_explanation", "explicit_permission", "pause_and_revoke", "lineage", "cascade_delete", "retention_limit", "bystander_notice", "platform_policy", "recovery", "real_device", "real_user"]
+    }
+  ],
+  "synthetic_days": [
+    {
+      "day_id": "day_t0_ai_worker",
+      "segment_id": "segment_t0_ai_worker",
+      "owner_id": "owner_synthetic_coverage",
+      "space_id": "space_synthetic_work",
+      "local_date": "2026-07-21",
+      "timezone": "Asia/Shanghai",
+      "signals": [
+        {
+          "signal_id": "signal_calendar_review",
+          "capability_id": "cap_calendar",
+          "source_state": "available",
+          "context_types": ["time_schedule", "communication_relationship"],
+          "observed_fields": ["time", "people", "action"],
+          "fact_status": "planned",
+          "confidence": 1.0,
+          "importance": "high",
+          "source_object_ids": ["source_calendar_review"],
+          "observed_at": "2026-07-21T08:10:00+08:00",
+          "time_range": {"start": "2026-07-21T10:00:00+08:00", "end": "2026-07-21T10:30:00+08:00", "timezone": "Asia/Shanghai", "precision": "minute"},
+          "event_hint": {"event_type": "communication", "title": "Payment review"},
+          "gap_hints": [{"context_type": "activity_result", "reason": "actuality_unconfirmed", "value_level": "high"}]
+        },
+        {
+          "signal_id": "signal_agent_implementation",
+          "capability_id": "cap_agent",
+          "source_state": "available",
+          "context_types": ["activity_result", "content_creation"],
+          "observed_fields": ["time", "action", "result", "description"],
+          "fact_status": "observed",
+          "confidence": 0.95,
+          "importance": "high",
+          "source_object_ids": ["source_agent_implementation"],
+          "observed_at": "2026-07-21T12:05:00+08:00",
+          "time_range": {"start": "2026-07-21T10:40:00+08:00", "end": "2026-07-21T12:00:00+08:00", "timezone": "Asia/Shanghai", "precision": "minute"},
+          "event_hint": {"event_type": "result", "title": "Implemented local event merge"},
+          "gap_hints": []
+        },
+        {
+          "signal_id": "signal_shared_article",
+          "capability_id": "cap_share",
+          "source_state": "available",
+          "context_types": ["content_consumption"],
+          "observed_fields": ["time", "action", "description"],
+          "fact_status": "inferred",
+          "confidence": 0.76,
+          "importance": "medium",
+          "source_object_ids": ["source_shared_article"],
+          "observed_at": "2026-07-21T15:20:00+08:00",
+          "time_range": {"start": "2026-07-21T15:20:00+08:00", "timezone": "Asia/Shanghai", "precision": "minute"},
+          "event_hint": {"event_type": "activity", "title": "Saved an event-compilation article"},
+          "gap_hints": [{"context_type": "intent_feeling", "reason": "meaning_missing", "value_level": "medium"}]
+        },
+        {
+          "signal_id": "signal_explicit_walk",
+          "capability_id": "cap_explicit_capture",
+          "source_state": "available",
+          "context_types": ["activity_result", "intent_feeling"],
+          "observed_fields": ["time", "action", "intent", "emotion", "description"],
+          "fact_status": "user_asserted",
+          "confidence": 1.0,
+          "importance": "medium",
+          "source_object_ids": ["source_explicit_walk"],
+          "observed_at": "2026-07-21T20:05:00+08:00",
+          "time_range": {"start": "2026-07-21T19:30:00+08:00", "timezone": "Asia/Shanghai", "precision": "minute"},
+          "event_hint": {"event_type": "experience", "title": "Walked after dinner"},
+          "gap_hints": []
+        }
+      ],
+      "expected": {
+        "candidate_count": 4,
+        "gap_reasons": ["actuality_unconfirmed", "meaning_missing"],
+        "must_not_emit_coverage_percentage": true
+      }
+    },
+    {
+      "day_id": "day_t2_sparse_life",
+      "segment_id": "segment_t2_life_recorder",
+      "owner_id": "owner_synthetic_coverage",
+      "space_id": "space_synthetic_personal",
+      "local_date": "2026-07-22",
+      "timezone": "Asia/Shanghai",
+      "signals": [
+        {
+          "signal_id": "signal_photo_candidate",
+          "capability_id": "cap_photo",
+          "source_state": "available",
+          "context_types": ["place_mobility", "communication_relationship"],
+          "observed_fields": ["time", "place", "people"],
+          "fact_status": "observed",
+          "confidence": 0.82,
+          "importance": "medium",
+          "source_object_ids": ["source_photo_candidate"],
+          "observed_at": "2026-07-22T14:10:00+08:00",
+          "time_range": {"start": "2026-07-22T13:40:00+08:00", "timezone": "Asia/Shanghai", "precision": "minute"},
+          "event_hint": {"event_type": "experience", "title": "Photo at a cafe"},
+          "gap_hints": [{"context_type": "intent_feeling", "reason": "meaning_missing", "value_level": "medium"}, {"context_type": "communication_relationship", "reason": "identity_ambiguous", "value_level": "low"}]
+        },
+        {
+          "signal_id": "signal_explicit_family_dinner",
+          "capability_id": "cap_explicit_capture",
+          "source_state": "available",
+          "context_types": ["activity_result", "communication_relationship", "intent_feeling"],
+          "observed_fields": ["time", "people", "action", "intent", "description"],
+          "fact_status": "user_asserted",
+          "confidence": 1.0,
+          "importance": "high",
+          "source_object_ids": ["source_explicit_family_dinner"],
+          "observed_at": "2026-07-22T21:10:00+08:00",
+          "time_range": {"start": "2026-07-22T18:30:00+08:00", "timezone": "Asia/Shanghai", "precision": "minute"},
+          "event_hint": {"event_type": "experience", "title": "Family birthday dinner"},
+          "gap_hints": []
+        }
+      ],
+      "expected": {
+        "candidate_count": 1,
+        "gap_reasons": ["meaning_missing", "identity_ambiguous"],
+        "must_not_emit_coverage_percentage": true
+      }
+    },
+    {
+      "day_id": "day_permission_limited",
+      "segment_id": "segment_t1_communication",
+      "owner_id": "owner_synthetic_coverage",
+      "space_id": "space_synthetic_work",
+      "local_date": "2026-07-23",
+      "timezone": "Asia/Shanghai",
+      "signals": [
+        {
+          "signal_id": "signal_meeting_denied",
+          "capability_id": "cap_meeting",
+          "source_state": "not_authorized",
+          "context_types": ["communication_relationship", "decision_commitment"],
+          "observed_fields": [],
+          "fact_status": "observed",
+          "confidence": 0.0,
+          "importance": "high",
+          "source_object_ids": [],
+          "observed_at": "2026-07-23T10:00:00+08:00",
+          "gap_hints": [{"context_type": "communication_relationship", "reason": "source_not_authorized", "value_level": "high"}]
+        },
+        {
+          "signal_id": "signal_calendar_failed",
+          "capability_id": "cap_calendar",
+          "source_state": "failed",
+          "context_types": ["time_schedule"],
+          "observed_fields": [],
+          "fact_status": "planned",
+          "confidence": 0.0,
+          "importance": "medium",
+          "source_object_ids": [],
+          "observed_at": "2026-07-23T10:01:00+08:00",
+          "gap_hints": [{"context_type": "time_schedule", "reason": "source_failed", "value_level": "medium"}]
+        }
+      ],
+      "expected": {
+        "candidate_count": 0,
+        "gap_reasons": ["source_not_authorized", "source_failed"],
+        "must_not_emit_coverage_percentage": true
+      }
+    }
+  ]
+}

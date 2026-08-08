@@ -1,11 +1,11 @@
 package com.ameme.android.data.transport
 
-import org.junit.Assert.assertNull
+import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class ReleasePairingExperienceConnectorProviderTest {
     @Test
-    fun releaseDoesNotProvideSyntheticConnectionExperience() {
-        assertNull(PairingExperienceConnectorProvider.create())
+    fun releaseRealConnectorUsesTheFrozenLocalServiceType() {
+        assertEquals("_ameme-agent._tcp.", NsdPairingExperienceConnector.SERVICE_TYPE)
     }
 }

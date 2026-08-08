@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "run_id": "UNASSIGNED",
+  "build_commit": "UNASSIGNED",
+  "generated_at": "UNASSIGNED",
+  "contains_personal_content": false,
+  "gates": {
+    "t0_8x7_pilot": {
+      "status": "hold",
+      "evidence_bundle_hashes": [],
+      "approver_roles": []
+    },
+    "physical_ios": {
+      "status": "hold",
+      "evidence_bundle_hashes": [],
+      "approver_roles": []
+    },
+    "physical_android": {
+      "status": "hold",
+      "evidence_bundle_hashes": [],
+      "approver_roles": []
+    },
+    "real_accessibility": {
+      "status": "hold",
+      "evidence_bundle_hashes": [],
+      "approver_roles": []
+    },
+    "production_recovery": {
+      "status": "hold",
+      "evidence_bundle_hashes": [],
+      "approver_roles": []
+    },
+    "real_agent_host": {
+      "status": "hold",
+      "evidence_bundle_hashes": [],
+      "approver_roles": []
+    },
+    "signing_and_internal_distribution": {
+      "status": "hold",
+      "evidence_bundle_hashes": [],
+      "approver_roles": []
+    },
+    "store_privacy_security": {
+      "status": "hold",
+      "evidence_bundle_hashes": [],
+      "approver_roles": []
+    },
+    "paid_provider_and_cost": {
+      "status": "hold",
+      "evidence_bundle_hashes": [],
+      "approver_roles": []
+    },
+    "incident_and_rollback": {
+      "status": "hold",
+      "evidence_bundle_hashes": [],
+      "approver_roles": []
+    }
+  },
+  "overall_verdict": "hold"
+}

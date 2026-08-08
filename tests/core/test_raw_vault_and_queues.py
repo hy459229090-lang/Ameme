@@ -741,6 +741,57 @@ class RawVaultAndQueueTest(unittest.TestCase):
         )
         self.assertNotIn(event_id, [event["event_id"] for event in today["events"]])
 
+    def test_raw_only_delete_preserves_structure_while_source_delete_cascades(self) -> None:
+        handles = self.load_day()
+        source_id = handles["records"]["river_walk"]["capture"]["source_object_id"]
+        event_id = handles["records"]["river_walk"]["event"]["event_id"]
+        stored = self.store_raw(source_id)
+
+        raw_only = self.core.delete_raw_evidence(
+            source_id,
+            idempotency_key="delete-raw-keep-structured-001",
+        )
+        self.assertEqual("completed", raw_only["state"])
+        self.assertTrue(raw_only["affected"]["structured_source_preserved"])
+        self.assertEqual([event_id], raw_only["affected"]["retained_event_ids"])
+        self.assertFalse((self.vault_dir / stored["relative_path"]).exists())
+        self.assertEqual(
+            "processed",
+            self.core.connection.execute(
+                "SELECT processing_state FROM source_objects WHERE source_object_id = ?",
+                (source_id,),
+            ).fetchone()["processing_state"],
+        )
+        self.core.rebuild()
+        after_raw_delete = self.core.today(
+            owner_id=self.fixture["owner_id"],
+            space_id=self.fixture["space_id"],
+            local_date=self.fixture["day"]["local_date"],
+            timezone_name=self.fixture["day"]["timezone"],
+        )
+        self.assertIn(
+            event_id,
+            {event["event_id"] for event in after_raw_delete["events"]},
+        )
+
+        cascade = self.core.delete_source(
+            source_id,
+            idempotency_key="delete-source-and-derived-001",
+        )
+        self.assertEqual("completed", cascade["state"])
+        self.assertIn(event_id, cascade["affected"]["deleted_event_ids"])
+        self.core.rebuild()
+        after_cascade = self.core.today(
+            owner_id=self.fixture["owner_id"],
+            space_id=self.fixture["space_id"],
+            local_date=self.fixture["day"]["local_date"],
+            timezone_name=self.fixture["day"]["timezone"],
+        )
+        self.assertNotIn(
+            event_id,
+            {event["event_id"] for event in after_cascade["events"]},
+        )
+
     def test_deletion_proof_waits_for_failed_raw_then_retry_completes(self) -> None:
         handles = self.load_day()
         source_id = handles["records"]["river_walk"]["capture"]["source_object_id"]

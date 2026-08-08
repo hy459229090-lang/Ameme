@@ -76,6 +76,7 @@ class CodexSkillDemoSeedInstrumentedTest {
                 repositorySpaceId = LocalEventDatabase.DEFAULT_SPACE_ID,
                 verifiedSession = session,
                 idempotencyRegistry = DemoIdempotencyRegistry(),
+                accessAuditSink = repository.durableAgentAccessAuditSink(),
                 clock = clock,
             )
             var inserted = 0

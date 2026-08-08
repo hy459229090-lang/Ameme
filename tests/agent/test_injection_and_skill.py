@@ -30,7 +30,7 @@ class InjectionAndSkillTests(unittest.TestCase):
         finally:
             harness.close()
 
-    def test_existing_skill_fixture_runs_14_cases_and_14_risks(self) -> None:
+    def test_existing_skill_fixture_runs_16_cases_and_15_risks(self) -> None:
         completed = subprocess.run(
             [sys.executable, "scripts/validation/validate_ameme_skill.py"],
             cwd=ROOT,
@@ -41,8 +41,8 @@ class InjectionAndSkillTests(unittest.TestCase):
         self.assertEqual(0, completed.returncode, completed.stdout + completed.stderr)
         result = json.loads(completed.stdout)
         self.assertEqual("passed", result["status"])
-        self.assertEqual(14, result["cases_checked"])
-        self.assertEqual(14, result["risks_checked"])
+        self.assertEqual(16, result["cases_checked"])
+        self.assertEqual(15, result["risks_checked"])
 
 
 if __name__ == "__main__":

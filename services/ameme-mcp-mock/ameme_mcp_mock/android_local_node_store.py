@@ -42,9 +42,39 @@ from .store import JsonStore
 
 
 MAX_RESPONSE_SECONDS = 5.0
-IMPLEMENTED_OPERATIONS = {"create_event"}
+IMPLEMENTED_OPERATIONS = {
+    "create_event",
+    "append_revision",
+    "undo_capture",
+    "visible_events",
+}
 _IDENTIFIER = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")
 _REFERENCE_SUFFIX = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,239}")
+_EVENT_TYPES = {
+    "activity",
+    "communication",
+    "decision",
+    "result",
+    "state_change",
+    "milestone",
+    "experience",
+}
+_EVIDENCE_STATES = {"observed", "user_asserted", "inferred"}
+_SENSITIVITIES = {"public", "personal", "confidential", "restricted"}
+_VISIBLE_EVENT_KEYS = {
+    "event_id",
+    "space_id",
+    "memory_type",
+    "revision",
+    "event_type",
+    "title",
+    "description",
+    "fact_status",
+    "evidence_state",
+    "sensitivity",
+    "data_class",
+    "content_truncated",
+}
 
 
 class AndroidLocalNodeUnavailable(EventNodeStoreError):
@@ -257,10 +287,10 @@ class AndroidLocalNodeStore:
             raise AndroidLocalNodeProtocolError(
                 "android_local_node_channel_capabilities_invalid"
             )
-        if "create_event" not in supported_operations:
+        if not supported_operations.intersection(IMPLEMENTED_OPERATIONS):
             self._close_unaccepted_channel(channel)
             raise AndroidLocalNodeOperationUnsupported(
-                "android_local_node_create_event_unsupported"
+                "android_local_node_capability_unsupported"
             )
 
         self.channel = channel
@@ -546,6 +576,9 @@ class AndroidLocalNodeStore:
         }
         if event_time is not None:
             payload["event_time"] = event_time
+        remote_undo_token = derive_idempotency_slot(
+            idempotency_key, operation="create_event"
+        )
         result = self._request(
             "create_event",
             scope=scope,
@@ -567,6 +600,7 @@ class AndroidLocalNodeStore:
             raise AndroidLocalNodeProtocolError(
                 "android_local_node_create_result_invalid"
             )
+        result["_undo_token_hint"] = remote_undo_token
         return result
 
     def append_revision(
@@ -581,11 +615,48 @@ class AndroidLocalNodeStore:
         now: str,
         idempotency_key: str,
     ) -> dict[str, Any]:
-        self._unsupported_operation(
+        payload = {
+            "event_id": event_id,
+            "space": space,
+            "memory_type": "revision",
+            "content": content,
+            "evidence_state": evidence_state,
+            "fact_status": fact_status,
+            "now": now,
+        }
+        remote_undo_token = derive_idempotency_slot(
+            idempotency_key, operation="append_revision"
+        )
+        result = self._request(
+            "append_revision",
             scope=scope,
             spaces=(space,),
             memory_types=("revision",),
+            payload=payload,
+            idempotency_key=idempotency_key,
         )
+        if (
+            set(result)
+            != {
+                "object_type",
+                "event_revision_id",
+                "target_event_id",
+                "revision",
+            }
+            or result.get("object_type") != "revision"
+            or not isinstance(result.get("event_revision_id"), str)
+            or not _IDENTIFIER.fullmatch(result["event_revision_id"])
+            or result.get("target_event_id") != event_id
+            or not isinstance(result.get("revision"), int)
+            or isinstance(result.get("revision"), bool)
+            or result["revision"] < 2
+        ):
+            self._poison_channel()
+            raise AndroidLocalNodeProtocolError(
+                "android_local_node_append_result_invalid"
+            )
+        result["_undo_token_hint"] = remote_undo_token
+        return result
 
     def undo_capture(
         self,
@@ -597,11 +668,58 @@ class AndroidLocalNodeStore:
         now: str,
         idempotency_key: str,
     ) -> dict[str, Any]:
-        self._unsupported_operation(
+        payload = {
+            "undo_token": idempotency_key,
+            "space": space,
+            "memory_type": memory_type,
+            "now": now,
+        }
+        result = self._request(
+            "undo_capture",
             scope=scope,
             spaces=(space,),
             memory_types=(memory_type,),
+            payload=payload,
+            idempotency_key=idempotency_key,
         )
+        expected_event_id = undo.get("target_event_id")
+        expected_object_id = undo.get("created_object_id")
+        common_keys = {
+            "state",
+            "target_event_id",
+            "undone_object_type",
+            "undone_object_id",
+            "activity_visible",
+        }
+        expected_keys = (
+            common_keys
+            if memory_type == "event"
+            else common_keys | {"compensation_revision_id"}
+        )
+        valid = (
+            set(result) == expected_keys
+            and result.get("state") == "undone"
+            and result.get("target_event_id") == expected_event_id
+            and result.get("undone_object_type") == memory_type
+            and result.get("undone_object_id") == expected_object_id
+            and result.get("activity_visible") is True
+        )
+        if memory_type == "event":
+            valid = valid and expected_object_id == expected_event_id
+        else:
+            compensation_id = result.get("compensation_revision_id")
+            valid = (
+                valid
+                and isinstance(compensation_id, str)
+                and _IDENTIFIER.fullmatch(compensation_id) is not None
+                and compensation_id != expected_object_id
+            )
+        if not valid:
+            self._poison_channel()
+            raise AndroidLocalNodeProtocolError(
+                "android_local_node_undo_result_invalid"
+            )
+        return result
 
     def visible_events(
         self,
@@ -613,12 +731,117 @@ class AndroidLocalNodeStore:
         allow_high_risk: bool,
         start_at: datetime | None,
         end_at: datetime | None,
+        limit: int = 100,
     ) -> tuple[list[dict[str, Any]], bool]:
-        self._unsupported_operation(
+        requested_spaces, requested_types = self._requested_scope(
             scope=scope,
             spaces=spaces,
             memory_types=memory_types,
         )
+        if requested_types != ["event"]:
+            raise EventNodeNotVisible("android_local_node_data_type_not_visible")
+        if not isinstance(query, (str, type(None))):
+            raise ValueError("visible event query is invalid")
+        if query is not None and ("\0" in query or len(query) > 1_000):
+            raise ValueError("visible event query is invalid")
+        if not isinstance(allow_high_risk, bool):
+            raise ValueError("allow_high_risk must be a boolean")
+        if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 100:
+            raise ValueError("visible event limit is invalid")
+        if start_at is not None and not isinstance(start_at, datetime):
+            raise ValueError("visible event start is invalid")
+        if end_at is not None and not isinstance(end_at, datetime):
+            raise ValueError("visible event end is invalid")
+        if start_at is not None and end_at is not None and end_at < start_at:
+            raise ValueError("visible event time range is invalid")
+        payload: dict[str, Any] = {
+            "spaces": requested_spaces,
+            "memory_types": requested_types,
+            "allow_high_risk": allow_high_risk,
+            "limit": limit,
+        }
+        if query is not None:
+            payload["query"] = query
+        if start_at is not None:
+            payload["start_at"] = start_at.isoformat()
+        if end_at is not None:
+            payload["end_at"] = end_at.isoformat()
+        result = self._request(
+            "visible_events",
+            scope=scope,
+            spaces=requested_spaces,
+            memory_types=requested_types,
+            payload=payload,
+        )
+        events = result.get("events")
+        risk_filtered = result.get("risk_filtered")
+        valid = (
+            set(result) == {"events", "risk_filtered"}
+            and isinstance(events, list)
+            and len(events) <= limit
+            and isinstance(risk_filtered, bool)
+        )
+        event_ids: set[str] = set()
+        if valid:
+            for event in events:
+                if not self._valid_visible_event(
+                    event,
+                    requested_spaces=requested_spaces,
+                    allow_high_risk=allow_high_risk,
+                ):
+                    valid = False
+                    break
+                event_id = event["event_id"]
+                if event_id in event_ids:
+                    valid = False
+                    break
+                event_ids.add(event_id)
+        if not valid:
+            self._poison_channel()
+            raise AndroidLocalNodeProtocolError(
+                "android_local_node_visible_events_result_invalid"
+            )
+        return [dict(event) for event in events], risk_filtered
+
+    @staticmethod
+    def _valid_visible_event(
+        event: Any,
+        *,
+        requested_spaces: list[str],
+        allow_high_risk: bool,
+    ) -> bool:
+        if not isinstance(event, dict) or set(event) != _VISIBLE_EVENT_KEYS:
+            return False
+        revision = event.get("revision")
+        title = event.get("title")
+        description = event.get("description")
+        fact_status = event.get("fact_status")
+        if (
+            not isinstance(event.get("event_id"), str)
+            or _IDENTIFIER.fullmatch(event["event_id"]) is None
+            or event.get("space_id") not in requested_spaces
+            or event.get("memory_type") != "event"
+            or not isinstance(revision, int)
+            or isinstance(revision, bool)
+            or revision < 1
+            or event.get("event_type") not in _EVENT_TYPES
+            or not isinstance(title, str)
+            or not title.strip()
+            or len(title) > 240
+            or "\0" in title
+            or not isinstance(description, str)
+            or len(description) > 1_000
+            or "\0" in description
+            or not isinstance(fact_status, str)
+            or not fact_status.strip()
+            or len(fact_status) > 64
+            or event.get("evidence_state") not in _EVIDENCE_STATES
+            or event.get("sensitivity") not in _SENSITIVITIES
+            or event.get("data_class") != "structured"
+            or not isinstance(event.get("content_truncated"), bool)
+        ):
+            return False
+        return allow_high_risk or event["sensitivity"] != "restricted"
 
     def set_policy_blocked(
         self,

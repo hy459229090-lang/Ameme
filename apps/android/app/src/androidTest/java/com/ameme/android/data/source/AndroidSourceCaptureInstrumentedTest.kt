@@ -10,6 +10,7 @@ import com.ameme.android.domain.SourceCaptureRequest
 import com.ameme.android.domain.EvidenceState
 import com.ameme.android.domain.FactStatus
 import com.ameme.android.domain.LocatorPermissionState
+import com.ameme.android.domain.Sensitivity
 import com.ameme.android.domain.SourceKind
 import java.time.Clock
 import java.time.Instant
@@ -58,6 +59,7 @@ class AndroidSourceCaptureInstrumentedTest {
         assertEquals(SourceKind.SharedContent, parsed?.sourceKind)
         assertEquals("收到一张分享图片", parsed?.title)
         assertEquals(LocatorPermissionState.SessionRead, parsed?.locatorPermissionState)
+        assertEquals(Sensitivity.Confidential, parsed?.sensitivity)
         assertNull(parser.parse(Intent(valid).apply { flags = 0 }) { _, _ -> LocatorPermissionState.SessionRead })
         assertNull(
             parser.parse(
@@ -98,6 +100,8 @@ class AndroidSourceCaptureInstrumentedTest {
         assertEquals(before + 1, repository.loadActiveEvents().size)
         assertEquals(1, grants)
         assertTrue(captured?.detail?.contains("当前授权会话") == true)
+        assertEquals(Sensitivity.Confidential, captured?.sensitivity)
+        assertEquals(FactStatus.Confirmed, captured?.factStatus)
     }
 
     @Test
@@ -153,6 +157,7 @@ class AndroidSourceCaptureInstrumentedTest {
         assertTrue(captured?.detail?.contains("未转写、未推断") == true)
         assertFalse(captured?.detail?.contains("合成语音内容") == true)
         assertEquals(1, grants)
+        assertEquals(Sensitivity.Confidential, captured?.sensitivity)
     }
 
     @Test

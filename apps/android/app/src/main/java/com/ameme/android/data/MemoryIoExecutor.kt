@@ -24,7 +24,7 @@ import kotlinx.coroutines.withContext
 
 /** Single UI boundary for repository and platform-source I/O. Repository APIs stay synchronous for non-UI callers. */
 class MemoryIoExecutor(
-    private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val dispatcher: CoroutineDispatcher = serializedRepositoryDispatcher,
 ) {
     private val closeScope = CoroutineScope(SupervisorJob() + dispatcher)
 
@@ -98,8 +98,40 @@ class MemoryIoExecutor(
         pageSize: Int,
     ): MemoryPage = onIo { repository.searchPage(query, date, cursor, pageSize) }
 
+    suspend fun searchPage(
+        repository: MemoryRepository,
+        query: String,
+        startDate: LocalDate?,
+        endDate: LocalDate?,
+        cursor: String?,
+        pageSize: Int,
+    ): MemoryPage = onIo { repository.searchPage(query, startDate, endDate, cursor, pageSize) }
+
+    suspend fun buildAndResolveReuseContext(
+        repository: ReuseRepository,
+        request: ReuseRequest,
+        resolvedAt: java.time.Instant,
+    ): ResolvedReuseContext = onIo {
+        val context = repository.buildReuseContext(request)
+        repository.resolveReuseContext(context, resolvedAt)
+    }
+
+    suspend fun recordReuseOutcome(
+        repository: ReuseRepository,
+        submission: ReuseOutcomeSubmission,
+    ): Boolean = onIo { repository.recordReuseOutcome(submission) }
+
     suspend fun deleteEvent(repository: MemoryRepository, eventId: String): Boolean =
         onIo { repository.deleteEvent(eventId) }
+
+    suspend fun updateEvent(
+        repository: MemoryRepository,
+        eventId: String,
+        factStatus: com.ameme.android.domain.FactStatus? = null,
+        userWords: String? = null,
+    ): com.ameme.android.domain.MemoryEvent? = onIo {
+        repository.updateEvent(eventId, factStatus, userWords)
+    }
 
     suspend fun retrySourceGrantCleanup(coordinator: SourceGrantCleanupCoordinator): SourceGrantCleanupResult =
         onIo(coordinator::retryPending)
@@ -115,6 +147,13 @@ class MemoryIoExecutor(
     }
 
     private suspend fun <T> onIo(block: () -> T): T = withContext(dispatcher) { block() }
+
+    private companion object {
+        // The production repository is one synchronous SQLCipher node. Share a
+        // single-lane dispatcher across Activity lifecycles so an old close,
+        // startup cleanup, and a new user write cannot contend on that node.
+        val serializedRepositoryDispatcher = Dispatchers.IO.limitedParallelism(1)
+    }
 }
 
 internal suspend fun <T> runCatchingCancellable(block: suspend () -> T): Result<T> = try {

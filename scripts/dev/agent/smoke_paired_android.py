@@ -4,11 +4,12 @@
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 import json
 import os
 from pathlib import Path
 import re
+import ssl
 import subprocess
 import sys
 import tempfile
@@ -27,6 +28,8 @@ RUNNER = f"{PACKAGE}.test/androidx.test.runner.AndroidJUnitRunner"
 PROVISION_CLASS = (
     "com.ameme.android.data.transport.AgentPairingProvisioningInstrumentedTest"
 )
+PAIRING_ENVELOPE_FILE = "cache/agent-pairing-e2e/pairing-envelope.txt"
+DEVELOPER_CREDENTIAL_FILE = "cache/agent-pairing-e2e/developer-credential.txt"
 SYNTHETIC_UI_TITLE = "合成 Agent 通道事件：配对传输已完成"
 
 
@@ -155,8 +158,43 @@ def click_text(adb: Adb, expected: str) -> bool:
     return False
 
 
+def wait_for_text(adb: Adb, expected: str, attempts: int = 12) -> bool:
+    for attempt in range(attempts):
+        if expected in ui_xml(adb):
+            return True
+        if attempt >= 2:
+            adb.run("shell", "input", "swipe", "540", "1500", "540", "500", "250")
+        time.sleep(1)
+    return False
+
+
+def click_text_after_scroll(adb: Adb, expected: str, attempts: int = 6) -> bool:
+    for attempt in range(attempts):
+        if click_text(adb, expected):
+            return True
+        if attempt < attempts - 1:
+            adb.run("shell", "input", "swipe", "540", "1500", "540", "500", "250")
+            time.sleep(1)
+    return False
+
+
+def debug_channel_credential(payload: bytes) -> bytes:
+    value = payload.strip()
+    if not re.fullmatch(rb"[A-Za-z0-9_-]{43}", value):
+        raise RuntimeError("paired_android_debug_credential_invalid")
+    return value
+
+
 def main() -> int:
     options = arguments()
+    try:
+        tls_probe = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        tls_probe.minimum_version = ssl.TLSVersion.TLSv1_3
+        tls_probe.maximum_version = ssl.TLSVersion.TLSv1_3
+    except (AttributeError, ValueError):
+        raise SystemExit(
+            "Python runtime cannot require TLS 1.3; use the isolated project Python."
+        )
     for artifact in (DEBUG_APK, TEST_APK):
         if not artifact.is_file():
             raise SystemExit(f"missing APK: {artifact}")
@@ -176,8 +214,15 @@ def main() -> int:
         try:
             adb.instrument("provisionLocalLoopbackPairing", "amemeProvisionPairing")
             pairing_bytes = adb.private_file("files/agent-pairing/pairing.json")
-            secret_bytes.extend(adb.private_file("cache/agent-pairing-e2e/secret.txt"))
-            adb.run("shell", "run-as", PACKAGE, "rm", "cache/agent-pairing-e2e/secret.txt")
+            secret_bytes.extend(debug_channel_credential(adb.private_file(DEVELOPER_CREDENTIAL_FILE)))
+            adb.run(
+                "shell",
+                "run-as",
+                PACKAGE,
+                "rm",
+                PAIRING_ENVELOPE_FILE,
+                DEVELOPER_CREDENTIAL_FILE,
+            )
             pairing_file = temp / "pairing.json"
             pairing_file.write_bytes(pairing_bytes)
             pairing = json.loads(pairing_bytes)
@@ -187,12 +232,37 @@ def main() -> int:
             adb.run("shell", "am", "start", "-W", "-n", f"{PACKAGE}/.MainActivity")
             time.sleep(5)
 
-            client = McpClient(pairing_file, temp / "mcp-state", secret_bytes.decode("utf-8"))
-            initialized = client.request(
-                "initialize",
-                {"protocolVersion": "2024-11-05", "capabilities": {}, "clientInfo": {"name": "ameme-android-smoke", "version": "0.1"}},
-            )
-            now = datetime.now(timezone.utc)
+            initialized: dict[str, Any] | None = None
+            retry_delays = (0.0, 1.0, 2.0, 3.0, 4.0)
+            for attempt, retry_delay in enumerate(retry_delays):
+                if retry_delay:
+                    time.sleep(retry_delay)
+                client = McpClient(
+                    pairing_file,
+                    temp / "mcp-state",
+                    secret_bytes.decode("utf-8"),
+                )
+                try:
+                    initialized = client.request(
+                        "initialize",
+                        {
+                            "protocolVersion": "2024-11-05",
+                            "capabilities": {},
+                            "clientInfo": {
+                                "name": "ameme-android-smoke",
+                                "version": "0.1",
+                            },
+                        },
+                    )
+                    break
+                except RuntimeError:
+                    client.close()
+                    client = None
+                    if attempt == len(retry_delays) - 1:
+                        raise
+            if initialized is None:
+                raise RuntimeError("paired_android_mcp_initialize_unavailable")
+            now = datetime.now().astimezone()
             pending = client.tool(
                 "pair",
                 {
@@ -234,17 +304,16 @@ def main() -> int:
             client = None
             time.sleep(2)
 
-            if "查看今天" in ui_xml(adb):
-                if not click_text(adb, "查看今天"):
+            current_ui = ui_xml(adb)
+            if "自动整理你的一天" in current_ui:
+                if not click_text_after_scroll(adb, "查看今天"):
                     raise RuntimeError("android_onboarding_continue_not_clickable")
-                time.sleep(2)
-            if SYNTHETIC_UI_TITLE not in ui_xml(adb):
+            if not wait_for_text(adb, SYNTHETIC_UI_TITLE):
                 raise RuntimeError("paired_android_event_not_visible")
 
             adb.run("shell", "am", "force-stop", PACKAGE)
             adb.run("shell", "am", "start", "-W", "-n", f"{PACKAGE}/.MainActivity")
-            time.sleep(4)
-            persisted_after_restart = SYNTHETIC_UI_TITLE in ui_xml(adb)
+            persisted_after_restart = wait_for_text(adb, SYNTHETIC_UI_TITLE)
             if not persisted_after_restart:
                 raise RuntimeError("paired_android_event_not_persistent")
 
@@ -259,6 +328,8 @@ def main() -> int:
                         "visible_in_today": True,
                         "persistent_after_restart": persisted_after_restart,
                         "adb_used_for_event_injection": False,
+                        "qr_bootstrap_secret_used_as_channel_credential": False,
+                        "debug_developer_credential_separate": True,
                     },
                     ensure_ascii=False,
                     indent=2,

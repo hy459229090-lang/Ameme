@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDisplayName</key>
+	<string>Ameme</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.1.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.ameme.ios.incoming-share</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>ameme</string>
+			</array>
+		</dict>
+	</array>
+	<key>LSRequiresIPhoneOS</key>
+	<true/>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Ameme 只在你点击录音后，保存你主动记录的语音。</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Ameme 只在你主动扫描设备配对码时使用相机。</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Ameme 只读取你在记录时明确选择的照片。</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>Ameme 只在你主动导入时读取你选择范围内的日历事件。</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Ameme 只在你主动导入时读取你选择范围内的日历事件。</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Ameme 只在你主动连接设备时发现同一局域网内的 Agent。</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_ameme-agent._tcp</string>
+	</array>
+	<key>UIApplicationSupportsIndirectInputEvents</key>
+	<true/>
+	<key>UILaunchScreen</key>
+	<dict>
+		<key>UIColorName</key>
+		<string>LaunchBackground</string>
+	</dict>
+	<key>UIRequiredDeviceCapabilities</key>
+	<array>
+		<string>arm64</string>
+	</array>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+</dict>
+</plist>

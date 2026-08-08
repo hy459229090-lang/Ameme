@@ -194,17 +194,21 @@ queued -> local_deleting -> sync_propagating -> recomputing -> completed
 执行顺序固定：
 
 ```text
-authenticate caller
+authenticate channel/device
+ -> append content-free STARTED access audit
  -> validate Grant/status/expiry
  -> intersect purpose + spaces + data types + time
  -> query structured current revisions
  -> filter tombstone/restricted/source availability
  -> optionally rank candidates
  -> build day-grouped RecallPage or minimal ContextPack
+ -> append content-free COMPLETED result/object-count bucket
  -> return range_state and partial reasons
- -> append content-free access audit
 ```
 
+- `STARTED` 必须在 repository 访问前持久化；失败时拒绝执行。`COMPLETED` 记录稳定结果码和数量桶，
+  不保存正文、query、payload/digest、对象 ID、locator、路径、密钥或自由异常文本。中断或完成记录
+  失败时保留未完成 `STARTED`，不得伪装成成功。
 - Cursor 绑定 query hash、授权、空间集合、排序版本和快照上界；不能拿去翻另一个查询。
 - `complete_for_requested_scope` 只表示请求范围内参与设备/索引状态完整，不表示人生完整。
 - 向量只做候选召回，结构化权限、当前 Revision 和 tombstone 在最终返回前再次校验。

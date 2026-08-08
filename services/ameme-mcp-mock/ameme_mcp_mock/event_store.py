@@ -115,6 +115,7 @@ class EventNodeStore(Protocol):
         allow_high_risk: bool,
         start_at: datetime | None,
         end_at: datetime | None,
+        limit: int = 100,
     ) -> tuple[list[dict[str, Any]], bool]: ...
 
     def set_policy_blocked(

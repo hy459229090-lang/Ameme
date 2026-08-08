@@ -140,6 +140,78 @@ class PolicyTests(unittest.TestCase):
         self.assertNotIn(secret_text, activity_json)
         self.assertNotIn("query", activity_json.lower())
 
+    def test_agent_event_write_does_not_auto_confirm_sensitive_long_term_memory(self) -> None:
+        for index, memory_type in enumerate(
+            ("preference", "relationship", "health", "financial", "major_decision"),
+            start=1,
+        ):
+            result = self.harness.mock.call(
+                "capture",
+                capture_arguments(
+                    self.grant["grant_id"],
+                    evidence_kind="direct_evidence",
+                    long_term_memory_type=memory_type,
+                    idempotency_key=f"sensitive-memory-{index:03d}",
+                ),
+            )
+            with self.subTest(memory_type=memory_type):
+                self.assertEqual(
+                    "candidate_user_confirmation_required",
+                    result["long_term_memory_state"],
+                )
+                self.assertEqual("durable", result["persistence_state"])
+                self.assertEqual("event", result["object_type"])
+
+    def test_inference_never_auto_promotes_to_long_term_fact(self) -> None:
+        result = self.harness.mock.call(
+            "capture",
+            capture_arguments(
+                self.grant["grant_id"],
+                evidence_kind="inference",
+                long_term_memory_type="fact",
+                idempotency_key="inferred-long-term-fact-001",
+            ),
+        )
+        self.assertEqual(
+            "candidate_user_confirmation_required",
+            result["long_term_memory_state"],
+        )
+        self.assertEqual("inferred", result["evidence_state"])
+        self.assertEqual(
+            "low_confidence_candidate",
+            self.harness.store.state["events"][result["event_id"]]["fact_status"],
+        )
+
+    def test_verified_ordinary_fact_is_only_eligible_for_memory_compiler(self) -> None:
+        result = self.harness.mock.call(
+            "capture",
+            capture_arguments(
+                self.grant["grant_id"],
+                evidence_kind="direct_evidence",
+                long_term_memory_type="fact",
+                idempotency_key="verified-long-term-fact-001",
+            ),
+        )
+        self.assertEqual(
+            "eligible_for_memory_compiler",
+            result["long_term_memory_state"],
+        )
+        self.assertNotEqual(
+            "confirmed_long_term_memory",
+            result["long_term_memory_state"],
+        )
+
+    def test_unknown_long_term_memory_type_is_rejected(self) -> None:
+        self.assert_code(
+            "INVALID_ARGUMENT",
+            "capture",
+            capture_arguments(
+                self.grant["grant_id"],
+                long_term_memory_type="personality_profile",
+                idempotency_key="unknown-long-term-type-001",
+            ),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

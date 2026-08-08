@@ -1,10 +1,11 @@
 package com.ameme.android.data.transport
 
+import android.content.Context
 import java.time.Clock
 import kotlinx.coroutines.delay
 
 object PairingExperienceConnectorProvider {
-    fun create(): PairingExperienceConnector = DebugPairingExperienceConnector()
+    fun create(context: Context): PairingExperienceConnector = DebugPairingExperienceConnector()
 }
 
 class DebugPairingExperienceConnector(
@@ -28,14 +29,18 @@ class DebugPairingExperienceConnector(
     override suspend fun connect(candidate: PairingExperienceCandidate): PairingExperienceConnection {
         require(candidate.simulated)
         delay(delayMillis)
+        val connectedAt = clock.instant()
         return PairingExperienceConnection(
             id = "debug-connection-${candidate.method.wireValue}",
             deviceName = candidate.deviceName,
             agentName = candidate.agentName,
             method = candidate.method,
             capabilities = candidate.capabilities,
-            connectedAt = clock.instant(),
+            connectedAt = connectedAt,
+            expiresAt = connectedAt.plusSeconds(PairingExperienceConnection.DEFAULT_LIFETIME_SECONDS),
             simulated = true,
         )
     }
+
+    override suspend fun disconnect(connection: PairingExperienceConnection) = Unit
 }

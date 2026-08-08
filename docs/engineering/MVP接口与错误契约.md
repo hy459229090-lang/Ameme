@@ -1,7 +1,7 @@
-# Ameme MVP 接口、错误与 Agent 工具契约 v0.2
+# Ameme MVP 接口、错误与 Agent 工具契约 v0.5
 
 > 文档状态：已接受；HTTP/MCP 语义、幂等、分页和错误码为研发前实现契约\
-> 更新日期：2026-07-14\
+> 更新日期：2026-07-26\
 > OpenAPI：`../../packages/contracts/api/openapi.yaml`\
 > JSON Schema：`../../packages/contracts/schemas/ameme-domain.schema.json`、`../../packages/contracts/schemas/ameme-agent-local-node.schema.json`
 
@@ -57,9 +57,29 @@ Skill 文档负责“何时调用”和对用户的确认文案，不能放长�
 
 `ameme.agent-local-node.v1` 是 MCP adapter 与 Local Node 之间的应用层协议，不是 LAN、HTTP 或设备发现协议。正本由严格 JSON Schema、[`agent-local-node-protocol`](../../packages/agent-local-node-protocol/) executable spec 和跨语言 conformance vector 共同约束：canonical UTF-8 JSON、payload/result SHA-256 digest、最小且由 payload 派生的请求 scope、可为请求超集的 verified Grant、请求绑定响应、域分离幂等槽与稳定错误码。未知字段、重复键、浮点数、非法 UTF-8、NUL 和 lone surrogate 均 fail closed；v1 只有 `TEMPORARILY_UNAVAILABLE`、`INTERNAL_ERROR` 可重试。
 
-当前 MCP `android-local-node` 后端与 Android 端点只实现 `create_event`。适配器必须显式选择并注入已认证 channel provider、endpoint/credential/session binding 引用和 expected device id；Android 必须获得 separately verified session、授权的 space/type/sensitivity/data class 与原子幂等 registry，才可写入 SQLCipher `MemoryRepository`。生产 Android factory 默认关闭；普通 CLI 不带 provider 会失败，不回退 Python Core 或 JSON Mock。其余 v1 operation 返回 `OPERATION_UNSUPPORTED`。
+当前 MCP `android-local-node` 后端与 Android 端点实现四种最小操作：`create_event`、`append_revision`、exact `undo_capture` 与有界 `visible_events`。适配器必须显式选择并注入已认证 channel provider、endpoint/credential/session binding 引用和 expected device id；Android 必须获得 separately verified session 以及获准的 operation/space/type/sensitivity/data class。Revision 写入对不存在、已删除或 sensitivity 不可见目标统一返回 `NOT_VISIBLE`，也不确认长期 Memory。撤销只接受原 capture 返回的域分离 token、同 caller/grant/purpose/space/type，且首次调用必须在原幂等记录创建后 10 分钟内：Event 追加 tombstone；Revision 仅在该 Revision 仍为 current head 时追加补偿 Revision，绝不覆盖历史。撤销 mutation 与撤销幂等记录处于同一 SQLCipher transaction，重开后同请求重放同一终态。
 
-当前通过的是应用层与本地持久化边界，不是生产通道。尚未实现或证明：设备配对与认证、credential 生命周期、LAN/NSD、socket、TLS/传输加密、会话重放保护、Android 后台生命周期、跨重启持久幂等，以及真实 Codex/Claude Code/Cursor 宿主。
+`visible_events` 不是任意 ID 读取：只接受当前绑定的 Personal space、`event`、`structured`，查询最多 1,000 code points、结果 1–100 条，并在 SQLCipher current active projection 上执行 AND 关键词、时区化时间范围和 session sensitivity 交集。生产 runtime 只授予 `public/personal/confidential`；Restricted 即使存在也不能越过 session，且只有 session 本身获准 Restricted 时，`risk_filtered` 才可反映策略过滤，避免向未授权 caller 泄漏存在性。返回仅含 bounded title（240）、description（1,000）、Event/revision/type/evidence/fact/sensitivity 与 `content_truncated`，不含 user words、source label/ID、locator、路径或 Raw。Host 对成功结果再次做 exact key/scope/type/sensitivity/长度/数量绑定，恶意结果会毒化会话；`get_context` 仍把正文视为不可信数据并执行 injection、item/token budget。`get_event` 与 `set_policy_blocked` 继续返回 `OPERATION_UNSUPPORTED`，因此 Revision 写入不会用目标读取把旧正文复制进 Host control state。
+
+iOS 生产客户端也实现这四种操作的 canonical request builder、exact Grant scope 子集校验、typed response/result digest/错误形状和冻结 retryability 校验；握手未声明 operation 时不发送，malformed 响应关闭通道，合法远端应用错误只作为 content-free typed error 返回。原始 application exchange 不公开，生产 exchange 只按当前时间授权。普通用户二维码入口的默认 Grant 与展示仍为 event-only，Revision/read/undo 只能由另行明确授权的 Grant 构造，不能因客户端支持而静默扩权。
+
+当前仓库证据覆盖 canonical 应用层、Host TLS 1.3 adapter、Android 配对 listener/凭据生命周期、SQLCipher 原子写入/读取、iOS Shared smoke/静态契约，以及 API 36 / 16 KB arm64 AVD 上 Swift Network.framework→Android SQLCipher→Today 的 create/read/revision/exact undo 纵向闭环。该 Smoke 使用 ADB forward 与显式 expanded Grant，不证明物理 LAN、普通用户 scope 扩张、共享账户 Grant registry、Android 后台生命周期、跨端撤销传播、真实 Codex/Claude Code/Cursor 生产宿主或真实设备 ContextPack/Recall。
+
+### 4.2 QR Bootstrap v2 当前实现边界
+
+Release 普通用户二维码只携带短时 bootstrap envelope，不再携带可直接用于冻结 v1 应用通道的长期凭据。envelope 由 Android 用 HMAC 做完整性保护；iOS 生成临时 P-256 key，向 bootstrap endpoint 提交公钥、nonce 与签名证明。Android 在同一临界区校验 expiry/HMAC/key possession、原子记录 consumed/key/issued credential，并返回与二维码 secret 分离的随机 credential；首次响应丢失后，同一 key 可重取原响应，换 key、过期、篡改、并发重复或已消费重放均 fail closed。
+
+Release artifact 不包含开发者 bearer，Debug Host 凭据与普通用户二维码签发凭据相互独立。iOS 将 pending envelope/private key 和 active credential 仅保存于 device-only Keychain：重启后 pending 继续同 key 交换，active 通过实际 `AgentLocalNodeNetworkClient` 恢复连接。这里的 client-key binding 精确覆盖签发与同 key 响应重取；active credential 进入冻结 v1 TLS/HMAC bearer 通道后，没有逐次重连 P-256 proof，不能扩写为硬件绑定或不可复制 bearer。
+
+Android Release 已实现普通用户扫码客户端：用户主动触发 Google Play 系统 QR-only scanner，
+App 不声明相机权限；结果最大 16,384 字符并只在短时 UI 状态中存在。没有可用系统扫码服务时，
+设置页提供“粘贴完整配对码”：应用不读取剪贴板，用户自行粘贴，输入同样有界并在取消或提交
+时清除。两条入口都必须经过同一严格 v2 parser、设备与 event-only 授权确认、P-256 possession
+proof、TLS 1.3 certificate pin、独立 credential 签发和应用 HMAC/capability 认证，不能退回
+Debug Host credential 或把解析成功当作连接成功。
+
+该切片仍没有共享账户 Grant registry、物理扫码/无 Play 真机、物理 LAN/设备或真实用户证据。
+普通用户 Grant 仍为 event-only；Revision/read/undo 不因 bootstrap v2 或客户端支持而自动扩权。
 
 ## 5. 错误码目录
 
