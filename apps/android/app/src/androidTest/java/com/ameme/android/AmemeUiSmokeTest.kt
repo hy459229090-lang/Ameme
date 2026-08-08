@@ -555,7 +555,12 @@ class AmemeUiSmokeTest {
             composeRule.onAllNodesWithTag("reuse-result-0").fetchSemanticsNodes().isNotEmpty()
         }
         composeRule.onNodeWithTag("reuse-result-0").assertIsDisplayed()
-        composeRule.onNodeWithTag("reuse-feedback-useful").performClick()
+        composeRule.onNodeWithText("这次找回有帮助吗？", substring = true)
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeRule.onNodeWithTag("reuse-feedback-useful")
+            .assertIsDisplayed()
+            .performClick()
         composeRule.waitUntil(timeoutMillis = 10_000) {
             composeRule.onAllNodesWithText("反馈已保存", substring = true)
                 .fetchSemanticsNodes()
