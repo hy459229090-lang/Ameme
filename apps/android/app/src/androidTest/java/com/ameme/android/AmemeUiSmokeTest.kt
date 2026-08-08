@@ -558,7 +558,11 @@ class AmemeUiSmokeTest {
         composeRule.onNodeWithText("这次找回有帮助吗？", substring = true)
             .performScrollTo()
             .assertIsDisplayed()
+        composeRule.onNodeWithTag("reuse-feedback-row")
+            .performScrollTo()
+            .assertIsDisplayed()
         composeRule.onNodeWithTag("reuse-feedback-useful")
+            .performScrollTo()
             .assertIsDisplayed()
             .performClick()
         composeRule.waitUntil(timeoutMillis = 10_000) {

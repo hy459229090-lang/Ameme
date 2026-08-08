@@ -88,6 +88,7 @@ internal fun ReuseJourneyDialog(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .testTag("reuse-feedback-row")
                         .horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
