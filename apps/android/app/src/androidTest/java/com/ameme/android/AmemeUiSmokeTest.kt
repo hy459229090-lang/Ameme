@@ -22,6 +22,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
+import androidx.test.espresso.Espresso.pressBack
 import androidx.test.platform.app.InstrumentationRegistry
 import com.ameme.android.data.local.AndroidKeystorePendingActionStore
 import com.ameme.android.data.local.LocalRecoveryPointManager
@@ -513,9 +514,7 @@ class AmemeUiSmokeTest {
         composeRule.onNodeWithText("语音").assertIsDisplayed()
         composeRule.onNodeWithTag("capture-photo").assertIsDisplayed()
         saveVisualEvidence("03-capture-sheet")
-        composeRule.activityRule.scenario.onActivity { activity ->
-            activity.onBackPressedDispatcher.onBackPressed()
-        }
+        pressBack()
         composeRule.waitUntil(timeoutMillis = 5_000) {
             composeRule.onAllNodesWithTag("capture-photo").fetchSemanticsNodes().isEmpty()
         }
