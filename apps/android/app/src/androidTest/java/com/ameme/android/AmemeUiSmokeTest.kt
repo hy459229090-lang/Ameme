@@ -126,6 +126,9 @@ class AmemeUiSmokeTest {
     private fun saveVisualEvidence(name: String) {
         composeRule.waitForIdle()
         val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.waitForIdleSync()
+        val uiAutomation = instrumentation.uiAutomation
+        uiAutomation.waitForIdle(250L, 5_000L)
         val fontScale = instrumentation.targetContext.resources.configuration.fontScale
         val scaleLabel = (fontScale * 100).roundToInt()
         val resolver = instrumentation.targetContext.contentResolver
@@ -152,7 +155,7 @@ class AmemeUiSmokeTest {
             checkNotNull(resolver.openOutputStream(screenshot)).use { output ->
                 assertTrue(
                     "UIAutomation could not encode screenshot $displayName",
-                    instrumentation.uiAutomation.takeScreenshot()
+                    uiAutomation.takeScreenshot()
                         .compress(Bitmap.CompressFormat.PNG, 100, output),
                 )
             }
